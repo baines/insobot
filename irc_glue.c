@@ -29,9 +29,19 @@ static const char* env_else(const char* env, const char* def){
 )
 
 IRC_CALLBACK(on_connect) {
-	printf("Joining %s\n", chan);
+
+	char *channels = strdup(chan),
+	     *state = NULL,
+	     *c = strtok_r(channels, ", ", &state);
+	
 	irc_send_raw(session, "CAP REQ :twitch.tv/membership");
-	irc_cmd_join(session, chan, NULL);
+	
+	do {
+		printf("Joining %s\n", c);
+		irc_cmd_join(session, c, NULL);
+	} while((c = strtok_r(NULL, ", ", &state)));
+	
+	free(channels);
 }
 
 IRC_CALLBACK(on_chat_msg) {
@@ -59,13 +69,13 @@ IRC_EV_CALLBACK(on_numeric) {
 		     *state = NULL,
 		     *n     = strtok_r(names, " ", &state);
 		
-		while((n = strtok_r(NULL, " ", &state))){
+		do {
 			markov_add_name(n);
-		}
+		} while((n = strtok_r(NULL, " ", &state)));
 		
 		free(names);
 	} else {
-		printf("Numeric [%u]\n", event);
+		printf(". . . Numeric [%u]\n", event);
 	}
 }
 

@@ -28,11 +28,11 @@
 	  [is a]       -> sentence,
 	  [a sentence] -> $
 
-	* Each unique word is only stored once in the word_storage list,
-	  the chains use pointers into word_storage to refer to the words.
+	* Each unique word is only stored once in the word_storage vector,
+	  the chains use indices into word_storage to refer to the words.
 	  
 	* The word map takes a string hash from std::Hash<std::string> and maps it
-	  to the pointer in word_storage.
+	  to the associated index of word_storage.
 	  
 	* It hashes recent sentences to try and not repeat things that were recently
 	  said.
@@ -49,20 +49,27 @@
 
 using namespace std;
 
+vector<string> word_storage;
+unordered_multimap<size_t, uint16_t> word_map;
+
+string& get_word(uint32_t i){
+	return word_storage[i];
+}
+
 struct Chain {
 	Chain() = default;
-	Chain(const string* p, uint32_t c) : ptr(p), count(c){}
+	Chain(uint32_t i, uint32_t c) : idx(i), count(c){}
 	
-	const string* ptr;
+	uint32_t idx;
 	uint32_t count;
 };
 
 struct Key {
 
-	Key() : word1(nullptr), word2(nullptr){}
-	Key(const string* a, const string* b) : word1(a), word2(b) {}
+	Key() : word1(USHRT_MAX), word2(USHRT_MAX){}
+	Key(uint32_t a, uint32_t b) : word1(a), word2(b) {}
 
-	const string *word1, *word2;
+	uint32_t word1, word2;
 	
 	bool operator<(const Key& k) const {
 		return tie(word1, word2) < tie(k.word1, k.word2);
@@ -78,14 +85,12 @@ struct Key {
 	
 	string str() const {
 		string s;
-		s.append(word1 ? *word1 : "(null)");		
+		s.append(word1 != UINT_MAX ? get_word(word1) : "(null)");		
 		s.append(", ");
-		s.append(word2 ? *word2 : "(null)");
+		s.append(word2 != UINT_MAX ? get_word(word2) : "(null)");
 	}
 };
 
-list<string> word_storage;
-unordered_multimap<size_t, string*> word_map;
 multimap<Key, Chain> chains;
 
 // store names to avoid recording them in the chains.
@@ -152,23 +157,42 @@ void fix_narcissism(string nick, string& word){
 	}
 }
 
+uint32_t lookup_or_add_word(const string& s){
+	bool found = false;
+	auto p = word_map.equal_range(hash_fn(s));
+	
+	for(auto i = p.first, j = p.second; i != j; ++i){
+		if(get_word(i->second) == s){
+			return i->second;
+		}
+	}
+	
+	word_storage.push_back(s);
+	uint32_t idx = word_storage.size() - 1;
+
+	word_map.emplace(hash_fn(s), idx);
+	return idx;
+}
+
 bool lookup_key(const string& a, const string& b, Key& out){
 	auto a_p = word_map.equal_range(hash_fn(a)),
 	     b_p = word_map.equal_range(hash_fn(b));
 
-	string* tmp;
+	uint32_t a_idx = lookup_or_add_word(a),
+	         b_idx = lookup_or_add_word(b),
+	         tmp = UINT_MAX;
 	
 	for(auto i = a_p.first, j = a_p.second; i != j; ++i){
-		if(*i->second == a){
+		if(i->second == a_idx){
 			tmp = i->second;
 			break;
 		}
 	}
 	
-	if(!tmp) return false;
+	if(tmp == UINT_MAX) return false;
 	
 	for(auto i = b_p.first, j = b_p.second; i != j; ++i){
-		if(*i->second == b){
+		if(i->second == b_idx){
 			out.word1 = tmp;
 			out.word2 = i->second;
 			return true;
@@ -218,7 +242,7 @@ string markov_gen(){
 
 		for(; p.first != p.second; ++p.first){
 			total += p.first->second.count;
-			if(*p.first->second.ptr == "$"){
+			if(get_word(p.first->second.idx) == "$"){
 				end_available = true;
 			}
 		}
@@ -247,12 +271,12 @@ string markov_gen(){
 			count = random_num(total);
 		}
 		
-		while(count > 0){
+		while(count >= 0){
 			count -= i->second.count;
-			if(count > 0) ++i;
+			if(count >= 0) ++i;
 		}
 				
-		const string& next_word = *i->second.ptr;
+		const string& next_word = get_word(i->second.idx);
 				
 		if(next_word == "$"){
 			break;
@@ -264,7 +288,7 @@ string markov_gen(){
 						
 		msg.append(next_word);
 		
-		key = Key(i->first.word2, i->second.ptr);
+		key = Key(i->first.word2, i->second.idx);
 	}
 
 	filter_profanity(msg);
@@ -296,7 +320,7 @@ bool check_dup(const string msg){
 void irc_send_ratelimited(irc_session_t* s, const char* chan, const string& msg){
 	time_t now = time(0);
 	
-	if(now - last_msg_time < 5){
+	if(strcmp(chan, "#" BOT_OWNER) != 0 && (now - last_msg_time) < 5){
 		puts("Cancelling msg send: too soon.");
 	} else {
 		irc_cmd_msg(s, chan, msg.c_str());
@@ -321,7 +345,7 @@ bool markov_gen_formatted(string& msg){
 				s.erase(0, 2);
 			}
 		} while(attempts++ < 5 && check_dup(s));
-		
+
 		if(attempts >= 5){
 			puts("Couldn't get a good message, giving up.");
 			return false;
@@ -359,7 +383,7 @@ void markov_pose_q(irc_session_t* s, const char* chan){
 void markov_reply(irc_session_t* s, const char* chan, const char* nick){
 
 	// don't always reply
-	if(random_num(3) == 0){
+	if(random_num(2) == 0){
 		puts("chooing not to reply.");
 		return;
 	}
@@ -372,32 +396,15 @@ void markov_reply(irc_session_t* s, const char* chan, const char* nick){
 	irc_send_ratelimited(s, chan, msg);
 }
 
-string* lookup_or_add_word(const string& s){
-	bool found = false;
-	auto p = word_map.equal_range(hash_fn(s));
-	
-	for(auto i = p.first, j = p.second; i != j; ++i){
-		if(*i->second == s){
-			return i->second;
-		}
-	}
-	
-	word_storage.push_back(s);
-	string* ptr = &word_storage.back();
-
-	word_map.emplace(hash_fn(s), ptr);
-	return ptr;
-}
-
 bool markov_unlink(const string& a, const string& b){
 
-	string *a_ptr = lookup_or_add_word(a),
-	       *b_ptr = lookup_or_add_word(b);
+	uint32_t a_idx = lookup_or_add_word(a),
+	         b_idx = lookup_or_add_word(b);
 
 	bool deleted = false;
 
 	for(auto i = chains.begin(), j = chains.end(); i != j; /**/){
-		if(i->first.word2 == a_ptr && i->second.ptr == b_ptr){
+		if(i->first.word2 == a_idx && i->second.idx == b_idx){
 			chains.erase(i++);
 			deleted = true;
 		} else {
@@ -411,10 +418,10 @@ bool markov_unlink(const string& a, const string& b){
 //FIXME: this can create orphan words if their only link was to the removed word.
 void markov_remove(const char* word){
 
-	string* ptr = lookup_or_add_word(word);
+	uint32_t idx = lookup_or_add_word(word);
 
 	for(auto i = chains.begin(), j = chains.end(); i != j; /**/){
-		if(i->first.word1 == ptr || i->first.word2 == ptr || i->second.ptr == ptr){
+		if(i->first.word1 == idx || i->first.word2 == idx || i->second.idx == idx){
 			chains.erase(i++);
 		} else {
 			++i;
@@ -423,18 +430,18 @@ void markov_remove(const char* word){
 }
 
 void markov_fix(const string& word, const char* fix){
-	string* fix_ptr = lookup_or_add_word(word);
-	*fix_ptr = fix;
+	uint32_t fix_idx = lookup_or_add_word(word);
+	get_word(fix_idx) = fix;
 	
 	auto p = word_map.equal_range(hash_fn(word));
 	for(; p.first != p.second; ++p.first){
-		if(p.first->second == fix_ptr){
+		if(p.first->second == fix_idx){
 			word_map.erase(p.first);
 			break;
 		}
 	}
 	
-	word_map.emplace(hash_fn(*fix_ptr), fix_ptr);
+	word_map.emplace(hash_fn(word), fix_idx);
 }
 
 extern "C" void markov_write(const char* file);
@@ -464,25 +471,25 @@ void add_chain(string (words)[3]){
 		words[2].c_str()
 	);
 
-	string* ptrs[3];
-
-	ptrs[0] = lookup_or_add_word(words[0]);
-	ptrs[1] = lookup_or_add_word(words[1]);
-	ptrs[2] = lookup_or_add_word(words[2]);
+	uint32_t idx[3] = {
+		lookup_or_add_word(words[0]),
+		lookup_or_add_word(words[1]),
+		lookup_or_add_word(words[2])
+	};
 	
-	Key key(ptrs[0], ptrs[1]);
+	Key key(idx[0], idx[1]);
 	auto p = chains.equal_range(key);
 	bool found = false;
 	
 	for(auto i = p.first, j = p.second; i != j; ++i){
-		if(*(i->second.ptr) == *ptrs[2]){
+		if(i->second.idx == idx[2]){
 			i->second.count++;
 			found = true;
 			break;
 		}
 	}
 	
-	if(!found) chains.emplace(key, Chain(ptrs[2], 1));
+	if(!found) chains.emplace(key, Chain(idx[2], 1));
 };
 
 // remove annoying words that occur due to removing punctuation from emoticons
@@ -517,14 +524,16 @@ bool parse_cmd(const string& msg, string cmd, string* args, size_t num_args){
 
 extern "C"
 void markov_recv(irc_session_t* s, const char* chan, const char* nick, const char* m){
-	bool quiet = false;
+	bool quiet = false,
+	     skip_chain = false;
+
 	string msg(m);
 	
 	std::transform(msg.begin(), msg.end(), msg.begin(), ::tolower);
 	
 	if(!msg.empty() && msg[0] == '!'){
 		puts("Skipping command.");
-		return;
+		skip_chain = true;
 	}
 	
 	// skip messages that contain urls
@@ -532,7 +541,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	|| msg.find("https://") != string::npos
 	|| msg.find("www.") != string::npos){
 		puts("Skipping sentence with URL.");
-		return;
+		skip_chain = true;
 	}
 	
 	for(size_t i = msg.find('.'); i != string::npos; i = msg.find('.', i+1)){
@@ -542,7 +551,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 			}
 			if(msg[i+j] == '/'){
 				puts("Found more obscure URL in msg, skipping.");
-				return;
+				skip_chain = true;
 			}
 		}
 	}
@@ -657,6 +666,13 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 		markov_send(s, chan);
 		return;
 	}
+
+	if(msg == "\\status"){
+		char buffer[256];
+		snprintf(buffer, sizeof(buffer), "Greetings human. I know %zu unique words, and %zu word links. http://github.com/insofaras/insobot", word_storage.size(), chains.size());
+		irc_send_ratelimited(s, chan, buffer);
+		return;
+	}
 	
 	// ask q's during prestream
 	if(strcasecmp(chan, "#handmade_hero") == 0
@@ -676,104 +692,108 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	
 	// spammy
 	if(strcasecmp(nick, "hmh_bot") == 0){
-		return;
+		skip_chain = true;
 	}
-	
-	// remove name at start
-	auto space_idx = msg.find(' ');
-	if (space_idx != string::npos && space_idx > 1 
-	&& (msg[0] == '@' || msg[space_idx-1] == ':')){
-		msg.erase(0, space_idx);
-	}
-	
-	// split sentences at . ! ?
-	replace_all(msg, "$", "@");
-	replace_all(msg, ". ", " $ ");
-	replace_all(msg, "! ", " $ ");
-	replace_all(msg, "? ", " $ ");
-	
-	// treat comma as a separate word
-	replace_all(msg, ",", " , ");
 
-	// remove non-ascii chars
-	msg.erase(
-		remove_if(msg.begin(), msg.end(), [](unsigned char c){
-			return c < ' ' || c >= 127;
-		}),
-		msg.end()
-	);
-	
-	// remove most punctuation (by changing it to a space)
-	std::transform(msg.begin(), msg.end(), msg.begin(), [](char c){
-		if(strchr(".!?@:;`^(){}[]\"", c) != nullptr){
-			return ' ';
-		} else {
-			return c;
-		}
-	});
-	
-	// condense multiple consequitive spaces + trim
-	replace_all(msg, "  ", " ");
-	size_t pos;
-	if((pos = msg.find_first_not_of(" ")) != string::npos){
-		msg.erase(0, pos);
-	}
-	if((pos = msg.find_last_not_of(" ")) != string::npos){
-		msg.erase(pos + 1);
-	}
-	
-	// store the hash to avoid repeating people
-	add_hash(msg);
-	
-	// turn self-promotion into self-deprecation
-	fix_narcissism(nick, msg);
-	
 	// add the name of the list of names to avoid recording
 	markov_add_name(nick);
-			
-	stringstream stream(msg);
-	string words[3] = { "^", "^", "" };
-	auto& word = words[2];
 	
-	while(getline(stream, word, ' ')){
-		if(word.empty() || blacklisted(word)) continue;
-		if(word.size() > 28) word = "***";
-				
-		// skip empty sentences
-		if(word == "$" && words[1] == "^") continue;
-		
-		// skip dups
-		if(word == words[1] && words[1] == words[0]) continue;
-		
-		// trim out ++ and -- after names
-		int len = word.size();
-		if (len > 2 && (word.find("++") == len - 2 || word.find("--") == len - 2)){
-			len -= 2;
+	if(!skip_chain){
+	
+		// remove name at start
+		auto space_idx = msg.find(' ');
+		if (space_idx != string::npos && space_idx > 1 
+		&& (msg[0] == '@' || msg[space_idx-1] == ':')){
+			msg.erase(0, space_idx);
 		}
-		
-		// skip names
-		auto it = irc_names.find(string(word.begin(), word.begin() + len));
-		if(it != irc_names.end()){
-			printf("Skipping name [%s]\n", it->c_str());
-			continue;
+	
+		// split sentences at . ! ?
+		replace_all(msg, "$", "@");
+		replace_all(msg, ". ", " $ ");
+		replace_all(msg, "! ", " $ ");
+		replace_all(msg, "? ", " $ ");
+	
+		// treat comma as a separate word
+		replace_all(msg, ",", " , ");
+
+		// remove non-ascii chars
+		msg.erase(
+			remove_if(msg.begin(), msg.end(), [](unsigned char c){
+				return c < ' ' || c >= 127;
+			}),
+			msg.end()
+		);
+	
+		// remove most punctuation (by changing it to a space)
+		std::transform(msg.begin(), msg.end(), msg.begin(), [](char c){
+			if(strchr(".!?@:;`^(){}[]\"", c) != nullptr){
+				return ' ';
+			} else {
+				return c;
+			}
+		});
+
+		// condense multiple consequitive spaces + trim
+		replace_all(msg, "  ", " ");
+		size_t pos;
+		if((pos = msg.find_first_not_of(" ")) != string::npos){
+			msg.erase(0, pos);
 		}
-		
-		// add these 3 words as a new chain
-		add_chain(words);
-		
-		// prepare for the next chain, if this ended a sentence start anew
-		if(word == "$"){
-			words[0] = "^";
-			words[1] = "^";
-		} else {
-			words[0] = move(words[1]);
-			words[1] = move(words[2]);
+		if((pos = msg.find_last_not_of(" ")) != string::npos){
+			msg.erase(pos + 1);
 		}
+
+		// store the hash to avoid repeating people
+		add_hash(msg);
+
+		// turn self-promotion into self-deprecation
+		fix_narcissism(nick, msg);
+
+		stringstream stream(msg);
+		string words[3] = { "^", "^", "" };
+		auto& word = words[2];
+
+		while(getline(stream, word, ' ')){
+			if(word.empty() || blacklisted(word)) continue;
+			if(word.size() > 28) word = "***";
+		
+			// skip empty sentences
+			if(word == "$" && words[1] == "^") continue;
+
+			// skip dups
+			if(word == words[1] && words[1] == words[0]) continue;
+		
+			// trim out ++ and -- after names
+			int len = word.size();
+			if (len > 2 && (word.find("++") == len - 2 || word.find("--") == len - 2)){
+				len -= 2;
+			}
+		
+			// skip names
+			auto it = irc_names.find(string(word.begin(), word.begin() + len));
+			if(it != irc_names.end()){
+				printf("Skipping name [%s]\n", it->c_str());
+				continue;
+			}
+
+			// add these 3 words as a new chain
+			add_chain(words);
+
+			// prepare for the next chain, if this ended a sentence start anew
+			if(word == "$"){
+				words[0] = "^";
+				words[1] = "^";
+			} else {
+				words[0] = move(words[1]);
+				words[1] = move(words[2]);
+			}
+		}
+
+		// add the final ending marker to the chain
+		word = "$";
+		if(words[1] != "^") add_chain(words);
+
 	}
-	
-	// add the final ending marker to the chain
-	word = "$";
-	if(words[1] != "^") add_chain(words);
 	
 	// send a message on a random chance
 	if(!quiet && random_num(msg_chance) == 0){
@@ -802,27 +822,27 @@ extern "C" void markov_read(const char* file){
 				c.count = stoul(word);
 				chains.emplace(key, c);
 			} else {
-				c.ptr = lookup_or_add_word(word);
+				c.idx = lookup_or_add_word(word);
 			}
 			count = !count;
 		}
 	}
 	
-	printf("Loaded %zu entries from chains.txt\n", word_map.size());
+	printf("Loaded %zu words, %zu chains.\n", word_storage.size(), chains.size());
 	
 	for(auto& p : chains){
-		if(*p.second.ptr != "$"){
-			Key key(p.first.word2, p.second.ptr);
+		if(get_word(p.second.idx) != "$"){
+			Key key(p.first.word2, p.second.idx);
 
 			auto it = chains.find(key);
 
 			if(it == chains.end()){
 				printf(
 					"WARN: fixing orphaned pair [%s, %s]\n", 
-					p.first.word2->c_str(),
-					p.second.ptr->c_str()
+					get_word(p.first.word2).c_str(),
+					get_word(p.second.idx).c_str()
 				);
-				p.second.ptr = lookup_or_add_word("$");
+				p.second.idx = lookup_or_add_word("$");
 			}
 		}
 	}
@@ -842,10 +862,10 @@ extern "C" void markov_write(const char* file){
 				out << line << endl;
 			}
 			line.clear();
-			line.append(*key.word1).append(1, ' ').append(*key.word2);
+			line.append(get_word(key.word1)).append(1, ' ').append(get_word(key.word2));
 		}
 		line.append(1, ' ')
-		    .append(*pair.second.ptr)
+		    .append(get_word(pair.second.idx))
 		    .append(1, ' ')
 		    .append(to_string(pair.second.count));
 	}
