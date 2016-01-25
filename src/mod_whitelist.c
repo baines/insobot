@@ -1,6 +1,7 @@
 #include "module.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static bool whitelist_init    (const IRCCoreCtx*);
 static void whitelist_msg     (const char*, const char*, const char*);
@@ -10,6 +11,7 @@ static void whitelist_mod_msg (const char*, const IRCModMsg*);
 IRCModuleCtx irc_mod_ctx = {
 	.name       = "whitelist",
 	.desc       = "Allow known users to access commands",
+	.flags      = IRC_MOD_GLOBAL, //FIXME should whitelist be per channel?
 	.on_init    = &whitelist_init,
 	.on_msg     = &whitelist_msg,
 	.on_mod_msg = &whitelist_mod_msg,
@@ -63,7 +65,8 @@ static void whitelist_mod_msg(const char* sender, const IRCModMsg* msg){
 
 		for(const char** str = wlist; *str; ++str){
 			if(strcmp(name, *str) == 0){
-				msg->callback(true, msg->arg);
+				printf("check_whitelist: %s found.\n", name);
+				msg->callback(true, msg->cb_arg);
 				break;
 			}
 		}

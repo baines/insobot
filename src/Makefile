@@ -5,7 +5,7 @@ module_out := $(patsubst %.c,../modules/%.so,$(module_src))
 
 all: ../insobot $(module_out)
 
-../insobot: insobot.c config.h
+../insobot: insobot.c config.h module.h
 	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl
 	
 ../modules/%.so: %.c config.h module.h

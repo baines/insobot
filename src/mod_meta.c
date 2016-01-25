@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
+#include "config.h"
 
 static void meta_msg   (const char*, const char*, const char*);
 static void meta_save  (void);
@@ -29,16 +30,21 @@ const IRCModuleCtx irc_mod_ctx = {
 };
 
 static const IRCCoreCtx* ctx;
-static const char** channels;
-static const char** modules;
 
-static const char*** enabled_mods_for_chan;
+static char** channels;
+static char*** enabled_mods_for_chan;
 
-static const char** get_enabled_modules(const char* chan){
+static char** get_enabled_modules(const char* chan){
 	for(int i = 0; i < sb_count(channels); ++i){
 		if(strcmp(channels[i], chan) == 0) return enabled_mods_for_chan[i];
 	}
 	return NULL;
+}
+
+static void free_all_strs(char** strs){
+	for(int i = 0; i < sb_count(strs); ++i){
+		free(strs[i]);
+	}
 }
 
 static bool reload_file(void){
@@ -63,32 +69,47 @@ static bool reload_file(void){
 
 	int chan_index = 0;
 
+	if(channels){
+		free_all_strs(channels);
+		sb_free(channels);
+		channels = NULL;
+	}
+
+	if(enabled_mods_for_chan){
+		for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
+			free_all_strs(enabled_mods_for_chan[i]);
+			sb_free(enabled_mods_for_chan[i]);
+		}
+		sb_free(enabled_mods_for_chan);
+		enabled_mods_for_chan = NULL;
+	}
+
 	while(line){
 		char* line_state = NULL;
 		char* word = strtok_r(line, " \t", &line_state);
 
-		sb_push(channels, word);
+		sb_push(channels, strdup(word));
 		sb_push(enabled_mods_for_chan, 0);
 
 		while((word = strtok_r(NULL, " \t", &line_state))){
-			sb_push(enabled_mods_for_chan[chan_index], word);	
+			sb_push(enabled_mods_for_chan[chan_index], strdup(word));
 		}
-		sb_push(enabled_mods_for_chan[chan_index], 0);
 
 		line = strtok_r(NULL, "\r\n", &state);
 		++chan_index;
 	}
 
-	sb_push(enabled_mods_for_chan, 0);
+	sb_free(file_contents);
 
 	//TODO: remove this debug?
 	int i = 0;
-	for(const char*** p = enabled_mods_for_chan; *p; ++p){
+	for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
+		char** mods = enabled_mods_for_chan[i];
 
-		printf("%s:\n", channels[i++]);
+		printf("%s:\n", channels[i]);
 
-		for(const char** q = *p; *q; ++q){
-			printf("\t%s\n", *q);
+		for(int j = 0; j < sb_count(mods); ++j){
+			printf("\t%s\n", mods[j]);
 		}
 	}
 
@@ -118,9 +139,9 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static const char** mod_find(const char** haystack, const char* needle){
-	for(; *haystack; ++haystack){
-		if(strcmp(*haystack, needle) == 0) return haystack;
+static char** mod_find(char** haystack, const char* needle){
+	for(int i = 0; i < sb_count(haystack); ++i){
+		if(strcmp(haystack[i], needle) == 0) return haystack + i;
 	}
 	return NULL;
 }
@@ -148,7 +169,10 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", NULL);
 
 	IRCModuleCtx** all_mods = ctx->get_modules();
-	const char** our_mods   = get_enabled_modules(chan);
+	char** our_mods   = get_enabled_modules(chan);
+
+	// this shouldn't happen, on_join should get the channel name before this can be called
+	if(!our_mods) return;
 
 	char buff[1024];
 	char *b = buff;
@@ -156,7 +180,6 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 
 	snprintf_chain(&b, &buflen, "Modules for %s: ", chan);
 
-	//TODO: fix when our_mods == NULL;
 	switch(i){
 		case CMD_MODULES: {
 			for(; *all_mods; ++all_mods){
@@ -179,7 +202,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 					if(mod_find(our_mods, requested_mod)){
 						ctx->send_msg(chan, "That module is already enabled here!");
 					} else {
-						sb_push(our_mods, requested_mod);
+						sb_push(our_mods, strdup(requested_mod));
 						ctx->send_msg(chan, "Enabled module %s.", requested_mod);
 					}
 				}
@@ -199,8 +222,9 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 			for(; *all_mods; ++all_mods){
 				if(strcmp((*all_mods)->name, requested_mod) == 0){
 					found = true;
-					const char** m = mod_find(our_mods, (*all_mods)->name);
+					char** m = mod_find(our_mods, (*all_mods)->name);
 					if(m){
+						free(*m);
 						memmove(m, m + 1, sb_count(our_mods) - (m - our_mods));
 						--stb__sbn(our_mods);
 						ctx->send_msg(chan, "Disabled module %s.", (*all_mods)->name);
@@ -217,16 +241,49 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 }
 
 static bool meta_check(const char* modname, const char* chan, int callback_id){
-	const char** mods = get_enabled_modules(chan);
+	char** mods = get_enabled_modules(chan);
 	return mods && mod_find(mods, modname);
 }
 
 static void meta_join(const char* chan, const char* name){
-	//TODO: check if name == botname, add channel to buffers.
-	//XXX: probably filter our own name at core level, to account for flaky servers like twitch
+	if(strcasecmp(name, BOT_NAME) == 0){
+		if(!get_enabled_modules(chan)){
+			sb_push(channels, strdup(chan));
+			sb_push(enabled_mods_for_chan, 0);
+		}
+	}
 }
 
 static void meta_save(void){
-	//TODO;
+	const char*  save_fname = ctx->get_datafile();
+	const size_t save_fsz   = strlen(save_fname);
+	const char   tmp_end[]  = ".XXXXXX";
+	char*        tmp_fname  = alloca(save_fsz + sizeof(tmp_end));
+	
+	memcpy(tmp_fname, save_fname, save_fsz);
+	memcpy(tmp_fname + save_fsz, tmp_end, sizeof(tmp_end));
+
+	int tmp_fd = mkstemp(tmp_fname);
+	if(tmp_fd < 0){
+		perror("mod_meta: error saving file!");
+		return;
+	}
+
+	FILE* tmp_file = fdopen(tmp_fd, "wb");
+
+	for(int i = 0; i < sb_count(channels); ++i){
+		fprintf(tmp_file, "%s\t", channels[i]);
+		for(int j = 0; j < sb_count(enabled_mods_for_chan[i]); ++j){
+			fprintf(tmp_file, "%s\t", enabled_mods_for_chan[i][j]);
+		}
+		fputc('\n', tmp_file);
+	}
+
+	fclose(tmp_file);
+
+	if(rename(tmp_fname, save_fname) < 0){
+		perror("mod_meta: error saving file!");
+	}
+
 }
 

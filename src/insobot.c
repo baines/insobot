@@ -32,7 +32,6 @@ static const char* env_else(const char* env, const char* def){
 	return c ? c : def;
 }
 
-
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
 	event_type     event,   \
@@ -142,6 +141,7 @@ static IRCModuleCtx** get_modules(void){
 
 static void join(const char* chan){
 	irc_cmd_join(irc_ctx, chan, NULL);
+	//TODO: send immediate join for our name
 }
 
 static void part(const char* chan){
@@ -161,7 +161,7 @@ static void send_msg(const char* chan, const char* fmt, ...){
 
 static void send_mod_msg(IRCModMsg* msg){
 	//FIXME: should mod_msg update the call stack?
-	for(Module* m = irc_modules; m < &sb_last(irc_modules); ++m){
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		const char* sender = sb_last(mod_call_stack)->ctx->name;
 		if(m->ctx->on_mod_msg) m->ctx->on_mod_msg(sender, msg);
 	}
@@ -171,17 +171,20 @@ static int check_cmds(const char* msg, ...) {
 	va_list v;
 	va_start(v, msg);
 
-	int count = 0;
+	int count = 0, result = -1;
 	const char* str;
 
 	while((str = va_arg(v, const char*))){
 		size_t sz = strlen(str);
 		if(strncmp(msg, str, sz) == 0){
-			return count;
+			result = count;
+			break;
 		}
 		++count;
 	}
-	return -1;
+	va_end(v);
+
+	return result;;
 }
 
 int main(int argc, char** argv){
@@ -359,7 +362,9 @@ int main(int argc, char** argv){
 	} while(running);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		sb_push(mod_call_stack, m);
 		if(m->ctx->on_save) m->ctx->on_save();
+		sb_pop(mod_call_stack);
 	}
 	
 	return 0;

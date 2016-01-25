@@ -28,6 +28,7 @@ typedef struct IRCModMsg_ {
 	intptr_t    cb_arg;
 } IRCModMsg;
 
+struct IRCCoreCtx_;
 typedef struct IRCCoreCtx_ IRCCoreCtx;
 
 // defined by a module to provide info & callbacks to the core.
@@ -61,7 +62,7 @@ typedef struct IRCModuleCtx_ {
 } IRCModuleCtx;
 
 // passed to modules to provide functions for them to use.
-typedef struct IRCCoreCtx_ {
+struct IRCCoreCtx_ {
 
 	const char*    (*get_username) (void);
 	const char*    (*get_datafile) (void);
@@ -71,7 +72,7 @@ typedef struct IRCCoreCtx_ {
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) WARN_FMT(2);
 	void           (*send_mod_msg) (IRCModMsg* msg);
 	int            (*check_cmds)   (const char* msg, ...) WARN_SENTINEL;
-
-} IRCCoreCtx;
+	//XXX: clang is dumb and ignores the sentinel attibute on function pointers?
+};
 
 #endif
