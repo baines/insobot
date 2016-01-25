@@ -34,9 +34,9 @@ static const IRCCoreCtx* ctx;
 static char** channels;
 static char*** enabled_mods_for_chan;
 
-static char** get_enabled_modules(const char* chan){
+static char*** get_enabled_modules(const char* chan){
 	for(int i = 0; i < sb_count(channels); ++i){
-		if(strcmp(channels[i], chan) == 0) return enabled_mods_for_chan[i];
+		if(strcmp(channels[i], chan) == 0) return enabled_mods_for_chan + i;
 	}
 	return NULL;
 }
@@ -168,11 +168,12 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF };
 	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", NULL);
 
-	IRCModuleCtx** all_mods = ctx->get_modules();
-	char** our_mods   = get_enabled_modules(chan);
+	IRCModuleCtx** all_mods   = ctx->get_modules();
+	char***        our_mods_p = get_enabled_modules(chan);
 
 	// this shouldn't happen, on_join should get the channel name before this can be called
-	if(!our_mods) return;
+	if(!our_mods_p) return;
+	char** our_mods = *our_mods_p;
 
 	char buff[1024];
 	char *b = buff;
@@ -241,8 +242,8 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 }
 
 static bool meta_check(const char* modname, const char* chan, int callback_id){
-	char** mods = get_enabled_modules(chan);
-	return mods && mod_find(mods, modname);
+	char*** mods = get_enabled_modules(chan);
+	return mods && mod_find(*mods, modname);
 }
 
 static void meta_join(const char* chan, const char* name){
