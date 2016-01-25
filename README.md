@@ -1,2 +1,2 @@
 # insobot
-markov chain bot
+wip modular version
