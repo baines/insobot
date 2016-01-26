@@ -1,11 +1,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <string.h>
 #include <errno.h>
 #include <err.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/inotify.h>
 #include <signal.h>
 #include <unistd.h>
 #include <limits.h>
@@ -20,14 +22,19 @@ typedef struct Module_ {
 	const char* lib_path;
 	void* lib_handle;
 	IRCModuleCtx* ctx;
+	bool needs_reload;
 } Module;
+
+struct INotifyInfo {
+	int fd, module_watch, data_watch;
+} inotify_info;
 
 static Module* irc_modules;
 static IRCModuleCtx** channel_modules;
 
-static const char *user, *pass, *serv, *chan, *port;
+static const char *user, *pass, *serv, *port;
 
-static const char* env_else(const char* env, const char* def){
+static inline const char* env_else(const char* env, const char* def){
 	const char* c = getenv(env);
 	return c ? c : def;
 }
@@ -58,7 +65,7 @@ static const char* env_else(const char* env, const char* def){
 static Module** mod_call_stack;
 
 IRC_STR_CALLBACK(on_connect) {
-	IRC_MOD_CALL_ALL(on_connect, ());
+	IRC_MOD_CALL_ALL(on_connect, (serv));
 }
 
 IRC_STR_CALLBACK(on_chat_msg) {
@@ -159,6 +166,10 @@ static void send_msg(const char* chan, const char* fmt, ...){
 	va_end(v);
 }
 
+static void send_raw(const char* raw){
+	irc_send_raw(irc_ctx, raw);
+}
+
 static void send_mod_msg(IRCModMsg* msg){
 	//FIXME: should mod_msg update the call stack?
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
@@ -185,6 +196,43 @@ static int check_cmds(const char* msg, ...) {
 	va_end(v);
 
 	return result;;
+}
+
+static void check_inotify(void){
+	char buff[sizeof(struct inotify_event) + NAME_MAX + 1];
+	char* p = buff;
+
+	ssize_t sz = read(inotify_info.fd, &buff, sizeof(buff));
+	while((p - buff) < sz){
+		struct inotify_event* ev = (struct inotify_event*)p;
+
+		if(ev->wd == inotify_info.module_watch){
+			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+				//XXX: requires basename not modify its arg, only GNU impl guarantees this
+				const char* mod_name = basename(m->lib_path);
+				if(strncmp(mod_name, ev->name, ev->len) == 0){
+					m->needs_reload = true;
+					break;
+				}
+			}
+		} else if(ev->wd == inotify_info.data_watch){
+			//TODO: notify modules their data file was modified
+			//XXX: avoid doing this when they save it themselves somehow...
+			fprintf(stderr, "The %s datafile got modified. TODO: do something...\n", ev->name);
+		}
+
+		p += (sizeof(struct inotify_event) + ev->len);
+	}
+
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		if(m->needs_reload){
+			const char* mod_name = basename(m->lib_path);
+			//TODO
+			fprintf(stderr, "This is the part where %s would be reloaded...\n", mod_name);
+			m->needs_reload = false;
+		}
+	}
+
 }
 
 static void do_module_save(Module* m){
@@ -219,7 +267,6 @@ int main(int argc, char** argv){
 	user = env_else("IRC_USER", BOT_NAME);
 	pass = env_else("IRC_PASS", BOT_PASS);
 	serv = env_else("IRC_SERV", "irc.nonexistent.domain");
-	chan = env_else("IRC_CHAN", "#nowhere");
 	port = env_else("IRC_PORT", "6667");
 	
 	char our_path[PATH_MAX];
@@ -234,12 +281,31 @@ int main(int argc, char** argv){
 		*our_path = '.';
 	}
 
-	const char suffix[] = "/modules/*.so";
-	if(path_end + sizeof(suffix) >= our_path + sizeof(our_path)){
+	const char in_mod_suffix[] = "/modules/";
+	const char in_dat_suffix[] = "/modules/data/";
+	const char glob_suffix[] = "/modules/*.so";
+
+	if(path_end + sizeof(in_dat_suffix) >= our_path + sizeof(our_path)){
 		errx(1, "Path too long!");
 	}
-	memcpy(path_end, suffix, sizeof(suffix));
+	inotify_info.fd = inotify_init1(IN_NONBLOCK);
+	
+	memcpy(path_end, in_mod_suffix, sizeof(in_mod_suffix));
+	inotify_info.module_watch = inotify_add_watch(
+		inotify_info.fd,
+		our_path,
+		IN_CREATE | IN_MODIFY | IN_MOVED_TO
+	);
 
+	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
+	inotify_info.data_watch = inotify_add_watch(
+		inotify_info.fd,
+		our_path,
+		IN_CREATE | IN_MODIFY | IN_MOVED_TO
+	);
+
+	memcpy(path_end, glob_suffix, sizeof(glob_suffix));
+	
 	glob_t glob_data = {};
 	int glob_ret = 0;
 
@@ -256,6 +322,7 @@ int main(int argc, char** argv){
 		.get_datafile = &get_datafile,
 		.get_modules  = &get_modules,
 		.send_msg     = &send_msg,
+		.send_raw     = &send_raw,
 		.send_mod_msg = &send_mod_msg,
 		.join         = &join,
 		.part         = &part,
@@ -265,7 +332,7 @@ int main(int argc, char** argv){
 	printf("Found %zu modules\n", glob_data.gl_pathc);
 
 	for(int i = 0; i < glob_data.gl_pathc; ++i){
-		Module m;
+		Module m = {};
 
 		void* handle = dlopen(glob_data.gl_pathv[i], RTLD_LAZY);
 		char* mname  = basename(glob_data.gl_pathv[i]); //XXX: relies on GNU version of basename?
@@ -310,6 +377,7 @@ int main(int argc, char** argv){
 	if(sb_count(irc_modules) == 0){
 		errx(1, "No modules could be loaded.");
 	}
+
 			
 	//TODO: qsort modules by priority
 	
@@ -331,7 +399,9 @@ int main(int argc, char** argv){
 		}
 				
 		while(running && irc_is_connected(irc_ctx)){
-		
+	
+			check_inotify();
+
 			int max_fd = 0;
 			fd_set in, out;
 	

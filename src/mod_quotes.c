@@ -3,7 +3,7 @@
 static void quotes_msg   (const char*, const char*, const char*);
 static void quotes_save  (FILE*);
 
-static IRCModuleCtx mod_ctx = {
+static IRCModuleCtx irc_mod_ctx = {
 	.name     = "quotes",
 	.desc     = "Saves per-channel quotes",
 	.on_msg   = &quotes_msg,
@@ -25,5 +25,5 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 }
 
 static void quotes_save(FILE* file){
-
+	
 }

@@ -44,7 +44,7 @@ typedef struct IRCModuleCtx_ {
 	unsigned int       flags;
 
 	// irc callbacks
-	void (*on_connect) (void);
+	void (*on_connect) (const char* serv);
 	void (*on_msg)     (const char* chan, const char* name, const char* msg);
 	void (*on_join)    (const char* chan, const char* name);
 	void (*on_part)    (const char* chan, const char* name);
@@ -53,6 +53,8 @@ typedef struct IRCModuleCtx_ {
 
 	// called to request the module saves any data it needs
 	void (*on_save)    (FILE* file);
+
+	//TODO: on_file_modified, inotify on modules/data dir
 
 	// called before other callbacks to allow per-channel modules
 	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);
@@ -71,6 +73,7 @@ struct IRCCoreCtx_ {
 	void           (*join)         (const char* chan);
 	void           (*part)         (const char* chan);
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) WARN_FMT(2);
+	void           (*send_raw)     (const char* raw);
 	void           (*send_mod_msg) (IRCModMsg* msg);
 	int            (*check_cmds)   (const char* msg, ...) WARN_SENTINEL;
 	//XXX: clang is dumb and ignores the sentinel attibute on function pointers?

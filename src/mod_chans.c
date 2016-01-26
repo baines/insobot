@@ -1,7 +1,9 @@
 #include "module.h"
+#include <stdlib.h>
+#include <string.h>
 
 static bool chans_init(const IRCCoreCtx* ctx);
-static void chans_connect(void);
+static void chans_connect(const char*);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "chans",
@@ -15,13 +17,35 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
+static inline const char* env_else(const char* env, const char* def){
+	const char* c = getenv(env);
+	return c ? c : def;
+}
+
 static bool chans_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return true;
 }
 
-static void chans_connect(void){
-	ctx->join("#test");
+static void chans_connect(const char* serv){
+	//TODO: read from file instead
+
+	const char* chans = env_else("IRC_CHAN", "#test");	
+
+	char *channels = strdup(chans),
+	     *state = NULL,
+	     *c = strtok_r(channels, ", ", &state);
+
+	if(strcasecmp(serv, "irc.twitch.tv") == 0 || getenv("IRC_DO_TWITCH_CAP")){
+		ctx->send_raw("CAP REQ :twitch.tv/membership");
+	}
+
+	do {
+		printf("Joining %s\n", c);
+		ctx->join(c);
+	} while((c = strtok_r(NULL, ", ", &state)));
+
+	free(channels);
 }
 
 /*
