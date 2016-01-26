@@ -97,10 +97,14 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		){
 			int len = title[1].rm_eo - title[1].rm_so, outlen = 0;
 
+			for(char* p = data + title[1].rm_so; p < data + title[1].rm_eo; ++p){
+				if(*p == '+') *p = ' ';
+			}
+
 			char* str = curl_easy_unescape(curl, data + title[1].rm_so, len, &outlen);
 
 			for(int i = 0; i < outlen; ++i){
-				if(!str[i] || str[i] == '+') str[i] = ' ';
+				if(!str[i]) str[i] = ' ';
 			}
 
 			ctx->send_msg(chan, "↑ YT Video: [%.*s]", outlen, str);
