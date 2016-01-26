@@ -9,7 +9,7 @@ all: ../insobot $(module_out)
 	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl
 	
 ../modules/%.so: %.c config.h module.h
-	$(CC) $(CFLAGS) -fPIC -shared $< -o $@
+	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -lcurl
 	
 clean:
 	rm -f ../insobot $(module_out) 

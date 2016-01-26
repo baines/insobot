@@ -149,8 +149,8 @@ static char** mod_find(char** haystack, const char* needle){
 static void meta_msg(const char* chan, const char* name, const char* msg){
 	assert(ctx);
 	
-	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF };
-	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", NULL);
+	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
+	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", "\\minfo", NULL);
 	if(i < 0) return;
 
 	const size_t msglen = strlen(msg);
@@ -235,6 +235,10 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 			if(!found){
 				ctx->send_msg(chan, "I haven't heard of that module...");
 			}
+		} break;
+
+		case CMD_MOD_INFO: {
+			//TODO: print desc
 		} break;
 	}
 }
