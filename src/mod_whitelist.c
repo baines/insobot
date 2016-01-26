@@ -5,7 +5,7 @@
 
 static bool whitelist_init    (const IRCCoreCtx*);
 static void whitelist_msg     (const char*, const char*, const char*);
-static void whitelist_save    (void);
+static void whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
 
 IRCModuleCtx irc_mod_ctx = {
@@ -55,7 +55,7 @@ static void whitelist_msg(const char* chan, const char* name, const char* msg){
 	}
 }
 
-static void whitelist_save(void){
+static void whitelist_save(FILE* file){
 	//TODO: write to file
 }
 

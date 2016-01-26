@@ -187,6 +187,30 @@ static int check_cmds(const char* msg, ...) {
 	return result;;
 }
 
+static void do_module_save(Module* m){
+	const char*  save_fname = get_datafile();
+	const size_t save_fsz   = strlen(save_fname);
+	const char   tmp_end[]  = ".XXXXXX";
+	char*        tmp_fname  = alloca(save_fsz + sizeof(tmp_end));
+
+	memcpy(tmp_fname, save_fname, save_fsz);
+	memcpy(tmp_fname + save_fsz, tmp_end, sizeof(tmp_end));
+
+	int tmp_fd = mkstemp(tmp_fname);
+	if(tmp_fd < 0){
+		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
+		return;
+	}
+
+	FILE* tmp_file = fdopen(tmp_fd, "wb");
+	m->ctx->on_save(tmp_file);
+	fclose(tmp_file);
+
+	if(rename(tmp_fname, save_fname) < 0){
+		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
+	}
+}
+
 int main(int argc, char** argv){
 
 	srand(time(0));
@@ -362,8 +386,9 @@ int main(int argc, char** argv){
 	} while(running);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		if(!m->ctx->on_save) continue;
 		sb_push(mod_call_stack, m);
-		if(m->ctx->on_save) m->ctx->on_save();
+		do_module_save(m);
 		sb_pop(mod_call_stack);
 	}
 	

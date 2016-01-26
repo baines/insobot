@@ -12,7 +12,7 @@
 #include "config.h"
 
 static void meta_msg   (const char*, const char*, const char*);
-static void meta_save  (void);
+static void meta_save  (FILE*);
 static bool meta_check (const char*, const char*, int);
 static bool meta_init  (const IRCCoreCtx*);
 static void meta_join  (const char*, const char*);
@@ -147,11 +147,13 @@ static char** mod_find(char** haystack, const char* needle){
 }
 
 static void meta_msg(const char* chan, const char* name, const char* msg){
-
 	assert(ctx);
+	
+	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF };
+	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", NULL);
+	if(i < 0) return;
 
 	const size_t msglen = strlen(msg);
-
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	
 	if(!has_cmd_perms){
@@ -164,9 +166,6 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	}
 
 	if(!has_cmd_perms) return;
-
-	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF };
-	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", NULL);
 
 	IRCModuleCtx** all_mods   = ctx->get_modules();
 	char***        our_mods_p = get_enabled_modules(chan);
@@ -226,8 +225,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 					char** m = mod_find(our_mods, (*all_mods)->name);
 					if(m){
 						free(*m);
-						memmove(m, m + 1, sb_count(our_mods) - (m - our_mods));
-						--stb__sbn(our_mods);
+						sb_erase(our_mods, m - our_mods);
 						ctx->send_msg(chan, "Disabled module %s.", (*all_mods)->name);
 					} else {
 						ctx->send_msg(chan, "That module is already disabled here!");
@@ -250,41 +248,19 @@ static void meta_join(const char* chan, const char* name){
 	if(strcasecmp(name, BOT_NAME) == 0){
 		if(!get_enabled_modules(chan)){
 			sb_push(channels, strdup(chan));
+			//TODO: add enabled-by-default modules?
 			sb_push(enabled_mods_for_chan, 0);
 		}
 	}
 }
 
-static void meta_save(void){
-	const char*  save_fname = ctx->get_datafile();
-	const size_t save_fsz   = strlen(save_fname);
-	const char   tmp_end[]  = ".XXXXXX";
-	char*        tmp_fname  = alloca(save_fsz + sizeof(tmp_end));
-	
-	memcpy(tmp_fname, save_fname, save_fsz);
-	memcpy(tmp_fname + save_fsz, tmp_end, sizeof(tmp_end));
-
-	int tmp_fd = mkstemp(tmp_fname);
-	if(tmp_fd < 0){
-		perror("mod_meta: error saving file!");
-		return;
-	}
-
-	FILE* tmp_file = fdopen(tmp_fd, "wb");
-
+static void meta_save(FILE* file){
 	for(int i = 0; i < sb_count(channels); ++i){
-		fprintf(tmp_file, "%s\t", channels[i]);
+		fputs(channels[i], file);
 		for(int j = 0; j < sb_count(enabled_mods_for_chan[i]); ++j){
-			fprintf(tmp_file, "%s\t", enabled_mods_for_chan[i][j]);
+			fprintf(file, "\t%s", enabled_mods_for_chan[i][j]);
 		}
-		fputc('\n', tmp_file);
+		fputc('\n', file);
 	}
-
-	fclose(tmp_file);
-
-	if(rename(tmp_fname, save_fname) < 0){
-		perror("mod_meta: error saving file!");
-	}
-
 }
 

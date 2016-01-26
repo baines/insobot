@@ -1,7 +1,7 @@
 #include "module.h"
 
 static void quotes_msg   (const char*, const char*, const char*);
-static void quotes_save  (void);
+static void quotes_save  (FILE*);
 
 static IRCModuleCtx mod_ctx = {
 	.name     = "quotes",
@@ -24,6 +24,6 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 
 }
 
-static void quotes_save(void){
+static void quotes_save(FILE* file){
 
 }

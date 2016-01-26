@@ -2,6 +2,7 @@
 #define INSOBOT_MODULE_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #define WARN_FMT(x)   __attribute__ ((format (printf, x, x+1))) 
 #define WARN_SENTINEL __attribute__ ((sentinel))
@@ -51,7 +52,7 @@ typedef struct IRCModuleCtx_ {
 	bool (*on_init)    (const IRCCoreCtx* ctx);
 
 	// called to request the module saves any data it needs
-	void (*on_save)    (void);
+	void (*on_save)    (FILE* file);
 
 	// called before other callbacks to allow per-channel modules
 	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);

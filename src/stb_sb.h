@@ -1,5 +1,5 @@
 // stb stretchy_buffer.h v1.02 nothings.org/stb
-// with custom addtions sb_end, sb_pop
+// with custom addtions sb_end, sb_pop, sb_erase
 
 #ifndef STB_STRETCHY_BUFFER_H_INCLUDED
 #define STB_STRETCHY_BUFFER_H_INCLUDED
@@ -13,6 +13,7 @@
 
 #define sb_end    stb_sb_end
 #define sb_pop    stb_sb_pop
+#define sb_erase  stb_sb_erase
 
 #endif
 
@@ -24,6 +25,7 @@
 
 #define stb_sb_end(a)          ((a) ? (a) + stb__sbn(a) : 0)
 #define stb_sb_pop(a)          ((a)[--stb__sbn(a)])
+#define stb_sb_erase(a,i)      ((a) ? memmove((a)+(i), (a)+(i)+1, (--stb__sbn(a))-(i)),0 : 0);
 
 #define stb__sbraw(a) ((int *) (a) - 2)
 #define stb__sbm(a)   stb__sbraw(a)[0]
