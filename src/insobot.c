@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 #include <errno.h>
 #include <err.h>
 #include <time.h>
@@ -20,7 +21,7 @@
 #include "stb_sb.h"
 
 typedef struct Module_ {
-	const char* lib_path;
+	char* lib_path;
 	void* lib_handle;
 	IRCModuleCtx* ctx;
 	bool needs_reload;
@@ -28,6 +29,7 @@ typedef struct Module_ {
 
 struct INotifyInfo {
 	int fd, module_watch, data_watch;
+	char *module_path, *data_path;
 } inotify_info;
 
 static Module* irc_modules;
@@ -205,44 +207,11 @@ static int check_cmds(const char* msg, ...) {
 	return result;;
 }
 
-static void check_inotify(void){
-	char buff[sizeof(struct inotify_event) + NAME_MAX + 1];
-	char* p = buff;
-
-	ssize_t sz = read(inotify_info.fd, &buff, sizeof(buff));
-	while((p - buff) < sz){
-		struct inotify_event* ev = (struct inotify_event*)p;
-
-		if(ev->wd == inotify_info.module_watch){
-			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-				//XXX: requires basename not modify its arg, only GNU impl guarantees this
-				const char* mod_name = basename(m->lib_path);
-				if(strncmp(mod_name, ev->name, ev->len) == 0){
-					m->needs_reload = true;
-					break;
-				}
-			}
-		} else if(ev->wd == inotify_info.data_watch){
-			//TODO: notify modules their data file was modified
-			//XXX: avoid doing this when they save it themselves somehow...
-			fprintf(stderr, "The %s datafile got modified. TODO: do something...\n", ev->name);
-		}
-
-		p += (sizeof(struct inotify_event) + ev->len);
-	}
-
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-		if(m->needs_reload){
-			const char* mod_name = basename(m->lib_path);
-			//TODO
-			fprintf(stderr, "This is the part where %s would be reloaded...\n", mod_name);
-			m->needs_reload = false;
-		}
-	}
-
-}
-
 static void do_module_save(Module* m){
+	if(!m->ctx || !m->ctx->on_save) return;
+	
+	sb_push(mod_call_stack, m);
+	
 	const char*  save_fname = get_datafile();
 	const size_t save_fsz   = strlen(save_fname);
 	const char   tmp_end[]  = ".XXXXXX";
@@ -263,6 +232,123 @@ static void do_module_save(Module* m){
 
 	if(rename(tmp_fname, save_fname) < 0){
 		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
+	}
+	
+	sb_pop(mod_call_stack);
+}
+
+static void check_inotify(const IRCCoreCtx* core_ctx){
+	char buff[sizeof(struct inotify_event) + NAME_MAX + 1];
+	char* p = buff;
+
+	//TODO: clean this ugly function up & merge common code with the initial loading in main
+
+	ssize_t sz = read(inotify_info.fd, &buff, sizeof(buff));
+	while((p - buff) < sz){
+		struct inotify_event* ev = (struct inotify_event*)p;
+
+		if(ev->wd == inotify_info.module_watch){
+
+			bool module_currently_loaded = false;
+			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+				//XXX: requires basename not modify its arg, only GNU impl guarantees this
+				const char* mod_name = basename(m->lib_path);
+				if(strncmp(mod_name, ev->name, ev->len) == 0){
+					m->needs_reload = true;
+					module_currently_loaded = true;
+					break;
+				}
+			}
+
+			if(!module_currently_loaded){
+				char full_path[PATH_MAX];
+				size_t base_len = strlen(inotify_info.module_path);
+
+				assert(base_len + ev->len + 1 < PATH_MAX);
+
+				memcpy(full_path, inotify_info.module_path, base_len);
+				memcpy(full_path + base_len, ev->name, ev->len);
+				full_path[base_len + ev->len] = 0;
+
+				Module new_mod = {
+					.lib_path = strdup(full_path),
+					.needs_reload = true,
+				};
+
+				sb_push(irc_modules, new_mod);
+			}
+		} else if(ev->wd == inotify_info.data_watch){
+			//TODO: notify modules their data file was modified
+			//XXX: avoid doing this when they save it themselves somehow...
+			fprintf(stderr, "The %s datafile got modified. TODO: do something...\n", ev->name);
+		}
+
+		p += (sizeof(struct inotify_event) + ev->len);
+	}
+
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		if(m->needs_reload){
+			m->needs_reload = false;
+			
+			const char* mod_name = basename(m->lib_path);
+			fprintf(stderr, "Reloading module %s...\n", mod_name);
+
+			bool success = true;
+
+			do_module_save(m);
+			if(m->lib_handle){
+				dlclose(m->lib_handle);
+			}
+			
+			m->lib_handle = dlopen(m->lib_path, RTLD_LAZY);
+			if(!m->lib_handle){
+				fprintf(stderr, "Error reloading module: %s\n", dlerror());
+				success = false;
+			}
+
+			IRCModuleCtx* prev_ctx = m->ctx;
+
+			m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
+			if(!m->ctx){
+				fprintf(stderr, "Can't reload %s, no irc_mod_ctx\n", basename(m->lib_path));
+				dlclose(m->lib_handle);
+				success = false;
+			}
+
+			if(success){
+				if(m->ctx->on_init){
+					//TODO: check return value
+					m->ctx->on_init(core_ctx);
+				}
+
+				bool found_ctx = false;
+				for(IRCModuleCtx** c = channel_modules; *c; ++c){
+					if(*c == prev_ctx){
+						*c = m->ctx;
+						found_ctx = true;
+						break;
+					}
+				}
+
+				if(!found_ctx){
+					sb_last(channel_modules) = m->ctx;
+					sb_push(channel_modules, 0);
+				}
+
+				fprintf(stderr, "Reload successful.\n");
+			} else {
+				for(IRCModuleCtx** c = channel_modules; *c; ++c){
+					if(*c == prev_ctx){
+						sb_erase(channel_modules, c - channel_modules);
+						break;
+					}
+				}
+
+				free(m->lib_path);
+				sb_erase(irc_modules, m - irc_modules);
+				--m;
+			}
+		}
 	}
 }
 
@@ -298,6 +384,7 @@ int main(int argc, char** argv){
 	inotify_info.fd = inotify_init1(IN_NONBLOCK);
 	
 	memcpy(path_end, in_mod_suffix, sizeof(in_mod_suffix));
+	inotify_info.module_path  = strdup(our_path);
 	inotify_info.module_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
@@ -305,6 +392,7 @@ int main(int argc, char** argv){
 	);
 
 	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
+	inotify_info.data_path  = strdup(our_path);
 	inotify_info.data_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
@@ -407,7 +495,7 @@ int main(int argc, char** argv){
 				
 		while(running && irc_is_connected(irc_ctx)){
 	
-			check_inotify();
+			check_inotify(&core_ctx);
 
 			int max_fd = 0;
 			fd_set in, out;
@@ -463,10 +551,6 @@ int main(int argc, char** argv){
 	} while(running);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-		if(!m->ctx->on_save) continue;
-		sb_push(mod_call_stack, m);
-		do_module_save(m);
-		sb_pop(mod_call_stack);
 	}
 	
 	return 0;

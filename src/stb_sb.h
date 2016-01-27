@@ -25,7 +25,7 @@
 
 #define stb_sb_end(a)          ((a) ? (a) + stb__sbn(a) : 0)
 #define stb_sb_pop(a)          ((a)[--stb__sbn(a)])
-#define stb_sb_erase(a,i)      ((a) ? memmove((a)+(i), (a)+(i)+1, (--stb__sbn(a))-(i)),0 : 0);
+#define stb_sb_erase(a,i)      ((a) ? memmove((a)+(i), (a)+(i)+1, sizeof(*(a))*((--stb__sbn(a))-(i))),0 : 0);
 
 #define stb__sbraw(a) ((int *) (a) - 2)
 #define stb__sbm(a)   stb__sbraw(a)[0]

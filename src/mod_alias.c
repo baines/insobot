@@ -32,10 +32,9 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static void do_alias_cmd(const char* chan, const char* name, const char* msg, int cmd){
+static void do_alias_cmd(const char* chan, const char* name, const char* msg, size_t msg_len, int cmd){
 
 	enum { CMD_ALIAS_ADD, CMD_ALIAS_DEL };
-	size_t msglen = strlen(msg);
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	if(!has_cmd_perms){
@@ -51,7 +50,7 @@ static void do_alias_cmd(const char* chan, const char* name, const char* msg, in
 	switch(cmd){
 		case CMD_ALIAS_ADD: {
 			const char* args = msg + sizeof("\\alias");
-			if(args - msg > msglen || !isalnum(*args)) goto usage_add;
+			if(args - msg > msg_len || !isalnum(*args)) goto usage_add;
 
 			const char* space = strchr(args, ' ');
 			if(!space) goto usage_add;
@@ -78,7 +77,7 @@ static void do_alias_cmd(const char* chan, const char* name, const char* msg, in
 
 		case CMD_ALIAS_DEL: {
 			const char* args = msg + sizeof("\\unalias");
-			if(args - msg > msglen || !isalnum(*args)) goto usage_del;
+			if(args - msg > msg_len || !isalnum(*args)) goto usage_del;
 
 			for(int i = 0; i < sb_count(alias_keys); ++i){
 				if(strcasecmp(args, alias_keys[i]) == 0){
@@ -106,29 +105,51 @@ usage_del:
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
 
+	size_t msg_len = strlen(msg);
+	
 	int i = ctx->check_cmds(msg, "\\alias", "\\unalias", NULL);
 	if(i >= 0){
 
-		do_alias_cmd(chan, name, msg, i);
+		do_alias_cmd(chan, name, msg, msg_len, i);
 
 	} else if(*msg == '!'){
 		
 		int index = -1;
+		const char* arg = NULL;
+		size_t arg_len = 0;
+
 		for(int i = 0; i < sb_count(alias_keys); ++i){
-			if(strcmp(msg + 1, alias_keys[i]) == 0){
+			size_t alias_len = strlen(alias_keys[i]);
+
+			if(strncmp(msg + 1, alias_keys[i], alias_len) == 0){
 				index = i;
+				arg = msg + alias_len + 1;
+
+				while(*arg == ' '){
+					++arg;
+				}
+
+				if(*arg){
+					arg_len = strlen(arg);
+				}
+				
 				break;
 			}
 		}
 		if(index < 0) return;
 
-		size_t name_sz = strlen(name);
+		size_t name_len = strlen(name);
 		char* msg_buf = NULL;
 
 		//TODO: add %a for args
 		for(const char* str = alias_vals[index]; *str; ++str){
 			if(*str == '%' && *(str + 1) == 't'){
-				memcpy(sb_add(msg_buf, name_sz), name, name_sz);
+				memcpy(sb_add(msg_buf, name_len), name, name_len);
+				++str;
+			} else if(*str == '%' && *(str + 1) == 'a'){
+				if(arg && *arg && arg_len){
+					memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
+				}
 				++str;
 			} else {
 				sb_push(msg_buf, *str);
