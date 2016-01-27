@@ -1,4 +1,3 @@
-#include <libircclient.h>
 #include <map>
 #include <unordered_map>
 #include <set>
@@ -14,7 +13,9 @@
 #include <climits>
 #include <cassert>
 #include <list>
+#include <ext/stdio_filebuf.h>
 #include "config.h"
+#include "module.h"
 
 /* Current Info:
 
@@ -49,10 +50,12 @@
 
 using namespace std;
 
-vector<string> word_storage;
-unordered_multimap<size_t, uint16_t> word_map;
+static const IRCCoreCtx* ctx;
 
-string& get_word(uint32_t i){
+static vector<string> word_storage;
+static unordered_multimap<size_t, uint16_t> word_map;
+
+static string& get_word(uint32_t i){
 	return word_storage[i];
 }
 
@@ -91,30 +94,30 @@ struct Key {
 	}
 };
 
-multimap<Key, Chain> chains;
+static multimap<Key, Chain> chains;
 
 // store names to avoid recording them in the chains.
-unordered_set<string> irc_names;
+static unordered_set<string> irc_names;
 
 // 1 in 200 chance (0.5%) to speak, see \gap command to change at runtime.
-size_t msg_chance = 200;
+static size_t msg_chance = 200;
 
-size_t max_chain_len = 15;
+static size_t max_chain_len = 15;
 
-hash<string> hash_fn;
+static hash<string> hash_fn;
 
-time_t last_msg_time = 0;
-time_t q_timer = 0;
+static time_t last_msg_time = 0;
+static time_t q_timer = 0;
 
-size_t recent_hashes[256] = {};
-size_t rh_index = 0;
+static size_t recent_hashes[256] = {};
+static size_t rh_index = 0;
 
 // use the c++ random stuff since rand()%X has some bias
 static random_device dev;
 static default_random_engine rng;
 static bool seeded = false;
 
-size_t random_num(size_t limit){
+static size_t random_num(size_t limit){
 	
 	if(!seeded){
 		seeded = true;
@@ -133,12 +136,12 @@ static constexpr size_t arrsize(const T (&arr)[N]){
 }
 
 // add the hash of a recently said sentence to avoid repetitions.
-void add_hash(const string& word){
+static void add_hash(const string& word){
 	recent_hashes[rh_index] = hash_fn(word);
 	rh_index = (rh_index + 1) % arrsize(recent_hashes);
 }
 
-void fix_narcissism(string nick, string& word){
+static void fix_narcissism(string nick, string& word){
 	nick.append(" is");
 	
 	string replacement;
@@ -157,7 +160,7 @@ void fix_narcissism(string nick, string& word){
 	}
 }
 
-uint32_t lookup_or_add_word(const string& s){
+static uint32_t lookup_or_add_word(const string& s){
 	bool found = false;
 	auto p = word_map.equal_range(hash_fn(s));
 	
@@ -202,7 +205,7 @@ bool lookup_key(const string& a, const string& b, Key& out){
 	return false;
 }
 
-void replace_all(string& str, const string& from, const string& to){
+static void replace_all(string& str, const string& from, const string& to){
 	size_t i = 0;
 	while(i = str.find(from, i), i != string::npos){
 		str.replace(i, from.size(), to);
@@ -210,13 +213,13 @@ void replace_all(string& str, const string& from, const string& to){
 	}
 }
 
-void filter_profanity(string& s){
+static void filter_profanity(string& s){
 	replace_all(s, "fuck", "f***");
 	replace_all(s, "shit", "s***");
 	replace_all(s, "cunt", "c***");
 }
 
-string markov_gen(){
+static string markov_gen(){
 	
 	Key key;
 	if(!lookup_key("^", "^", key)){
@@ -296,7 +299,7 @@ string markov_gen(){
 	return msg;
 }
 
-string markov_get_punct(){
+static string markov_get_punct(){
 
 	size_t val = random_num(100);
 	
@@ -309,7 +312,7 @@ string markov_get_punct(){
 	if(val == 99) return ". Kappa";
 }
 
-bool check_dup(const string msg){
+static bool check_dup(const string msg){
 	if(find(begin(recent_hashes), end(recent_hashes), hash_fn(msg)) != end(recent_hashes)){
 		printf("~~~ Skipping duplicate msg [%s]\n", msg.c_str());
 		return true;
@@ -317,18 +320,18 @@ bool check_dup(const string msg){
 	return false;
 }
 
-void irc_send_ratelimited(irc_session_t* s, const char* chan, const string& msg){
+static void irc_send_ratelimited(const char* chan, const string& msg){
 	time_t now = time(0);
 	
 	if(strcmp(chan, "#" BOT_OWNER) != 0 && (now - last_msg_time) < 5){
 		puts("Cancelling msg send: too soon.");
 	} else {
-		irc_cmd_msg(s, chan, msg.c_str());
+		ctx->send_msg(chan, "%s", msg.c_str());
 		last_msg_time = now;
 	}
 }
 
-bool markov_gen_formatted(string& msg){
+static bool markov_gen_formatted(string& msg){
 	int val = random_num(15);
 	int num_sentences = val < 10 ? 1
 	                  : val < 14 ? 2
@@ -363,24 +366,24 @@ bool markov_gen_formatted(string& msg){
 	return true;
 }
 
-void markov_send(irc_session_t* s, const char* chan){
+static void markov_send(const char* chan){
 	string msg;
 	if(!markov_gen_formatted(msg)) return;
 
 	printf("!!! Sending msg: [%s]\n", msg.c_str());
-	irc_send_ratelimited(s, chan, msg);
+	irc_send_ratelimited(chan, msg);
 }
 
-void markov_pose_q(irc_session_t* s, const char* chan){
+static void markov_pose_q(const char* chan){
 	string msg = "Q: ";
 	if(!markov_gen_formatted(msg)) return;
 	msg.back() = '?';
 		
 	printf("!!! Sending Q: [%s]\n", msg.c_str());
-	irc_send_ratelimited(s, chan, msg);
+	irc_send_ratelimited(chan, msg);
 }
 
-void markov_reply(irc_session_t* s, const char* chan, const char* nick){
+static void markov_reply(const char* chan, const char* nick){
 
 	// don't always reply
 	if(random_num(2) == 0){
@@ -393,10 +396,10 @@ void markov_reply(irc_session_t* s, const char* chan, const char* nick){
 	if(!markov_gen_formatted(msg)) return;
 	
 	printf("!!! Sending reply: [%s]\n", msg.c_str());
-	irc_send_ratelimited(s, chan, msg);
+	irc_send_ratelimited(chan, msg);
 }
 
-bool markov_unlink(const string& a, const string& b){
+static bool markov_unlink(const string& a, const string& b){
 
 	uint32_t a_idx = lookup_or_add_word(a),
 	         b_idx = lookup_or_add_word(b);
@@ -416,7 +419,7 @@ bool markov_unlink(const string& a, const string& b){
 }
 
 //FIXME: this can create orphan words if their only link was to the removed word.
-void markov_remove(const char* word){
+static void markov_remove(const char* word){
 
 	uint32_t idx = lookup_or_add_word(word);
 
@@ -429,7 +432,7 @@ void markov_remove(const char* word){
 	}
 }
 
-void markov_fix(const string& word, const char* fix){
+static void markov_fix(const string& word, const char* fix){
 	uint32_t fix_idx = lookup_or_add_word(word);
 	get_word(fix_idx) = fix;
 	
@@ -444,9 +447,7 @@ void markov_fix(const string& word, const char* fix){
 	word_map.emplace(hash_fn(word), fix_idx);
 }
 
-extern "C" void markov_write(const char* file);
-
-extern "C" void markov_add_name(const char* name){
+static void markov_add_name(const char* chan, const char* name){
 
 	// keep our own name for strange 3rd person sentences...
 	if(strcasecmp(name, BOT_NAME) == 0) return;
@@ -457,12 +458,7 @@ extern "C" void markov_add_name(const char* name){
 	}
 }
 
-extern "C" void markov_del_name(const char* name){
-	//printf("Removing name [%s]\n", name);
-	//irc_names.erase(name);
-}
-
-void add_chain(string (words)[3]){
+static void add_chain(string (words)[3]){
 	fprintf(
 		stderr,
 		"Adding [%s, %s] -> [%s]\n",
@@ -493,7 +489,7 @@ void add_chain(string (words)[3]){
 };
 
 // remove annoying words that occur due to removing punctuation from emoticons
-bool blacklisted(const string& word){
+static bool blacklisted(const string& word){
 	for(auto* w : { "p", "d", "b", "o", "-p", "-d", "-b", "-o" }){
 		if(word == w){
 			return true;
@@ -503,7 +499,9 @@ bool blacklisted(const string& word){
 	return false;
 }
 
-bool parse_cmd(const string& msg, string cmd, string* args, size_t num_args){
+static void markov_write(FILE* file);
+
+static bool parse_cmd(const string& msg, string cmd, string* args, size_t num_args){
 	cmd.insert(0, 1, '\\');
 	if(msg.find(cmd) != 0) return false;
 	
@@ -522,8 +520,7 @@ bool parse_cmd(const string& msg, string cmd, string* args, size_t num_args){
 	return true;
 }
 
-extern "C"
-void markov_recv(irc_session_t* s, const char* chan, const char* nick, const char* m){
+static void markov_msg(const char* chan, const char* nick, const char* m){
 	bool quiet = false,
 	     skip_chain = false;
 
@@ -564,7 +561,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 			msg_chance = max<int>(1, strtol(msg.c_str() + 5, &end, 10));
 		}
 		string response = "@" BOT_OWNER " gap=" + to_string(msg_chance);
-		irc_cmd_msg(s, chan, response.c_str());
+		ctx->send_msg(chan, "%s", response.c_str());
 		return;
 	}
 	
@@ -576,7 +573,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 			max_chain_len = max<int>(1, strtol(msg.c_str() + 5, &end, 10));
 		}
 		string response = "@" BOT_OWNER " max=" + to_string(max_chain_len);
-		irc_cmd_msg(s, chan, response.c_str());
+		ctx->send_msg(chan, "%s", response.c_str());
 		return;
 	}
 
@@ -585,8 +582,10 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	if(strcasecmp(nick, BOT_OWNER) == 0
 	&& msg.compare("\\save") == 0){
 		string filename = "chains." + to_string(time(0)) + ".txt";
-		markov_write(filename.c_str());
-		irc_cmd_msg(s, chan, "@" BOT_OWNER " k.");
+		FILE* f = fopen(filename.c_str(), "wb");
+		markov_write(f);
+		fclose(f);
+		ctx->send_msg(chan, "%s", "@" BOT_OWNER " k.");
 		return;
 	}
 
@@ -595,7 +594,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	&& msg.size() > 4
 	&& msg.find("\\rm") == 0){
 		markov_remove(msg.c_str() + 4);
-		irc_cmd_msg(s, chan, "@" BOT_OWNER " k.");
+		ctx->send_msg(chan, "%s", "@" BOT_OWNER " k.");
 		return;
 	}
 	
@@ -603,9 +602,9 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	&& msg.size() > 4
 	&& msg.find("\\ne") == 0){
 		if(markov_unlink(msg.c_str() + 4, "$")){
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " k.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " k.");
 		} else {
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " nuh-uh.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " nuh-uh.");
 		}
 		return;
 	}
@@ -617,9 +616,9 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 		if(space != string::npos && markov_unlink(
 			string(msg.c_str() + 8, msg.c_str() + space), msg.c_str() + space + 1
 		)){
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " k.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " k.");
 		} else {
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " nuh-uh.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " nuh-uh.");
 		}
 		return;
 	}
@@ -633,9 +632,9 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 				string(msg.c_str() + 5, msg.c_str() + space),
 				msg.c_str() + space + 1
 			);
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " k.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " k.");
 		} else {
-			irc_cmd_msg(s, chan, "@" BOT_OWNER " nuh-uh.");
+			ctx->send_msg(chan, "%s", "@" BOT_OWNER " nuh-uh.");
 		}
 		return;
 	}
@@ -655,7 +654,7 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	if(msg.compare("\\ask") == 0
 	&& (strcasecmp(nick, BOT_OWNER) == 0 || time(0) - q_timer > 300)){
 		q_timer = time(0);
-		markov_pose_q(s, chan);
+		markov_pose_q(chan);
 		return;
 	}
 	
@@ -663,14 +662,14 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	if(msg.compare("\\say") == 0
 	&& (strcasecmp(nick, BOT_OWNER) == 0 || time(0) - q_timer > 300)){
 		q_timer = time(0);
-		markov_send(s, chan);
+		markov_send(chan);
 		return;
 	}
 
 	if(msg == "\\status"){
 		char buffer[256];
 		snprintf(buffer, sizeof(buffer), "Greetings human. I know %zu unique words, and %zu word links. http://github.com/insofaras/insobot", word_storage.size(), chains.size());
-		irc_send_ratelimited(s, chan, buffer);
+		irc_send_ratelimited(chan, buffer);
 		return;
 	}
 	
@@ -679,14 +678,14 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	&& strcasecmp(nick, "hmh_bot") == 0
 	&& msg.find("prestream q&a.") == 0
 	&& random_num(2) == 0){
-		markov_pose_q(s, chan);
+		markov_pose_q(chan);
 		quiet = true;
 	}
 	
 	// speak when we are spoken to
 	if(!msg.empty() && (msg.find("@" BOT_NAME) != string::npos
 	|| msg.find(BOT_NAME ":") == 0)){
-		markov_reply(s, chan, nick);
+		markov_reply(chan, nick);
 		quiet = true;
 	}
 	
@@ -696,7 +695,9 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	}
 
 	// add the name of the list of names to avoid recording
-	markov_add_name(nick);
+	markov_add_name(nullptr, nick);
+
+	if(*m == '\\') skip_chain = true;
 	
 	if(!skip_chain){
 	
@@ -797,11 +798,11 @@ void markov_recv(irc_session_t* s, const char* chan, const char* nick, const cha
 	
 	// send a message on a random chance
 	if(!quiet && random_num(msg_chance) == 0){
-		markov_send(s, chan);
+		markov_send(chan);
 	}
 }
 
-extern "C" void markov_read(const char* file){
+static void markov_read(const char* file){
 
 	ifstream in(file);
 	string line;
@@ -848,9 +849,11 @@ extern "C" void markov_read(const char* file){
 	}
 }
 
-extern "C" void markov_write(const char* file){
+static void markov_write(FILE* file){
 
-	ofstream out(file);
+	__gnu_cxx::stdio_filebuf<char> buf(file, std::ios::out);
+
+	ostream out(&buf);
 	string line;
 	Key key;
 	
@@ -872,4 +875,24 @@ extern "C" void markov_write(const char* file){
 	out << line << endl;
 }
 
+
+static bool markov_init(const IRCCoreCtx* _ctx){
+	ctx = _ctx;
+	markov_read(ctx->get_datafile());
+	return true;
+}
+
+// no designated initializer in C++ :(
+extern "C" const IRCModuleCtx irc_mod_ctx = {
+	"markov",
+	"Occasionally say something incomprehensible",
+	0,
+	IRC_MOD_DEFAULT,
+	nullptr,
+	&markov_msg,
+	&markov_add_name,
+	nullptr,
+	&markov_init,
+	&markov_write
+};
 

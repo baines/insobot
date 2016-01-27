@@ -9,9 +9,7 @@
 
 // used for on_meta callback, which determines if the callback will be called or not.
 enum  {
-	IRC_CB_MOD_LOADED,
 	IRC_CB_MSG,
-	IRC_CB_CONNECT,
 	IRC_CB_JOIN,
 	IRC_CB_PART,
 };

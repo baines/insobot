@@ -31,6 +31,8 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
+//FIXME: XXX: fix use after free when realloc moves ptrs around!!!
+
 static char** channels;
 static char*** enabled_mods_for_chan;
 

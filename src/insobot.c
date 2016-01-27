@@ -65,7 +65,28 @@ static inline const char* env_else(const char* env, const char* def){
 		IRC_MOD_CALL(m, ptr, args);\
 	}
 
+#define IRC_MOD_CALL_ALL_CHECK(ptr, args, id) \
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){\
+		if((m->ctx->flags & IRC_MOD_GLOBAL) || irc_check_perms(m->ctx->name, params[0], id)){\
+			IRC_MOD_CALL(m, ptr, args);\
+		}\
+	}
+
 static Module** mod_call_stack;
+
+static bool irc_check_perms(const char* mod, const char* chan, int id){
+	bool ret = true;
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		if(m->ctx->on_meta){
+			sb_push(mod_call_stack, m);
+			bool r = m->ctx->on_meta(mod, chan, id);
+			ret = ret & r;
+			printf("checking %s:%s:%d --> %d\n", mod, chan, id, ret);
+			sb_pop(mod_call_stack);
+		}
+	}
+	return ret;
+}
 
 IRC_STR_CALLBACK(on_connect) {
 	IRC_MOD_CALL_ALL(on_connect, (serv));
@@ -73,18 +94,18 @@ IRC_STR_CALLBACK(on_connect) {
 
 IRC_STR_CALLBACK(on_chat_msg) {
 	if(count < 2 || !params[0] || !params[1]) return;
-	IRC_MOD_CALL_ALL(on_msg, (params[0], origin, params[1]));
+	IRC_MOD_CALL_ALL_CHECK(on_msg, (params[0], origin, params[1]), IRC_CB_MSG);
 }
 
 IRC_STR_CALLBACK(on_join) {
 	if(count < 1 || !origin || !params[0]) return;
 	fprintf(stderr, "Join: %s %s\n", params[0], origin);
-	IRC_MOD_CALL_ALL(on_join, (params[0], origin));
+	IRC_MOD_CALL_ALL_CHECK(on_join, (params[0], origin), IRC_CB_JOIN);
 }
 
 IRC_STR_CALLBACK(on_part) {
 	if(count < 1 || !origin || !params[0]) return;
-	IRC_MOD_CALL_ALL(on_part, (params[0], origin));
+	IRC_MOD_CALL_ALL_CHECK(on_part, (params[0], origin), IRC_CB_PART);
 }
 
 static struct timeval idle_time = {};
@@ -551,6 +572,7 @@ int main(int argc, char** argv){
 	} while(running);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		do_module_save(m);
 	}
 	
 	return 0;
