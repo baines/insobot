@@ -244,17 +244,16 @@ static void do_module_save(Module* m){
 	int tmp_fd = mkstemp(tmp_fname);
 	if(tmp_fd < 0){
 		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
-		return;
+	} else {
+		FILE* tmp_file = fdopen(tmp_fd, "wb");
+		m->ctx->on_save(tmp_file);
+		fclose(tmp_file);
+
+		if(rename(tmp_fname, save_fname) < 0){
+			fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
+		}
 	}
 
-	FILE* tmp_file = fdopen(tmp_fd, "wb");
-	m->ctx->on_save(tmp_file);
-	fclose(tmp_file);
-
-	if(rename(tmp_fname, save_fname) < 0){
-		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
-	}
-	
 	sb_pop(mod_call_stack);
 }
 
@@ -321,39 +320,43 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 				dlclose(m->lib_handle);
 			}
 			
+			IRCModuleCtx* prev_ctx = m->ctx;
+
 			m->lib_handle = dlopen(m->lib_path, RTLD_LAZY);
 			if(!m->lib_handle){
 				fprintf(stderr, "Error reloading module: %s\n", dlerror());
 				success = false;
-			}
-
-			IRCModuleCtx* prev_ctx = m->ctx;
-
-			m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
-			if(!m->ctx){
-				fprintf(stderr, "Can't reload %s, no irc_mod_ctx\n", basename(m->lib_path));
-				dlclose(m->lib_handle);
-				success = false;
+			} else {
+				m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
+				if(!m->ctx){
+					fprintf(stderr, "Can't reload %s, no irc_mod_ctx\n", basename(m->lib_path));
+					dlclose(m->lib_handle);
+					success = false;
+				}
 			}
 
 			if(success){
 				if(m->ctx->on_init){
 					//TODO: check return value
+					sb_push(mod_call_stack, m);
 					m->ctx->on_init(core_ctx);
+					sb_pop(mod_call_stack);
 				}
 
-				bool found_ctx = false;
-				for(IRCModuleCtx** c = channel_modules; *c; ++c){
-					if(*c == prev_ctx){
-						*c = m->ctx;
-						found_ctx = true;
-						break;
+				if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
+					bool found_ctx = false;
+					for(IRCModuleCtx** c = channel_modules; *c; ++c){
+						if(*c == prev_ctx){
+							*c = m->ctx;
+							found_ctx = true;
+							break;
+						}
 					}
-				}
 
-				if(!found_ctx){
-					sb_last(channel_modules) = m->ctx;
-					sb_push(channel_modules, 0);
+					if(!found_ctx){
+						sb_last(channel_modules) = m->ctx;
+						sb_push(channel_modules, 0);
+					}
 				}
 
 				fprintf(stderr, "Reload successful.\n");
@@ -397,7 +400,7 @@ int main(int argc, char** argv){
 
 	const char in_mod_suffix[] = "/modules/";
 	const char in_dat_suffix[] = "/modules/data/";
-	const char glob_suffix[] = "/modules/*.so";
+	const char glob_suffix[]   = "/modules/*.so";
 
 	if(path_end + sizeof(in_dat_suffix) >= our_path + sizeof(our_path)){
 		errx(1, "Path too long!");

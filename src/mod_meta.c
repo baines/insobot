@@ -31,7 +31,7 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-//FIXME: XXX: fix use after free when realloc moves ptrs around!!!
+//FIXME: There might be realloc / pointer invalidation issues still in here somewhere...
 
 static char** channels;
 static char*** enabled_mods_for_chan;
@@ -169,16 +169,14 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 
 	if(!has_cmd_perms) return;
 
-	IRCModuleCtx** all_mods   = ctx->get_modules();
-	char***        our_mods_p = get_enabled_modules(chan);
+	IRCModuleCtx** all_mods = ctx->get_modules();
+	char***        our_mods = get_enabled_modules(chan);
 
 	// this shouldn't happen, on_join should get the channel name before this can be called
-	if(!our_mods_p){
+	if(!*our_mods){
 		fprintf(stderr, "BUG: mod_meta.c: %s isn't on our list. Fix it!\n", chan);
 		return;
 	}
-
-	char** our_mods = *our_mods_p;
 
 	char buff[1024];
 	char *b = buff;
@@ -189,7 +187,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	switch(i){
 		case CMD_MODULES: {
 			for(; *all_mods; ++all_mods){
-				const char* box = mod_find(our_mods, (*all_mods)->name) ? "☑" : "☐";
+				const char* box = mod_find(*our_mods, (*all_mods)->name) ? "☑" : "☐";
 				snprintf_chain(&b, &buflen, "%s %s, ", box, (*all_mods)->name);
 			}
 			ctx->send_msg(chan, "%s", buff);
@@ -205,10 +203,10 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 			for(; *all_mods; ++all_mods){
 				if(strcmp((*all_mods)->name, requested_mod) == 0){
 					found = true;
-					if(mod_find(our_mods, requested_mod)){
+					if(mod_find(*our_mods, requested_mod)){
 						ctx->send_msg(chan, "%s: That module is already enabled here!", name);
 					} else {
-						sb_push(our_mods, strdup(requested_mod));
+						sb_push(*our_mods, strdup(requested_mod));
 						ctx->send_msg(chan, "%s: Enabled module %s.", name, requested_mod);
 					}
 				}
@@ -228,10 +226,10 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 			for(; *all_mods; ++all_mods){
 				if(strcmp((*all_mods)->name, requested_mod) == 0){
 					found = true;
-					char** m = mod_find(our_mods, (*all_mods)->name);
+					char** m = mod_find(*our_mods, (*all_mods)->name);
 					if(m){
 						free(*m);
-						sb_erase(our_mods, m - our_mods);
+						sb_erase(*our_mods, m - *our_mods);
 						ctx->send_msg(chan, "%s: Disabled module %s.", name, (*all_mods)->name);
 					} else {
 						ctx->send_msg(chan, "%s: That module is already disabled here!", name);
