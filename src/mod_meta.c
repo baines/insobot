@@ -171,7 +171,11 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	char***        our_mods_p = get_enabled_modules(chan);
 
 	// this shouldn't happen, on_join should get the channel name before this can be called
-	if(!our_mods_p) return;
+	if(!our_mods_p){
+		fprintf(stderr, "BUG: mod_meta.c: %s isn't on our list. Fix it!\n", chan);
+		return;
+	}
+
 	char** our_mods = *our_mods_p;
 
 	char buff[1024];
@@ -191,8 +195,8 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 
 		case CMD_MOD_ON: {
 			const char* requested_mod = msg + sizeof("\\mon");
-			if(requested_mod > msg + msglen){
-				ctx->send_msg(chan, "Which module?");
+			if(requested_mod - msg > msglen){
+				ctx->send_msg(chan, "%s: Which module?", name);
 				break;
 			}
 			bool found = false;
@@ -200,22 +204,22 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 				if(strcmp((*all_mods)->name, requested_mod) == 0){
 					found = true;
 					if(mod_find(our_mods, requested_mod)){
-						ctx->send_msg(chan, "That module is already enabled here!");
+						ctx->send_msg(chan, "%s: That module is already enabled here!", name);
 					} else {
 						sb_push(our_mods, strdup(requested_mod));
-						ctx->send_msg(chan, "Enabled module %s.", requested_mod);
+						ctx->send_msg(chan, "%s: Enabled module %s.", name, requested_mod);
 					}
 				}
 			}
 			if(!found){
-				ctx->send_msg(chan, "I haven't heard of that module...");
+				ctx->send_msg(chan, "%s: I haven't heard of that module...", name);
 			}
 		} break;
 
 		case CMD_MOD_OFF: {
 			const char* requested_mod = msg + sizeof("\\moff");
-			if(requested_mod > msg + msglen){
-				ctx->send_msg(chan, "Which module?");
+			if(requested_mod - msg > msglen){
+				ctx->send_msg(chan, "%s: Which module?", name);
 				break;
 			}
 			bool found = false;
@@ -226,14 +230,14 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 					if(m){
 						free(*m);
 						sb_erase(our_mods, m - our_mods);
-						ctx->send_msg(chan, "Disabled module %s.", (*all_mods)->name);
+						ctx->send_msg(chan, "%s: Disabled module %s.", name, (*all_mods)->name);
 					} else {
-						ctx->send_msg(chan, "That module is already disabled here!");
+						ctx->send_msg(chan, "%s: That module is already disabled here!", name);
 					}
 				}
 			}
 			if(!found){
-				ctx->send_msg(chan, "I haven't heard of that module...");
+				ctx->send_msg(chan, "%s: I haven't heard of that module...", name);
 			}
 		} break;
 
@@ -249,11 +253,16 @@ static bool meta_check(const char* modname, const char* chan, int callback_id){
 }
 
 static void meta_join(const char* chan, const char* name){
-	if(strcasecmp(name, BOT_NAME) == 0){
+	if(strcasecmp(name, ctx->get_username()) == 0){
 		if(!get_enabled_modules(chan)){
 			sb_push(channels, strdup(chan));
-			//TODO: add enabled-by-default modules?
 			sb_push(enabled_mods_for_chan, 0);
+
+			for(IRCModuleCtx** m = ctx->get_modules(); *m; ++m){
+				if((*m)->flags & IRC_MOD_DEFAULT){
+					sb_push(sb_last(enabled_mods_for_chan), strdup((*m)->name));
+				}
+			}
 		}
 	}
 }

@@ -18,7 +18,8 @@ enum  {
 
 // used for flags field of IRCModuleCtx
 enum {
-	IRC_MOD_GLOBAL = 1, // not a module that can be enabled / disabled per channel
+	IRC_MOD_GLOBAL  = 1, // not a module that can be enabled / disabled per channel
+	IRC_MOD_DEFAULT = 2, // enabled by default when joining new channels
 };
 
 // used for inter-module communication messages

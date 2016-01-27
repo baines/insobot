@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
+#include <ctype.h>
 #include <errno.h>
 #include <err.h>
 #include <time.h>
@@ -75,6 +76,7 @@ IRC_STR_CALLBACK(on_chat_msg) {
 
 IRC_STR_CALLBACK(on_join) {
 	if(count < 1 || !origin || !params[0]) return;
+	fprintf(stderr, "Join: %s %s\n", params[0], origin);
 	IRC_MOD_CALL_ALL(on_join, (params[0], origin));
 }
 
@@ -95,14 +97,19 @@ IRC_STR_CALLBACK(on_unknown) {
 	}
 }
 
+static const char nick_start_symbols[] = "[]\\`_^{|}";
+
 IRC_NUM_CALLBACK(on_numeric) {
 	if(event == LIBIRC_RFC_RPL_NAMREPLY && count >= 4 && params[3]){
 		char *names = strdup(params[3]), 
 		     *state = NULL,
 		     *n     = strtok_r(names, " ", &state);
-		
+
 		do {
-			irc_on_join(session, "join", origin, (const char**)&n, 1);
+			if(!isalpha(*n) && !strchr(nick_start_symbols, *n)){
+				++n;
+			}
+			irc_on_join(session, "join", n, (const char**)(params + 2), 1);
 		} while((n = strtok_r(NULL, " ", &state)));
 		
 		free(names);

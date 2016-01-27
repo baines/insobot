@@ -11,6 +11,7 @@ static bool linkinfo_init (const IRCCoreCtx*);
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "linkinfo",
 	.desc     = "Shows information about some links posted in the chat.",
+	.flags    = IRC_MOD_DEFAULT,
 	.on_msg   = &linkinfo_msg,
 	.on_init  = &linkinfo_init,
 };
@@ -69,12 +70,17 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		size_t matchsz = match->rm_eo - match->rm_so;
 
 		const char url_prefix[] = "https://www.youtube.com/get_video_info?video_id=";
-		char* url = alloca(sizeof(url_prefix) + matchsz);
+		const char url_suffix[] = "&el=vevo&el=embedded";
+		const size_t psz = sizeof(url_prefix) - 1;
+		const size_t ssz = sizeof(url_suffix) - 1;
+
+		char* url = alloca(psz + ssz + matchsz + 1);
 		
-		memcpy(url, url_prefix, sizeof(url_prefix) - 1);
-		memcpy(url + sizeof(url_prefix) - 1, msg + match->rm_so, matchsz);
+		memcpy(url, url_prefix, psz);
+		memcpy(url + psz, msg + match->rm_so, matchsz);
+		memcpy(url + psz + matchsz, url_suffix, ssz);
 		
-		url[sizeof(url_prefix) + matchsz - 1] = 0;
+		url[psz + matchsz + ssz] = 0;
 
 		char* data = NULL;
 

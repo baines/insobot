@@ -10,6 +10,7 @@ static bool alias_init (const IRCCoreCtx*);
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "alias",
 	.desc     = "Allows defining simple responses to !commands",
+	.flags    = IRC_MOD_DEFAULT,
 	.on_msg   = &alias_msg,
 	.on_init  = &alias_init,
 };
@@ -124,6 +125,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 		size_t name_sz = strlen(name);
 		char* msg_buf = NULL;
 
+		//TODO: add %a for args
 		for(const char* str = alias_vals[index]; *str; ++str){
 			if(*str == '%' && *(str + 1) == 't'){
 				memcpy(sb_add(msg_buf, name_sz), name, name_sz);

@@ -24,12 +24,16 @@ static const IRCCoreCtx* ctx;
 static const char* wlist[] = {
 	"insofaras",
 	"test",
+	"fyoucon",
+	"miblo",
+	"j_vanrijn",
+	"aleph",
 	NULL,
 };
 
 static bool wl_check(const char* name){
 	for(const char** str = wlist; *str; ++str){
-		if(strcmp(name, *str) == 0){
+		if(strcasecmp(name, *str) == 0){
 			return true;
 		}
 	}
@@ -61,14 +65,6 @@ static void whitelist_save(FILE* file){
 
 static void whitelist_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "check_whitelist") == 0){
-		const char* name = (const char*)msg->arg;
-
-		for(const char** str = wlist; *str; ++str){
-			if(strcmp(name, *str) == 0){
-				printf("check_whitelist: %s found.\n", name);
-				msg->callback(true, msg->cb_arg);
-				break;
-			}
-		}
+		msg->callback(wl_check((const char*)msg->arg), msg->cb_arg);
 	}
 }
