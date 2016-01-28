@@ -40,6 +40,11 @@ static void chans_connect(const char* serv){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
 	}
 
+	char* nspass = getenv("IRC_NICKSERV_PASS");
+	if(nspass){
+		ctx->send_msg("nickserv", "IDENTIFY %s", nspass);
+	}
+
 	do {
 		printf("Joining %s\n", c);
 		ctx->join(c);

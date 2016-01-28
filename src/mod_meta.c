@@ -103,18 +103,6 @@ static bool reload_file(void){
 
 	sb_free(file_contents);
 
-	//TODO: remove this debug?
-	int i = 0;
-	for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
-		char** mods = enabled_mods_for_chan[i];
-
-		printf("%s:\n", channels[i]);
-
-		for(int j = 0; j < sb_count(mods); ++j){
-			printf("\t%s\n", mods[j]);
-		}
-	}
-
 	return true;
 }
  

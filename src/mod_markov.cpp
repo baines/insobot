@@ -61,18 +61,20 @@ static string& get_word(uint32_t i){
 
 struct Chain {
 	Chain() = default;
-	Chain(uint32_t i, uint32_t c) : idx(i), count(c){}
+	Chain(uint16_t i, uint16_t c) : idx(i), count(c){}
 	
-	uint32_t idx;
-	uint32_t count;
+	uint16_t idx;
+	uint16_t count;
 };
+
+#define BAD_KEY USHRT_MAX
 
 struct Key {
 
-	Key() : word1(USHRT_MAX), word2(USHRT_MAX){}
-	Key(uint32_t a, uint32_t b) : word1(a), word2(b) {}
+	Key() : word1(BAD_KEY), word2(BAD_KEY){}
+	Key(uint16_t a, uint16_t b) : word1(a), word2(b) {}
 
-	uint32_t word1, word2;
+	uint16_t word1, word2;
 	
 	bool operator<(const Key& k) const {
 		return tie(word1, word2) < tie(k.word1, k.word2);
@@ -88,9 +90,9 @@ struct Key {
 	
 	string str() const {
 		string s;
-		s.append(word1 != UINT_MAX ? get_word(word1) : "(null)");		
+		s.append(word1 != BAD_KEY ? get_word(word1) : "(null)");		
 		s.append(", ");
-		s.append(word2 != UINT_MAX ? get_word(word2) : "(null)");
+		s.append(word2 != BAD_KEY ? get_word(word2) : "(null)");
 	}
 };
 
@@ -183,7 +185,7 @@ bool lookup_key(const string& a, const string& b, Key& out){
 
 	uint32_t a_idx = lookup_or_add_word(a),
 	         b_idx = lookup_or_add_word(b),
-	         tmp = UINT_MAX;
+	         tmp = BAD_KEY;
 	
 	for(auto i = a_p.first, j = a_p.second; i != j; ++i){
 		if(i->second == a_idx){
@@ -192,7 +194,7 @@ bool lookup_key(const string& a, const string& b, Key& out){
 		}
 	}
 	
-	if(tmp == UINT_MAX) return false;
+	if(tmp == BAD_KEY) return false;
 	
 	for(auto i = b_p.first, j = b_p.second; i != j; ++i){
 		if(i->second == b_idx){
@@ -450,7 +452,7 @@ static void markov_fix(const string& word, const char* fix){
 static void markov_add_name(const char* chan, const char* name){
 
 	// keep our own name for strange 3rd person sentences...
-	if(strcasecmp(name, BOT_NAME) == 0) return;
+	if(strcasecmp(name, ctx->get_username()) == 0) return;
 
 	auto p = irc_names.insert(name);
 	if(p.second){

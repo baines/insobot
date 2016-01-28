@@ -273,7 +273,7 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 				//XXX: requires basename not modify its arg, only GNU impl guarantees this
 				const char* mod_name = basename(m->lib_path);
-				if(strncmp(mod_name, ev->name, ev->len) == 0){
+				if(strcmp(mod_name, ev->name) == 0){
 					m->needs_reload = true;
 					module_currently_loaded = true;
 					break;
@@ -300,7 +300,10 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 		} else if(ev->wd == inotify_info.data_watch){
 			//TODO: notify modules their data file was modified
 			//XXX: avoid doing this when they save it themselves somehow...
-			fprintf(stderr, "The %s datafile got modified. TODO: do something...\n", ev->name);
+			size_t len = strlen(ev->name);
+			if(len > 5 && memcmp(ev->name + (len - 5), ".data", 6) == 0){
+				fprintf(stderr, "%s got modified. TODO: do something...\n", ev->name);
+			}
 		}
 
 		p += (sizeof(struct inotify_event) + ev->len);
@@ -387,6 +390,8 @@ int main(int argc, char** argv){
 	port = env_else("IRC_PORT", "6667");
 	
 	char our_path[PATH_MAX];
+	memset(our_path, 0, sizeof(our_path));
+
 	ssize_t sz = readlink("/proc/self/exe", our_path, sizeof(our_path));
 	if(sz < 0){
 		err(errno, "Can't read path");
@@ -412,7 +417,7 @@ int main(int argc, char** argv){
 	inotify_info.module_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
-		IN_CREATE | IN_MODIFY | IN_MOVED_TO
+		IN_CLOSE_WRITE
 	);
 
 	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
@@ -420,7 +425,7 @@ int main(int argc, char** argv){
 	inotify_info.data_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
-		IN_CREATE | IN_MODIFY | IN_MOVED_TO
+		IN_CLOSE_WRITE
 	);
 
 	memcpy(path_end, glob_suffix, sizeof(glob_suffix));

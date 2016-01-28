@@ -11,6 +11,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.name     = "alias",
 	.desc     = "Allows defining simple responses to !commands",
 	.flags    = IRC_MOD_DEFAULT,
+	.on_save  = &alias_save,
 	.on_msg   = &alias_msg,
 	.on_init  = &alias_init,
 };
@@ -23,8 +24,16 @@ static char** alias_vals;
 
 static bool alias_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
-	sb_push(alias_keys, strdup("test"));
-	sb_push(alias_vals, strdup("Hello %t!"));
+	FILE* f = fopen(ctx->get_datafile(), "rb");
+
+	char *key, *val;
+
+	while(fscanf(f, "%ms %m[^\n]", &key, &val) == 2){
+		fprintf(stderr, "Got alias: [%s] = [%s]\n", key, val);
+		sb_push(alias_keys, key);
+		sb_push(alias_vals, val);
+	}
+		
 	return true;
 }
 
@@ -141,7 +150,6 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 		size_t name_len = strlen(name);
 		char* msg_buf = NULL;
 
-		//TODO: add %a for args
 		for(const char* str = alias_vals[index]; *str; ++str){
 			if(*str == '%' && *(str + 1) == 't'){
 				memcpy(sb_add(msg_buf, name_len), name, name_len);
@@ -163,6 +171,8 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 }
 
 static void alias_save(FILE* file){
-	//TODO: save aliases
+	for(int i = 0; i < sb_count(alias_keys); ++i){
+		fprintf(file, "%s\t%s\n", alias_keys[i], alias_vals[i]);
+	}
 }
 
