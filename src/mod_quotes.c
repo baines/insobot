@@ -16,13 +16,15 @@ const IRCModuleCtx irc_mod_ctx = {
 	.desc     = "Saves per-channel quotes",
 	.on_init  = quotes_init,
 	.on_msg   = &quotes_msg,
+	.on_join  = &quotes_join,
 	.on_save  = &quotes_save,
 };
 
 static const IRCCoreCtx* ctx;
 
 static char* gist_auth;
-static char* gist_url;
+static char* gist_api_url;
+static char* gist_pub_url;
 
 static char** channels;
 
@@ -166,8 +168,6 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	snprintf(url_buf, sizeof(url_buf), "%s:%s", gist_user, gist_token);
 	gist_auth = strdup(url_buf);
 
-	printf("GIST_TOKEN: %s\n", url_buf);
-
 	CURL* curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
@@ -176,13 +176,14 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
 
 	snprintf(url_buf, sizeof(url_buf), "https://api.github.com/gists/%s", gist_id);
-	gist_url = strdup(url_buf);
+	gist_api_url = strdup(url_buf);
 
-	printf("GIST_URL: %s\n", url_buf);
-	
+	snprintf(url_buf, sizeof(url_buf), "https://gist.github.com/%s", gist_id);
+	gist_pub_url = strdup(url_buf);
+
 	char* data = NULL;
 
-	curl_easy_setopt(curl, CURLOPT_URL, url_buf);
+	curl_easy_setopt(curl, CURLOPT_URL, gist_api_url);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
@@ -215,6 +216,8 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	for(size_t i = 0; i < files->u.object.len; ++i){
 		const char* filename = files->u.object.keys[i];
 
+		if(!filename || filename[0] != '#') continue;
+
 		yajl_val file = files->u.object.values[i];
 		if(!YAJL_IS_OBJECT(file)){
 			fprintf(stderr, "mod_quotes: error getting file object\n");
@@ -230,7 +233,7 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 		sb_push(channels, strdup(filename));
 		sb_push(chan_quotes, 0);
 
-		load_csv(content->u.string, chan_quotes + i);
+		load_csv(content->u.string, &sb_last(chan_quotes));
 	}
 	
 	for(size_t i = 0; i < sb_count(channels); ++i){
@@ -248,25 +251,154 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
+static Quote** get_quotes(const char* chan){
+	for(int i = 0; i < sb_count(channels); ++i){
+		if(strcmp(chan, channels[i]) == 0){
+			return chan_quotes + i;
+		}
+	}
+	return NULL;
+}
+
+static Quote* get_quote(const char* chan, int id){
+	int index = -1;
+	for(int i = 0; i < sb_count(channels); ++i){
+		if(strcmp(chan, channels[i]) == 0){
+			index = i;
+			break;
+		}
+	}
+
+	if(index < 0) return NULL;
+
+	for(Quote* q = chan_quotes[index]; q < sb_end(chan_quotes[index]); ++q){
+		if(q->id == id){
+			return q;
+		}
+	}
+
+	return NULL;
+}
+
+static void whitelist_cb(intptr_t result, intptr_t arg){
+	if(result) *(bool*)arg = true;
+}
+
 static void quotes_msg(const char* chan, const char* name, const char* msg){
-/*
-   \q    <num>
-   \qadd <text>
-   \qdel <num>
-   \qfix <num> <text>
-   \qs   <text>
-*/
+
+	enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, LIST_QUOTES, FIX_QUOTE, SEARCH_QUOTES };
+	int i = ctx->check_cmds(msg, "\\q", "\\qadd", "\\qdel", "\\qlist", "\\qfix", "\\qs", NULL);
+	if(i < 0) return;
+
+	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
+	
+	if(!has_cmd_perms){
+		ctx->send_mod_msg(&(IRCModMsg){
+			.cmd      = "check_whitelist",
+			.arg      = (intptr_t)name,
+			.callback = &whitelist_cb,
+			.cb_arg   = (intptr_t)&has_cmd_perms
+		});
+	}
+
+	if(!has_cmd_perms) return;
+
+	const size_t msglen = strlen(msg);
+	
+	Quote** quotes = get_quotes(chan);
+	if(!quotes){
+		fprintf(stderr, "mod_quotes: BUG, got message from channel we don't know about?\n");
+		return;
+	}
+
+	switch(i){
+		case GET_QUOTE: {
+			const char* arg = msg + sizeof("\\q");
+			if(arg - msg >= msglen){
+				ctx->send_msg(chan, "%s: Usage: \\q <id>", name);
+				break;
+			}
+			char* end;
+			int id = strtol(arg, &end, 0);
+			if(end == arg || id < 0){
+				ctx->send_msg(chan, "%s: Quotes start at id 0.", name);
+				break;
+			}
+			Quote* q = get_quote(chan, id);
+			if(q){
+				struct tm* date_tm = gmtime(&q->timestamp);
+				char date[256];
+				strftime(date, sizeof(date), "%F", date_tm);
+				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", id, q->text, chan+1, date);
+			} else {
+				ctx->send_msg(chan, "%s: Can't find that quote.", name);
+			}
+		} break;
+		case ADD_QUOTE: {
+			const char* arg = msg + sizeof("\\qadd");
+			if(arg - msg >= msglen){
+				ctx->send_msg(chan, "%s: Usage: \\qadd <text>", name);
+				break;
+			}
+			int id = 0;
+			if(sb_count(*quotes) > 0){
+				id = sb_last(*quotes).id + 1;
+			}
+			Quote q = {
+				.id = id,
+				.text = strdup(arg),
+				.timestamp = time(0)
+			};
+			sb_push(*quotes, q);
+			ctx->send_msg(chan, "%s: Added as quote %d.", name, id);
+			quotes_save(NULL);
+		} break;
+
+		case DEL_QUOTE: {
+			const char* arg = msg + sizeof("\\qdel");
+			if(arg - msg >= msglen){
+				ctx->send_msg(chan, "%s: Usage: \\qdel <id>", name);
+				break;
+			}
+			char* end;
+			int id = strtol(arg, &end, 0);
+			if(!end || end == arg || *end || id < 0){
+				ctx->send_msg(chan, "%s: That id doesn't look valid.", name);
+				break;
+			}
+			Quote* q = get_quote(chan, id);
+			if(q){
+				int off = q - *quotes;
+				sb_erase(*quotes, off);
+				ctx->send_msg(chan, "%s: Deleted quote %d\n", name, id);
+				quotes_save(NULL);
+			} else {
+				ctx->send_msg(chan, "%s: Can't find that quote.", name);
+			}
+		} break;
+
+		case LIST_QUOTES: {
+			ctx->send_msg(chan, "%s: You can find a list of quotes at %s", name, gist_pub_url);
+		} break;
+	}
+	//TODO: qfix, qsearch
 }
 
 static void quotes_join(const char* chan, const char* user){
-	if(strcasecmp(user, ctx->get_username())){
-		for(char** c = channels; c < sb_end(channels); ++c){
-			if(strcasecmp(chan, *c) == 0){
-				sb_push(channels, strdup(chan));
-				sb_push(chan_quotes, 0);
-				break;
-			}
+	if(strcasecmp(user, ctx->get_username()) != 0) return;
+
+	bool found = false;
+	for(char** c = channels; c < sb_end(channels); ++c){
+		if(strcasecmp(chan, *c) == 0){
+			found = true;
+			break;
 		}
+	}
+
+	if(!found){
+		fprintf(stderr, "mod_quotes: adding [%s]\n", chan);
+		sb_push(channels, strdup(chan));
+		sb_push(chan_quotes, 0);
 	}
 }
 
@@ -274,9 +406,9 @@ static const char desc_key[]    = "description";
 static const char desc_val[]    = "IRC quotes";
 static const char files_key[]   = "files";
 static const char content_key[] = "content";
-static const char readme_key[]  = "_insobot_quotes";
+static const char readme_key[]  = " Quote List";
 static const char readme_val[]  =
-"Here are the quotes stored by insobot, in csv format, one file per channel.";
+"Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.";
 
 static size_t curl_discard(char* ptr, size_t sz, size_t nmemb, void* data){
 	return sz * nmemb;
@@ -330,7 +462,7 @@ static void quotes_save(FILE* file){
 	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
-	curl_easy_setopt(curl, CURLOPT_URL, gist_url);
+	curl_easy_setopt(curl, CURLOPT_URL, gist_api_url);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);

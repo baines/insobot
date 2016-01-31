@@ -100,7 +100,8 @@ IRC_STR_CALLBACK(on_chat_msg) {
 IRC_STR_CALLBACK(on_join) {
 	if(count < 1 || !origin || !params[0]) return;
 	fprintf(stderr, "Join: %s %s\n", params[0], origin);
-	IRC_MOD_CALL_ALL_CHECK(on_join, (params[0], origin), IRC_CB_JOIN);
+	//XXX: can't use CHECK here unless our own name bypasses it FIXME
+	IRC_MOD_CALL_ALL(on_join, (params[0], origin));
 }
 
 IRC_STR_CALLBACK(on_part) {
@@ -217,7 +218,7 @@ static int check_cmds(const char* msg, ...) {
 
 	while((str = va_arg(v, const char*))){
 		size_t sz = strlen(str);
-		if(strncmp(msg, str, sz) == 0){
+		if(strncmp(msg, str, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
 			result = count;
 			break;
 		}
@@ -295,6 +296,8 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 					.needs_reload = true,
 				};
 
+				//TODO: need to replay joins when a module is reloaded, atleast for our own name
+				
 				sb_push(irc_modules, new_mod);
 			}
 		} else if(ev->wd == inotify_info.data_watch){
