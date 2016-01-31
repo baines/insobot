@@ -13,7 +13,7 @@ all: ../insobot $(module_out)
 	$(CXX) $(CXXFLAGS) -fPIC -shared $< -o $@
 
 ../modules/%.so: %.c config.h module.h
-	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl
+	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl
 	
 clean:
 	rm -f ../insobot $(module_out) 
