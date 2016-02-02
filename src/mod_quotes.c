@@ -433,6 +433,9 @@ static void quotes_save(FILE* file){
 	yajl_gen_map_close(json);
 
 	for(int i = 0; i < sb_count(channels); ++i){
+
+		if(sb_count(chan_quotes[i]) == 0) continue;
+
 		yajl_gen_string(json, channels[i], strlen(channels[i]));
 		yajl_gen_map_open(json);
 
@@ -452,10 +455,13 @@ static void quotes_save(FILE* file){
 	const unsigned char* payload = NULL;
 
 	yajl_gen_get_buf(json, &payload, &len);
+	printf("Payload: [%zu] [%s]\n", len, payload);
 
 	CURL* curl = curl_easy_init();
 
 	struct curl_slist* slist = curl_slist_append(NULL, "Content-Type: application/json");
+
+	char* data = NULL;
 
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
@@ -470,13 +476,19 @@ static void quotes_save(FILE* file){
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 	curl_easy_setopt(curl, CURLOPT_WRITEHEADER, stderr);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &fwrite);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_discard);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
 	CURLcode ret = curl_easy_perform(curl);
 
 	if(ret != 0){
 		printf("CURL returned %d, %s\n", ret, curl_easy_strerror(ret));
+		if(data){
+			printf("RESPONSE: [%s]\n", data);
+		}
 	}
+
+	sb_free(data);
 
 	curl_slist_free_all(slist);
 

@@ -7,7 +7,7 @@ static void admin_msg  (const char*, const char*, const char*);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name    = "admin",
-	.desc    = "Miscellarnous admin commands",
+	.desc    = "Miscellaneous admin commands",
 	.flags   = IRC_MOD_GLOBAL,
 	.on_init = admin_init,
 	.on_msg  = &admin_msg,

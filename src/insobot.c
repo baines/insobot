@@ -177,9 +177,19 @@ static IRCModuleCtx** get_modules(void){
 	return channel_modules;
 }
 
+static char** channels;
+
 static void join(const char* chan){
 	irc_cmd_join(irc_ctx, chan, NULL);
-	//TODO: send immediate join for our name
+	irc_on_join(irc_ctx, "join", user, &chan, 1);
+
+	for(char** c = channels; c < sb_end(channels); ++c){
+		if(strcmp(*c, chan) == 0){
+			return;
+		}
+	}
+
+	sb_push(channels, strdup(chan));
 }
 
 static void part(const char* chan){
@@ -296,8 +306,6 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 					.needs_reload = true,
 				};
 
-				//TODO: need to replay joins when a module is reloaded, atleast for our own name
-				
 				sb_push(irc_modules, new_mod);
 			}
 		} else if(ev->wd == inotify_info.data_watch){
@@ -363,6 +371,10 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 						sb_last(channel_modules) = m->ctx;
 						sb_push(channel_modules, 0);
 					}
+				}
+
+				for(char** c = channels; c < sb_end(channels); ++c){
+					irc_on_join(irc_ctx, "join", user, (const char**)c, 1);
 				}
 
 				fprintf(stderr, "Reload successful.\n");
