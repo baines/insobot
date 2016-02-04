@@ -140,7 +140,8 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	assert(ctx);
 	
 	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
-	int i = ctx->check_cmds(msg, "\\modules", "\\mon", "\\moff", "\\minfo", NULL);
+	const char* arg = msg;
+	int i = ctx->check_cmds(&arg, "\\modules", "\\mon", "\\moff", "\\minfo", NULL);
 	if(i < 0) return;
 
 	const size_t msglen = strlen(msg);
@@ -182,20 +183,19 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 		} break;
 
 		case CMD_MOD_ON: {
-			const char* requested_mod = msg + sizeof("\\mon");
-			if(requested_mod - msg > msglen){
+			if(!*arg++){
 				ctx->send_msg(chan, "%s: Which module?", name);
 				break;
 			}
 			bool found = false;
 			for(; *all_mods; ++all_mods){
-				if(strcmp((*all_mods)->name, requested_mod) == 0){
+				if(strcmp((*all_mods)->name, arg) == 0){
 					found = true;
-					if(mod_find(*our_mods, requested_mod)){
+					if(mod_find(*our_mods, arg)){
 						ctx->send_msg(chan, "%s: That module is already enabled here!", name);
 					} else {
-						sb_push(*our_mods, strdup(requested_mod));
-						ctx->send_msg(chan, "%s: Enabled module %s.", name, requested_mod);
+						sb_push(*our_mods, strdup(arg));
+						ctx->send_msg(chan, "%s: Enabled module %s.", name, arg);
 					}
 				}
 			}
@@ -205,14 +205,13 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 		} break;
 
 		case CMD_MOD_OFF: {
-			const char* requested_mod = msg + sizeof("\\moff");
-			if(requested_mod - msg > msglen){
+			if(!*arg++){
 				ctx->send_msg(chan, "%s: Which module?", name);
 				break;
 			}
 			bool found = false;
 			for(; *all_mods; ++all_mods){
-				if(strcmp((*all_mods)->name, requested_mod) == 0){
+				if(strcmp((*all_mods)->name, arg) == 0){
 					found = true;
 					char** m = mod_find(*our_mods, (*all_mods)->name);
 					if(m){

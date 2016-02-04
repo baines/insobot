@@ -219,24 +219,35 @@ static void send_mod_msg(IRCModMsg* msg){
 	}
 }
 
-static int check_cmds(const char* msg, ...) {
+static int check_cmds(const char** msg, ...) {
 	va_list v;
 	va_start(v, msg);
 
 	int count = 0, result = -1;
-	const char* str;
+	const char* cmd;
 
-	while((str = va_arg(v, const char*))){
-		size_t sz = strlen(str);
-		if(strncmp(msg, str, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
-			result = count;
-			break;
-		}
+	while((cmd = va_arg(v, const char*))){
+		const char* cmd_end;
+		
+		do {
+			cmd_end = strchrnul(cmd, ',');
+			const size_t sz = cmd_end - cmd;
+
+			if(strncmp(*msg, cmd, sz) == 0 && ((*msg)[sz] == ' ' || (*msg)[sz] == '\0')){
+				result = count;
+				*msg += sz;
+				goto out;
+			}
+
+			cmd = cmd_end + 1;
+		} while(*cmd_end);
+
 		++count;
 	}
-	va_end(v);
 
-	return result;;
+out:
+	va_end(v);
+	return result;
 }
 
 static void do_module_save(Module* m){

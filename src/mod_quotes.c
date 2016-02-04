@@ -286,8 +286,20 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 
 static void quotes_msg(const char* chan, const char* name, const char* msg){
 
-	enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, LIST_QUOTES, FIX_QUOTE, SEARCH_QUOTES };
-	int i = ctx->check_cmds(msg, "\\q", "\\qadd", "\\qdel", "\\qlist", "\\qfix", "\\qs", NULL);
+	enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES	};
+
+	const char* arg = msg;
+	int i = ctx->check_cmds(
+		&arg,
+		"\\q",
+		"\\qadd",
+		"\\qdel,\\qrm",
+		"\\qfix,\\qmv",
+		"\\qft",
+		"\\qlist",
+		"\\qs",
+		NULL
+	);
 	if(i < 0) return;
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
@@ -303,8 +315,6 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 
 	if(!has_cmd_perms) return;
 
-	const size_t msglen = strlen(msg);
-	
 	Quote** quotes = get_quotes(chan);
 	if(!quotes){
 		fprintf(stderr, "mod_quotes: BUG, got message from channel we don't know about?\n");
@@ -313,8 +323,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 
 	switch(i){
 		case GET_QUOTE: {
-			const char* arg = msg + sizeof("\\q");
-			if(arg - msg >= msglen){
+			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\q <id>", name);
 				break;
 			}
@@ -334,9 +343,9 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
 		} break;
+
 		case ADD_QUOTE: {
-			const char* arg = msg + sizeof("\\qadd");
-			if(arg - msg >= msglen){
+			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\qadd <text>", name);
 				break;
 			}
@@ -355,8 +364,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 		} break;
 
 		case DEL_QUOTE: {
-			const char* arg = msg + sizeof("\\qdel");
-			if(arg - msg >= msglen){
+			if(!*arg){
 				ctx->send_msg(chan, "%s: Usage: \\qdel <id>", name);
 				break;
 			}
@@ -375,6 +383,69 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
+		} break;
+
+		case FIX_QUOTE: {
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
+				break;
+			}
+			char* arg2;
+			int id = strtol(arg, &arg2, 0);
+			
+			if(!arg2 || arg2 == arg || id < 0){
+				ctx->send_msg(chan, "%s: That id doesn't look valid.", name);
+				break;
+			}
+			if(*arg2 != ' '){
+				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
+				break;
+			}
+
+			Quote* q = get_quote(chan, id);
+			if(q){
+				free(q->text);
+				q->text = strdup(arg2 + 1);
+				ctx->send_msg(chan, "%s: Updated quote %d.", name, id);
+				quotes_save(NULL);
+			} else {
+				ctx->send_msg(chan, "%s: Can't find that quote.", name);
+			}
+		} break;
+
+		case FIX_TIME: {
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Usage: \\qft <id> <timestamp>", name);
+				break;
+			}
+
+			char* arg2;
+			int id = strtol(arg, &arg2, 0);
+			if(!arg2 || arg2 == arg || id < 0){
+				ctx->send_msg(chan, "%s: That id doesn't look valid.", name);
+				break;
+			}
+			if(*arg2 != ' '){
+				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
+				break;
+			}
+
+			Quote* q = get_quote(chan, id);
+			if(!q){
+				ctx->send_msg(chan, "%s: Can't find that quote.", name);
+				break;
+			}
+
+			struct tm timestamp;
+			char* ret = strptime(arg2 + 1, "%F %T", &timestamp);
+			if(ret){
+				q->timestamp = mktime(&timestamp);
+				ctx->send_msg(chan, "%s: Updated quote %d's timestamp successfully.", name, id);
+				quotes_save(NULL);
+			} else {
+				ctx->send_msg(chan, "%s: Sorry, I don't understand that timestamp. Use YYYY-MM-DD hh:mm:ss", name);
+			}
+
 		} break;
 
 		case LIST_QUOTES: {
@@ -409,10 +480,6 @@ static const char content_key[] = "content";
 static const char readme_key[]  = " Quote List";
 static const char readme_val[]  =
 "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.";
-
-static size_t curl_discard(char* ptr, size_t sz, size_t nmemb, void* data){
-	return sz * nmemb;
-}
 
 static void quotes_save(FILE* file){
 

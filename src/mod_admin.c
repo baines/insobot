@@ -26,14 +26,13 @@ static void admin_msg(const char* chan, const char* name, const char* msg){
 	size_t msglen = strlen(msg);
 
 	enum { FORCE_JOIN };
-	int i = ctx->check_cmds(msg, "\\fjoin", NULL);
+
+	const char* arg = msg;
+	int i = ctx->check_cmds(&arg, "\\fjoin", NULL);
 
 	switch(i){
 		case FORCE_JOIN: {
-			const char* arg = msg + sizeof("\\fjoin");
-			if(arg - msg >= msglen){
-				break;
-			}
+			if(!*arg++) break;
 			ctx->send_msg(chan, "@%s: joining %s.", BOT_OWNER, arg);
 			ctx->join(arg);
 		} break;

@@ -41,7 +41,7 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static void do_alias_cmd(const char* chan, const char* name, const char* msg, size_t msg_len, int cmd){
+static void do_alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	enum { CMD_ALIAS_ADD, CMD_ALIAS_DEL };
 
@@ -58,13 +58,12 @@ static void do_alias_cmd(const char* chan, const char* name, const char* msg, si
 
 	switch(cmd){
 		case CMD_ALIAS_ADD: {
-			const char* args = msg + sizeof("\\alias");
-			if(args - msg > msg_len || !isalnum(*args)) goto usage_add;
+			if(!*arg++ || !isalnum(*arg)) goto usage_add;
 
-			const char* space = strchr(args, ' ');
+			const char* space = strchr(arg, ' ');
 			if(!space) goto usage_add;
 
-			char* key = strndupa(args, space - args);
+			char* key = strndupa(arg, space - arg);
 			for(char* k = key; *k; ++k) *k = tolower(*k);
 
 			bool found = false;
@@ -85,18 +84,17 @@ static void do_alias_cmd(const char* chan, const char* name, const char* msg, si
 		} break;
 
 		case CMD_ALIAS_DEL: {
-			const char* args = msg + sizeof("\\unalias");
-			if(args - msg > msg_len || !isalnum(*args)) goto usage_del;
+			if(!*arg++ || !isalnum(*arg)) goto usage_del;
 
 			for(int i = 0; i < sb_count(alias_keys); ++i){
-				if(strcasecmp(args, alias_keys[i]) == 0){
+				if(strcasecmp(arg, alias_keys[i]) == 0){
 					free(alias_keys[i]);
 					sb_erase(alias_keys, i);
 					
 					free(alias_vals[i]);
 					sb_erase(alias_vals, i);
 
-					ctx->send_msg(chan, "%s: Removed alias %s.\n", name, args);
+					ctx->send_msg(chan, "%s: Removed alias %s.\n", name, arg);
 					return;
 				}
 			}
@@ -115,14 +113,15 @@ usage_del:
 static void alias_msg(const char* chan, const char* name, const char* msg){
 
 	size_t msg_len = strlen(msg);
-	
-	int i = ctx->check_cmds(msg, "\\alias", "\\unalias", NULL);
+
+	const char* m = msg;
+	int i = ctx->check_cmds(&m, "\\alias", "\\unalias", NULL);
 	if(i >= 0){
 
-		do_alias_cmd(chan, name, msg, msg_len, i);
+		do_alias_cmd(chan, name, m, i);
 
 	} else if(*msg == '!'){
-		
+
 		int index = -1;
 		const char* arg = NULL;
 		size_t arg_len = 0;
@@ -141,7 +140,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 				if(*arg){
 					arg_len = strlen(arg);
 				}
-				
+
 				break;
 			}
 		}

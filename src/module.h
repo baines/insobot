@@ -74,7 +74,7 @@ struct IRCCoreCtx_ {
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) WARN_FMT(2);
 	void           (*send_raw)     (const char* raw);
 	void           (*send_mod_msg) (IRCModMsg* msg);
-	int            (*check_cmds)   (const char* msg, ...) WARN_SENTINEL;
+	int            (*check_cmds)   (const char** msg, ...) WARN_SENTINEL;
 	//XXX: clang is dumb and ignores the sentinel attibute on function pointers?
 };
 

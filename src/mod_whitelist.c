@@ -49,7 +49,9 @@ static void whitelist_msg(const char* chan, const char* name, const char* msg){
 
 	//TODO: add / del
 	enum { WL_CHECK, WL_ADD, WL_DEL };
-	int i = ctx->check_cmds(msg, "\\amiwhitelisted", "\\wladd", "\\wldel", NULL);
+
+	const char* arg = msg;
+	int i = ctx->check_cmds(&arg, "\\amiwhitelisted", "\\wladd", "\\wldel", NULL);
 
 	switch(i){
 		case WL_CHECK: {
