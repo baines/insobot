@@ -478,7 +478,8 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 			}
 			const char msg_start[] = "Matching quotes: ";
 			const char msg_end[]  = "and more.";
-			bool found_flag = false;
+			int found_count = 0;
+			Quote* last_found_q = NULL;
 			bool more_flag = false;
 
 			char msg_buf[256];
@@ -489,7 +490,8 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 
 			for(; qlist < sb_end(*quotes); ++qlist){
 				if(strcasestr(qlist->text, arg) != NULL){
-					found_flag = true;
+					++found_count;
+					last_found_q = qlist;
 
 					int ret = snprintf(buf_ptr, buf_len, "%d, ", qlist->id);
 					if(ret > 0){
@@ -503,7 +505,13 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 				}
 			}
 
-			if(found_flag){
+			if(found_count == 1){
+				Quote* q = last_found_q;
+				struct tm* date_tm = gmtime(&q->timestamp);
+				char date[256];
+				strftime(date, sizeof(date), "%F", date_tm);
+				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, chan+1, date);
+			} else if(found_count > 1){
 				if(more_flag){
 					memcpy(buf_ptr - 2, msg_end, sizeof(msg_end));
 				} else {
