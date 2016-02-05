@@ -5,6 +5,7 @@
 #include <string.h>
 #include <yajl/yajl_tree.h>
 #include <yajl/yajl_gen.h>
+#include <ctype.h>
 
 static bool quotes_init (const IRCCoreCtx*);
 static void quotes_join (const char*, const char*);
@@ -295,9 +296,9 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 		"\\qadd",
 		"\\qdel,\\qrm",
 		"\\qfix,\\qmv",
-		"\\qft",
-		"\\qlist",
-		"\\qs",
+		"\\qft,\\qfixtime",
+		"\\ql,\\qlist",
+		"\\qs,\\qsearch,\\qfind,\\qgrep",
 		NULL
 	);
 	if(i < 0) return;
@@ -415,7 +416,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 
 		case FIX_TIME: {
 			if(!*arg++){
-				ctx->send_msg(chan, "%s: Usage: \\qft <id> <timestamp>", name);
+				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
 				break;
 			}
 
@@ -436,7 +437,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 				break;
 			}
 
-			struct tm timestamp;
+			struct tm timestamp = {};
 			char* ret = strptime(arg2 + 1, "%F %T", &timestamp);
 			if(ret){
 				q->timestamp = mktime(&timestamp);
@@ -451,8 +452,71 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 		case LIST_QUOTES: {
 			ctx->send_msg(chan, "%s: You can find a list of quotes at %s", name, gist_pub_url);
 		} break;
+
+		case SEARCH_QUOTES: {
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Give me something to search for!", name);
+				break;
+			}
+
+			bool sensible_search = false;
+			for(const char* a = arg; *a; ++a){
+				if(isalnum(*a)){
+					sensible_search = true;
+					break;
+				}
+			}
+			if(!sensible_search){
+				ctx->send_msg(chan, "%s: Give me something sensible to search for!", name);
+				break;
+			}
+
+			Quote* qlist = *quotes;
+			if(sb_count(qlist) == 0){
+				ctx->send_msg(chan, "%s: There aren't any quotes here to search.", name);
+				break;
+			}
+			const char msg_start[] = "Matching quotes: ";
+			const char msg_end[]  = "and more.";
+			bool found_flag = false;
+			bool more_flag = false;
+
+			char msg_buf[256];
+			memcpy(msg_buf, msg_start, sizeof(msg_start));
+
+			char* buf_ptr = msg_buf + sizeof(msg_start) - 1;
+			size_t buf_len = 256 - (sizeof(msg_start) + sizeof(msg_end) - 1);
+
+			for(; qlist < sb_end(*quotes); ++qlist){
+				if(strcasestr(qlist->text, arg) != NULL){
+					found_flag = true;
+
+					int ret = snprintf(buf_ptr, buf_len, "%d, ", qlist->id);
+					if(ret > 0){
+						buf_ptr += ret;
+						buf_len -= ret;
+					}
+					if(buf_len <= 0){
+						more_flag = true;
+						break;
+					}
+				}
+			}
+
+			if(found_flag){
+				if(more_flag){
+					memcpy(buf_ptr - 2, msg_end, sizeof(msg_end));
+				} else {
+					buf_ptr[-2] = '.';
+					buf_ptr[-1] = '\0';
+				}
+				ctx->send_msg(chan, "%s: %s", name, msg_buf);
+			} else {
+				ctx->send_msg(chan, "%s: No matches.", name);
+			}
+
+		} break;
 	}
-	//TODO: qfix, qsearch
 }
 
 static void quotes_join(const char* chan, const char* user){
