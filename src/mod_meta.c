@@ -31,8 +31,6 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-//FIXME: There might be realloc / pointer invalidation issues still in here somewhere...
-
 static char** channels;
 static char*** enabled_mods_for_chan;
 
@@ -141,7 +139,14 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	
 	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
 	const char* arg = msg;
-	int i = ctx->check_cmds(&arg, "\\modules", "\\mon", "\\moff", "\\minfo", NULL);
+	int i = ctx->check_cmds(
+		&arg,
+		"\\m,\\modules",
+		"\\mon,\\modon",
+		"\\moff,\\modoff",
+		"\\minfo,\\modinfo",
+		NULL
+	);
 	if(i < 0) return;
 
 	const size_t msglen = strlen(msg);
@@ -229,7 +234,22 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 		} break;
 
 		case CMD_MOD_INFO: {
-			//TODO: print desc
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Which module?", name);
+				break;
+			}
+
+			bool found = false;
+			for(; *all_mods; ++all_mods){
+				if(strcasecmp((*all_mods)->name, arg) == 0){
+					ctx->send_msg(chan, "%s: %s: %s", name, (*all_mods)->name, (*all_mods)->desc);
+					found = true;
+					break;
+				}
+			}
+			if(!found){
+				ctx->send_msg(chan, "%s: I haven't heard of that module...", name);
+			}
 		} break;
 	}
 }
@@ -240,15 +260,15 @@ static bool meta_check(const char* modname, const char* chan, int callback_id){
 }
 
 static void meta_join(const char* chan, const char* name){
-	if(strcasecmp(name, ctx->get_username()) == 0){
-		if(!get_enabled_modules(chan)){
-			sb_push(channels, strdup(chan));
-			sb_push(enabled_mods_for_chan, 0);
+	if(strcasecmp(name, ctx->get_username()) != 0) return;
 
-			for(IRCModuleCtx** m = ctx->get_modules(); *m; ++m){
-				if((*m)->flags & IRC_MOD_DEFAULT){
-					sb_push(sb_last(enabled_mods_for_chan), strdup((*m)->name));
-				}
+	if(!get_enabled_modules(chan)){
+		sb_push(channels, strdup(chan));
+		sb_push(enabled_mods_for_chan, 0);
+
+		for(IRCModuleCtx** m = ctx->get_modules(); *m; ++m){
+			if((*m)->flags & IRC_MOD_DEFAULT){
+				sb_push(sb_last(enabled_mods_for_chan), strdup((*m)->name));
 			}
 		}
 	}
