@@ -32,13 +32,13 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 		&yt_url_regex,
 		"youtu(\\.be\\/|be(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]+)",
 		REG_EXTENDED | REG_ICASE
-	);
+	) == 0;
 
 	ret = ret & regcomp(
 		&yt_title_regex,
 		"&title=([^&]*)",
 		REG_EXTENDED | REG_ICASE
-	);
+	) == 0;
 
 	curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);

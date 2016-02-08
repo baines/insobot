@@ -1,2 +1,2 @@
 # insobot
-wip modular version
+irc bot written in C with modules and markov chains and stuff

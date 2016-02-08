@@ -129,7 +129,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 		for(int i = 0; i < sb_count(alias_keys); ++i){
 			size_t alias_len = strlen(alias_keys[i]);
 
-			if(strncmp(msg + 1, alias_keys[i], alias_len) == 0){
+			if(strncasecmp(msg + 1, alias_keys[i], alias_len) == 0){
 				index = i;
 				arg = msg + alias_len + 1;
 

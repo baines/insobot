@@ -360,14 +360,18 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 				}
 			}
 
-			if(success){
-				if(m->ctx->on_init){
-					//TODO: check return value
-					sb_push(mod_call_stack, m);
-					m->ctx->on_init(core_ctx);
-					sb_pop(mod_call_stack);
+			if(success && m->ctx->on_init){
+				//TODO: check return value
+				sb_push(mod_call_stack, m);
+				if(!m->ctx->on_init(core_ctx)){
+					fprintf(stderr, "Init function returned false on reload for %s.\n", basename(m->lib_path));
+					success = false;
+					dlclose(m->lib_handle);
 				}
+				sb_pop(mod_call_stack);
+			}
 
+			if(success){
 				if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
 					bool found_ctx = false;
 					for(IRCModuleCtx** c = channel_modules; *c; ++c){
@@ -504,26 +508,30 @@ int main(int argc, char** argv){
 
 		sb_push(irc_modules, m);
 
-		if(!(m.ctx->flags & IRC_MOD_GLOBAL)){
-			sb_push(channel_modules, m.ctx);
-		}
-
 		printf("Loaded module %s\n", mname);
 	}
-
-	sb_push(channel_modules, 0);
 
 	globfree(&glob_data);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		bool success = true;
+
 		sb_push(mod_call_stack, m);
 		if(m->ctx->on_init){
-			//FIXME: remove modules that return false
-			bool ok = m->ctx->on_init(&core_ctx);
+			success = m->ctx->on_init(&core_ctx);
 		}
 		sb_pop(mod_call_stack);
+
+		if(success && !(m->ctx->flags & IRC_MOD_GLOBAL)){
+			sb_push(channel_modules, m->ctx);
+		} else if(!success){
+			sb_erase(irc_modules, m - irc_modules);
+			--m;
+		}
 	}
 
+	sb_push(channel_modules, 0);
+	
 	if(sb_count(irc_modules) == 0){
 		errx(1, "No modules could be loaded.");
 	}

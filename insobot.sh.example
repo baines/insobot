@@ -1,0 +1,23 @@
+#!/bin/bash
+
+export IRC_SERV="ip or hostname to connect to"
+export IRC_USER="the irc nick of the bot"
+export IRC_CHAN="#achannel,#anotherchannel"
+
+# you might need this if the server doesn't run on 6667
+# export IRC_PORT="1234"
+
+# or this, for a server password
+# export IRC_PASS="super secret"
+
+# if you need to auth with nickserv, use this
+# export IRC_NICKSERV_PASS="super secret"
+
+# mod_quotes needs these 3 vars
+# export INSOBOT_GIST_USER="github username to store the quote list gist as"
+# export INSOBOT_GIST_TOKEN="access token from https://github.com/settings/tokens with gist scope"
+# export INSOBOT_GIST_ID="gist id (make a blank one manually and copy from the url)"
+
+# also see src/config.h to change the bot owner, default name + default pass
+
+exec ./insobot
