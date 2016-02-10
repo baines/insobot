@@ -296,6 +296,7 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 				//XXX: requires basename not modify its arg, only GNU impl guarantees this
 				const char* mod_name = basename(m->lib_path);
 				if(strcmp(mod_name, ev->name) == 0){
+					printf("Found loaded module to be reloaded: %s\n", ev->name);
 					m->needs_reload = true;
 					module_currently_loaded = true;
 					break;
@@ -303,6 +304,9 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			}
 
 			if(!module_currently_loaded){
+
+				printf("Found new module to load: %s\n", ev->name);
+
 				char full_path[PATH_MAX];
 				size_t base_len = strlen(inotify_info.module_path);
 
@@ -341,19 +345,21 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			bool success = true;
 
 			do_module_save(m);
+
+			printf("%s: %p\n", m->lib_path, m->lib_handle);
 			if(m->lib_handle){
 				dlclose(m->lib_handle);
 			}
-			
+
 			IRCModuleCtx* prev_ctx = m->ctx;
 
-			m->lib_handle = dlopen(m->lib_path, RTLD_LAZY);
+			m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
 			if(!m->lib_handle){
 				fprintf(stderr, "Error reloading module: %s\n", dlerror());
 				success = false;
 			} else {
 				m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
-				if(!m->ctx){
+				if(!m->ctx || dlerror()){
 					fprintf(stderr, "Can't reload %s, no irc_mod_ctx\n", basename(m->lib_path));
 					dlclose(m->lib_handle);
 					success = false;
@@ -361,7 +367,6 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			}
 
 			if(success && m->ctx->on_init){
-				//TODO: check return value
 				sb_push(mod_call_stack, m);
 				if(!m->ctx->on_init(core_ctx)){
 					fprintf(stderr, "Init function returned false on reload for %s.\n", basename(m->lib_path));
@@ -488,7 +493,7 @@ int main(int argc, char** argv){
 	for(int i = 0; i < glob_data.gl_pathc; ++i){
 		Module m = {};
 
-		void* handle = dlopen(glob_data.gl_pathv[i], RTLD_LAZY);
+		void* handle = dlopen(glob_data.gl_pathv[i], RTLD_LAZY | RTLD_LOCAL);
 		char* mname  = basename(glob_data.gl_pathv[i]); //XXX: relies on GNU version of basename?
 		
 		if(!handle){

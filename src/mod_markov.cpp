@@ -13,6 +13,8 @@
 #include <climits>
 #include <cassert>
 #include <list>
+#include <regex>
+#include <experimental/optional>
 #include <ext/stdio_filebuf.h>
 #include "config.h"
 #include "module.h"
@@ -49,6 +51,7 @@
 */
 
 using namespace std;
+using namespace std::experimental;
 
 static const IRCCoreCtx* ctx;
 
@@ -179,32 +182,35 @@ static uint32_t lookup_or_add_word(const string& s){
 	return idx;
 }
 
-bool lookup_key(const string& a, const string& b, Key& out){
+optional<Key> lookup_key(const string& a, const string& b){
+
+	Key key;
+
 	auto a_p = word_map.equal_range(hash_fn(a)),
 	     b_p = word_map.equal_range(hash_fn(b));
-
-	uint32_t a_idx = lookup_or_add_word(a),
-	         b_idx = lookup_or_add_word(b),
-	         tmp = BAD_KEY;
 	
 	for(auto i = a_p.first, j = a_p.second; i != j; ++i){
-		if(i->second == a_idx){
-			tmp = i->second;
+		if(get_word(i->second) == a){
+			key.word1 = i->second;
 			break;
 		}
 	}
 	
-	if(tmp == BAD_KEY) return false;
+	if(key.word1 == BAD_KEY) return nullopt;
 	
 	for(auto i = b_p.first, j = b_p.second; i != j; ++i){
-		if(i->second == b_idx){
-			out.word1 = tmp;
-			out.word2 = i->second;
-			return true;
+		if(get_word(i->second) == b){
+			key.word2 = i->second;
 		}
 	}
 	
-	return false;
+	if(key.word2 == BAD_KEY) return nullopt;
+
+	if(chains.find(key) != chains.end()){
+		return make_optional(key);
+	} else {
+		return nullopt;
+	}
 }
 
 static void replace_all(string& str, const string& from, const string& to){
@@ -221,16 +227,23 @@ static void filter_profanity(string& s){
 	replace_all(s, "cunt", "c***");
 }
 
-static string markov_gen(){
-	
-	Key key;
-	if(!lookup_key("^", "^", key)){
-		puts("Should never happen: ^ not found in info...");
-		return "i am error";
-	}
+
+string markov_gen(optional<Key> opt_key = nullopt){
 	
 	string msg;
 	set<Key> used_keys;
+	Key key;
+
+	if(opt_key){
+		key = *opt_key;
+		msg.append(get_word(key.word1)).append(1, ' ').append(get_word(key.word2));
+	} else {
+		if(!(opt_key = lookup_key("^", "^"))){
+			puts("Should never happen: key not found in info...");
+			return "i am error";
+		}
+		key = *opt_key;
+	}
 
 	for(int chain_len = 1 + random_num(max_chain_len); chain_len > 0; --chain_len){
 
@@ -276,9 +289,8 @@ static string markov_gen(){
 			count = random_num(total);
 		}
 		
-		while(count >= 0){
-			count -= i->second.count;
-			if(count >= 0) ++i;
+		while((count -= i->second.count) >= 0){
+			++i;
 		}
 				
 		const string& next_word = get_word(i->second.idx);
@@ -305,7 +317,7 @@ static string markov_get_punct(){
 
 	size_t val = random_num(100);
 	
-	if(val < 50) return ".";
+	if(val < 60) return ".";
 	if(val < 75) return "?";
 	if(val < 85) return "!";
 	if(val < 97) return "...";
@@ -333,19 +345,23 @@ static void irc_send_ratelimited(const char* chan, const string& msg){
 	}
 }
 
-static bool markov_gen_formatted(string& msg){
+bool markov_gen_formatted(string& msg, optional<Key> key = nullopt){
 	int val = random_num(15);
 	int num_sentences = val < 10 ? 1
 	                  : val < 14 ? 2
 	                  : 3
 	                  ;
+
+	int key_sentence = random_num(num_sentences);
 	
 	while(num_sentences--){
 		string s;
 		int attempts = 0;
 		
 		do {
-			s = markov_gen();
+			optional<Key> k = num_sentences == key_sentence ? key : nullopt;
+			s = markov_gen(k);
+
 			if(!s.empty() && s[0] == ','){
 				s.erase(0, 2);
 			}
@@ -388,8 +404,8 @@ static void markov_pose_q(const char* chan){
 static void markov_reply(const char* chan, const char* nick){
 
 	// don't always reply
-	if(random_num(2) == 0){
-		puts("chooing not to reply.");
+	if(random_num(3) == 0){
+		puts("** Choosing not to reply.");
 		return;
 	}
 
@@ -503,24 +519,7 @@ static bool blacklisted(const string& word){
 
 static void markov_write(FILE* file);
 
-static bool parse_cmd(const string& msg, string cmd, string* args, size_t num_args){
-	cmd.insert(0, 1, '\\');
-	if(msg.find(cmd) != 0) return false;
-	
-	size_t space_idx = cmd.size();
-	
-	for(size_t i = 0; i < num_args; ++i){
-		size_t new_idx = msg.find(" ", space_idx);
-		if(new_idx != string::npos){
-			args[i] = string(msg, space_idx, new_idx);
-			space_idx = new_idx;
-		} else {
-			return false;
-		}
-	}
-	
-	return true;
-}
+static regex opinion_regex("^.*(do you (like|hate|think about|feel about)|opinion [a-z]+|thoughts [a-z]+|feelings [a-z]+|your take on) ([^?[:space:]]+).*$");
 
 static void markov_msg(const char* chan, const char* nick, const char* m){
 	bool quiet = false,
@@ -685,12 +684,55 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 	}
 	
 	// speak when we are spoken to
-	if(!msg.empty() && (msg.find("@" BOT_NAME) != string::npos
-	|| msg.find(BOT_NAME ":") == 0)){
-		markov_reply(chan, nick);
+
+	smatch match;
+
+	if(
+		!msg.empty() && (
+			msg.find("@" BOT_NAME) != string::npos ||
+			msg.find(BOT_NAME ":") != string::npos ||
+			msg.find(BOT_NAME ",") != string::npos
+		)
+	){
+		if(
+			msg.find("?") != string::npos &&
+			regex_match(msg, match, opinion_regex) &&
+			match.size() == 4
+		){
+			if(random_num(3) == 0){
+				puts("** Choosing to not reply.");
+				return;
+			}
+
+			string hotword = match[3];
+			if(hotword == "me") hotword = "you";
+
+			const char* link_words[] = { "is", "are", "can", "should", "could", "will", "might", "may" };
+			for(size_t i = 0; i < arrsize(link_words); ++i){
+				size_t r = random_num(arrsize(link_words));
+
+				const char* tmp = link_words[r];
+				link_words[r] = link_words[i];
+				link_words[i] = tmp;
+			}
+
+			optional<Key> k;
+			for(size_t i = 0; i < arrsize(link_words); ++i){
+				k = lookup_key(hotword, link_words[i]);
+				if(k) break;
+			}
+
+			string reply("@");
+			reply.append(nick).append(1, ' ');
+			markov_gen_formatted(reply, k);
+			irc_send_ratelimited(chan, reply);
+		} else {
+			markov_reply(chan, nick);
+		}
+
 		quiet = true;
 	}
-	
+
 	// spammy
 	if(strcasecmp(nick, "hmh_bot") == 0){
 		skip_chain = true;
@@ -806,13 +848,16 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 
 static void markov_read(const char* file){
 
+	word_storage.clear();
+	chains.clear();
+
 	ifstream in(file);
 	string line;
 	
 	while(getline(in, line)){
 		stringstream str(line);
 		string word, k1, k2;
-		
+
 		getline(str, k1, ' ');
 		getline(str, k2, ' ');
 
@@ -858,7 +903,9 @@ static void markov_write(FILE* file){
 	ostream out(&buf);
 	string line;
 	Key key;
-	
+
+	printf("Saving %zu words, %zu chains.\n", word_storage.size(), chains.size());
+
 	for(auto pair : chains){
 		if(pair.first != key){
 			key = pair.first;
@@ -877,9 +924,9 @@ static void markov_write(FILE* file){
 	out << line << endl;
 }
 
-
 static bool markov_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+
 	markov_read(ctx->get_datafile());
 	return true;
 }
@@ -898,3 +945,7 @@ extern "C" const IRCModuleCtx irc_mod_ctx = {
 	&markov_write
 };
 
+void is_dlclose_actually_working() __attribute__((destructor));
+void is_dlclose_actually_working(){
+	puts("Yes, dlclose is actually working.");
+}

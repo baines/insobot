@@ -1,5 +1,5 @@
 CFLAGS   := -D_GNU_SOURCE -std=c99 -g -fsanitize=address
-CXXFLAGS := -D_GNU_SOURCE -std=c++1y -g
+CXXFLAGS := -D_GNU_SOURCE -std=c++1y -g -Wl,--version-script=fix-dlclose.vs
 
 module_src := $(wildcard mod_*.c)
 module_out := $(patsubst %.c,../modules/%.so,$(module_src)) ../modules/mod_markov.so
