@@ -300,7 +300,7 @@ static void print_time(const char* chan, const char* name, const char* msg){
 	}
 
 	if(!found){
-		ctx->send_msg(chan, "No more streams scheduled, try checking handmadehero.org or @handmadehero on twitter");
+		ctx->send_msg(chan, "No more streams scheduled, try checking handmadehero.org or @handmade_hero on twitter");
 	}
 
 }
