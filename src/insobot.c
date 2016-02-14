@@ -279,6 +279,10 @@ static void do_module_save(Module* m){
 	sb_pop(mod_call_stack);
 }
 
+static void self_save(void){
+	do_module_save(sb_last(mod_call_stack));
+}
+
 static void check_inotify(const IRCCoreCtx* core_ctx){
 	char buff[sizeof(struct inotify_event) + NAME_MAX + 1];
 	char* p = buff;
@@ -486,6 +490,7 @@ int main(int argc, char** argv){
 		.join         = &join,
 		.part         = &part,
 		.check_cmds   = &check_cmds,
+		.save_me      = &self_save,
 	};
 
 	printf("Found %zu modules\n", glob_data.gl_pathc);

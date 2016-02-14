@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "stb_sb.h" 
 
 static bool whitelist_init    (const IRCCoreCtx*);
 static void whitelist_msg     (const char*, const char*, const char*);
@@ -20,53 +21,161 @@ IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-//TODO: read from file?
-static const char* wlist[] = {
-	"insofaras",
-	"test",
-	"fyoucon",
-	"miblo",
-	"j_vanrijn",
-	"aleph",
-	NULL,
+enum {
+	ROLE_PLEBIAN     = 0,
+	ROLE_WHITELISTED = (1 << 0),
+	ROLE_ADMIN       = (1 << 1) | ROLE_WHITELISTED,
 };
 
-static bool wl_check(const char* name){
-	for(const char** str = wlist; *str; ++str){
-		if(strcasecmp(name, *str) == 0){
+typedef struct WLEntry_ {
+	char* name;
+	int role;
+} WLEntry;
+
+static WLEntry* wlist;
+
+static void whitelist_load(void){
+	FILE* f = fopen(ctx->get_datafile(), "r");
+
+	char role[32], name[64];
+
+	while(fscanf(f, "%31s %63s", role, name) == 2){
+		WLEntry wl = { .role = ROLE_PLEBIAN };
+
+		if(strcasecmp(role, "ADMIN") == 0){
+			wl.role = ROLE_ADMIN;
+		} else if(strcasecmp(role, "WLIST") == 0){
+			wl.role = ROLE_WHITELISTED;
+		}
+		
+		if(wl.role != ROLE_PLEBIAN){
+			wl.name = strdup(name);
+			sb_push(wlist, wl);
+		}
+	}
+
+	fclose(f);
+}
+
+static inline bool role_check(const char* name, int role){
+	for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
+		if(strcasecmp(name, wle->name) == 0 && (wle->role & role) == role){
 			return true;
 		}
 	}
 	return false;
 }
 
+static inline bool wlist_check(const char* name){
+	return role_check(name, ROLE_WHITELISTED);
+}
+
+static inline bool admin_check(const char* name){
+	return role_check(name, ROLE_ADMIN);
+}
+
 static bool whitelist_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+	whitelist_load();
 	return true;
 }
 
 static void whitelist_msg(const char* chan, const char* name, const char* msg){
 
 	//TODO: add / del
-	enum { WL_CHECK, WL_ADD, WL_DEL };
+	enum { WL_CHECK_SELF, WL_CHECK_OTHER, WL_ADD, WL_DEL };
 
 	const char* arg = msg;
-	int i = ctx->check_cmds(&arg, "\\amiwhitelisted", "\\wladd", "\\wldel", NULL);
+	int i = ctx->check_cmds(
+		&arg,
+		"\\amiwhitelisted,\\wlcheckme,\\wl",
+		"\\iswl,\\wlcheck",
+		"\\wladd,\\wl+",
+		"\\wldel,\\wl-",
+		NULL
+	);
+
+	bool is_admin = strcasecmp(chan + 1, name) == 0 || admin_check(name);
 
 	switch(i){
-		case WL_CHECK: {
-			const char* opt = wl_check(name) ? "are" : "are not";
+		case WL_CHECK_SELF: {
+			const char* opt = wlist_check(name) ? "are" : "are not";
 			ctx->send_msg(chan, "%s: You %s whitelisted.", name, opt);
+		} break;
+
+		case WL_CHECK_OTHER: {
+			if(!is_admin || !*arg++) break;
+
+			const char* opt = wlist_check(arg) ? "is" : "is not";
+			ctx->send_msg(chan, "%s: %s %s whitelisted.", name, arg, opt);
+		} break;
+
+		case WL_ADD: {
+			if(!is_admin) break;
+
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Whitelist who exactly?", name);
+				break;
+			}
+
+			bool found = false;
+			for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
+				if((wle->role & ROLE_WHITELISTED) && strcasecmp(wle->name, arg) == 0){
+					ctx->send_msg(chan, "%s: They're already whitelisted.", name);
+					found = true;
+					break;
+				}
+			}
+
+			if(!found){
+				ctx->send_msg(chan, "%s: Whitelisted %s.", name, arg);
+				WLEntry wle = { .name = strdup(arg), .role = ROLE_WHITELISTED };
+				sb_push(wlist, wle);
+			}
+		} break;
+
+		case WL_DEL: {
+			if(!is_admin) break;
+
+			if(!*arg++){
+				ctx->send_msg(chan, "%s: Unwhitelist who exactly?", name);
+				break;
+			}
+
+			bool found = false;
+			for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
+				if(wle->role == ROLE_WHITELISTED && strcasecmp(wle->name, arg) == 0){
+					ctx->send_msg(chan, "%s: Unwhitelisted %s.", name, arg);
+					free(wle->name);
+					sb_erase(wlist, wle - wlist);
+					found = true;
+					break;
+				}
+			}
+
+			if(!found){
+				ctx->send_msg(chan, "%s: They're already not whitelisted.", name);
+			}
 		} break;
 	}
 }
 
 static void whitelist_save(FILE* file){
-	//TODO: write to file
+	for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
+		if(wle->role == ROLE_ADMIN){
+			fprintf(file, "ADMIN %s\n", wle->name);
+		} else if(wle->role == ROLE_WHITELISTED){
+			fprintf(file, "WLIST %s\n", wle->name);
+		}
+	}
 }
 
 static void whitelist_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "check_whitelist") == 0){
-		msg->callback(wl_check((const char*)msg->arg), msg->cb_arg);
+		msg->callback(wlist_check((const char*)msg->arg), msg->cb_arg);
+	}
+
+	if(strcmp(msg->cmd, "check_admin") == 0){
+		msg->callback(admin_check((const char*)msg->arg), msg->cb_arg);
 	}
 }

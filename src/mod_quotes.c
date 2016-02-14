@@ -361,7 +361,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 			};
 			sb_push(*quotes, q);
 			ctx->send_msg(chan, "%s: Added as quote %d.", name, id);
-			quotes_save(NULL);
+			ctx->save_me();
 		} break;
 
 		case DEL_QUOTE: {
@@ -380,7 +380,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 				int off = q - *quotes;
 				sb_erase(*quotes, off);
 				ctx->send_msg(chan, "%s: Deleted quote %d\n", name, id);
-				quotes_save(NULL);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
@@ -408,7 +408,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 				free(q->text);
 				q->text = strdup(arg2 + 1);
 				ctx->send_msg(chan, "%s: Updated quote %d.", name, id);
-				quotes_save(NULL);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
@@ -442,7 +442,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 			if(ret){
 				q->timestamp = mktime(&timestamp);
 				ctx->send_msg(chan, "%s: Updated quote %d's timestamp successfully.", name, id);
-				quotes_save(NULL);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Sorry, I don't understand that timestamp. Use YYYY-MM-DD hh:mm:ss", name);
 			}

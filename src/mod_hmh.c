@@ -12,7 +12,6 @@ static bool hmh_init (const IRCCoreCtx*);
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "hmh",
 	.desc     = "Functionalitty specific to Handmade Hero",
-	.flags    = IRC_MOD_DEFAULT,
 	.on_msg   = &hmh_msg,
 	.on_init  = &hmh_init,
 };
@@ -70,6 +69,8 @@ static bool update_schedule(void){
 
 	int curl_ret = curl_easy_perform(curl);
 
+	curl_easy_cleanup(curl);
+
 	sb_push(data, 0);
 
 	if(curl_ret != 0){
@@ -120,6 +121,8 @@ static bool update_schedule(void){
 
 	tz_pop(tz);
 
+	sb_free(data);
+
 	return true;
 }
 
@@ -143,7 +146,7 @@ static int inso_strcat(char* buf, size_t sz, const char* str){
 static void print_schedule(const char* chan, const char* name, const char* msg){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 600){
+	if(now - last_schedule_update > 3600){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
@@ -229,13 +232,12 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 	ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
 
 	tz_pop(tz);
-
 }
 
 static void print_time(const char* chan, const char* name, const char* msg){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 600){
+	if(now - last_schedule_update > 3600){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
