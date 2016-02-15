@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <math.h>
 #include "module.h"
 #include "stb_sb.h"
 #include <curl/curl.h>
@@ -19,14 +18,14 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-enum { SCHEDULE_DAYS = 7 };
+enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
 
 static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 //static const char schedule_url[] = "http://127.0.0.1:8000/broadcast.csv";
 static time_t last_schedule_update;
 
 static struct tm schedule_start = {};
-static time_t schedule[SCHEDULE_DAYS] = {};
+static time_t schedule[DAYS_IN_WEEK] = {};
 
 static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
 	char** out = (char**)data;
@@ -59,12 +58,17 @@ void tz_pop(char* oldtz){
 
 static bool is_upcoming_stream(void){
 	time_t now = time(0);
-	for(int i = 0; i < SCHEDULE_DAYS; ++i){
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
 		if((schedule[i] - now) > 0 || (now - schedule[i]) < 90*60){
 			return true;
 		}
 	}
 	return false;
+}
+
+// converts tm_wday which uses 0..6 = sun..sat, to 0..6 = mon..sun
+static int get_dow(struct tm* tm){
+	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
 }
 
 static bool update_schedule(void){
@@ -94,29 +98,30 @@ static bool update_schedule(void){
 	memset(schedule, 0, sizeof(schedule));
 	memset(&schedule_start, 0, sizeof(schedule_start));
 
-	// this follows the struct tm format of sunday being 0, but schedule uses monday as 0
-	enum { SUN, MON, TUE, WED, THU, FRI, SAT, DAYS_IN_WEEK };
-	
 	char* tz = tz_push(":US/Pacific");
 
-	time_t our_time_t = time(0);
-	struct tm scheduled_time = {};
+	time_t now = time(0);
+	struct tm now_tm = {}, prev_tm = {};
+	localtime_r(&now, &now_tm);
 
 	int record_idx = -1;
 	char *state, *line = strtok_r(data, "\r\n", &state);
 
 	for(; line; line = strtok_r(NULL, "\r\n", &state)){
 
-		char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_time);
+		struct tm scheduled_tm = {};
+		char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
 		if(*title != ','){
 			break;
 		}
 
-		time_t sched_time_t = mktime(&scheduled_time);
-		
+		time_t sched = mktime(&scheduled_tm);
+		int day_diff = (now - sched) / (24*60*60);
+
 		if(record_idx >= 0){
-			record_idx += roundf((sched_time_t - schedule[record_idx]) / (float)(24*60*60));
-			if(record_idx >= DAYS_IN_WEEK){
+			int idx_diff =  (get_dow(&scheduled_tm) - get_dow(&prev_tm));
+			record_idx += idx_diff;
+			if(record_idx >= DAYS_IN_WEEK || idx_diff < 0 || day_diff > (6*24*60*60)){
 				if(is_upcoming_stream()){
 					break;
 				} else {
@@ -125,12 +130,10 @@ static bool update_schedule(void){
 				}
 			}
 		}
-
-		int day_diff = (our_time_t - sched_time_t) / (24*60*60);
 		
 		if(record_idx < 0 && day_diff < DAYS_IN_WEEK){
-			record_idx = scheduled_time.tm_wday ? scheduled_time.tm_wday - 1 : SUN;
-			schedule_start = scheduled_time;
+			record_idx = get_dow(&scheduled_tm);
+			schedule_start = scheduled_tm;
 			schedule_start.tm_mday -= record_idx;
  			schedule_start.tm_isdst = -1;
 			mktime(&schedule_start);
@@ -140,17 +143,25 @@ static bool update_schedule(void){
 			if(strcmp(title + 1, "off") == 0){
 				schedule[record_idx] = -1;
 			} else {
-				schedule[record_idx] = sched_time_t;
+				schedule[record_idx] = sched;
 			}	
 		}
+
+		prev_tm = scheduled_tm;
 	}
 
-	// skip to the next week if there are no upcoming streams.
-	if(!is_upcoming_stream()){
+	// skip to the next week if there are no upcoming streams and it's past friday.
+	struct tm cutoff_tm = schedule_start;
+	cutoff_tm.tm_mday += FRI;
+	cutoff_tm.tm_hour = 17;
+	cutoff_tm.tm_min = 0;
+	cutoff_tm.tm_isdst = -1;
+	time_t cutoff = mktime(&cutoff_tm);
+
+	if(!is_upcoming_stream() && now > cutoff){
 		memset(schedule, 0, sizeof(schedule));
-		localtime_r(&our_time_t, &schedule_start);
-		int day_off = schedule_start.tm_wday ? 8 - schedule_start.tm_wday : 1;
-		schedule_start.tm_mday += day_off;
+		schedule_start.tm_mday += DAYS_IN_WEEK;
+		mktime(&schedule_start);
 	}
 
 	tz_pop(tz);
@@ -192,14 +203,14 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 		int hour;
 		int min;
 		uint8_t bits;
-	} times[SCHEDULE_DAYS] = {};
+	} times[DAYS_IN_WEEK] = {};
 
 	int time_count = 0;
 
 	char* tz = tz_push(":US/Pacific");
 	
 	// group days by equal times
-	for(int i = 0; i < SCHEDULE_DAYS; ++i){
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
 		struct tm lt = {};
 
 		switch(schedule[i]){
@@ -235,7 +246,7 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 		something_scheduled = true;
 
 		inso_strcat(msg_buf, sizeof(msg_buf), "[");
-		for(int j = 0; j < SCHEDULE_DAYS; ++j){
+		for(int j = 0; j < DAYS_IN_WEEK; ++j){
 			if(times[i].bits & (1 << j)){
 				inso_strcat(msg_buf, sizeof(msg_buf), days[j]);
 				inso_strcat(msg_buf, sizeof(msg_buf), " ");
@@ -274,7 +285,7 @@ static void print_time(const char* chan, const char* name, const char* msg){
 	bool found = false;
 	enum { SEC_IN_MIN = 60, SEC_IN_HOUR = 60*60, SEC_IN_DAY = 24*60*60 };
 
-	for(int i = 0; i < SCHEDULE_DAYS; ++i){
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
 		
 		int live_test = now - schedule[i];
 		if(live_test > 0 && live_test < SEC_IN_HOUR){
