@@ -164,6 +164,13 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 					memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
 				}
 				++str;
+			} else if(*str == '%' && *(str + 1) == 'n'){
+				if(arg && *arg && arg_len){
+					memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
+				} else {
+					memcpy(sb_add(msg_buf, name_len), name, name_len);
+				}
+				++str;
 			} else {
 				sb_push(msg_buf, *str);
 			}

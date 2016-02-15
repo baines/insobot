@@ -53,7 +53,8 @@ typedef struct IRCModuleCtx_ {
 	// called to request the module saves any data it needs
 	void (*on_save)    (FILE* file);
 
-	//TODO: on_file_modified, inotify on modules/data dir
+	//TODO: should this take any arguments?
+	void (*on_data_modified)(void);
 
 	// called before other callbacks to allow per-channel modules
 	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);

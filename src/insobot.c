@@ -25,7 +25,7 @@ typedef struct Module_ {
 	char* lib_path;
 	void* lib_handle;
 	IRCModuleCtx* ctx;
-	bool needs_reload;
+	bool needs_reload, data_modified;
 } Module;
 
 struct INotifyInfo {
@@ -213,10 +213,11 @@ static void send_raw(const char* raw){
 }
 
 static void send_mod_msg(IRCModMsg* msg){
-	//FIXME: should mod_msg update the call stack?
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		const char* sender = sb_last(mod_call_stack)->ctx->name;
+		sb_push(mod_call_stack, m);
 		if(m->ctx->on_mod_msg) m->ctx->on_mod_msg(sender, msg);
+		sb_pop(mod_call_stack);
 	}
 }
 
@@ -253,7 +254,12 @@ out:
 
 static void do_module_save(Module* m){
 	if(!m->ctx || !m->ctx->on_save) return;
-	
+
+	//XXX: I hope this is the best way to temporarily ignore an inotify watch...
+	//     inotiy_add_watch() with a 0 mask didn't seem to work.
+
+	inotify_rm_watch(inotify_info.fd, inotify_info.data_watch);
+
 	sb_push(mod_call_stack, m);
 	
 	const char*  save_fname = get_datafile();
@@ -278,6 +284,12 @@ static void do_module_save(Module* m){
 	}
 
 	sb_pop(mod_call_stack);
+
+	inotify_info.data_watch = inotify_add_watch(
+		inotify_info.fd,
+		inotify_info.data_path,
+		IN_CLOSE_WRITE | IN_MOVED_TO
+	);
 }
 
 static void self_save(void){
@@ -286,13 +298,18 @@ static void self_save(void){
 
 static void check_inotify(const IRCCoreCtx* core_ctx){
 	char buff[sizeof(struct inotify_event) + NAME_MAX + 1];
+	struct inotify_event* ev;
 	char* p = buff;
 
 	//TODO: clean this ugly function up & merge common code with the initial loading in main
 
 	ssize_t sz = read(inotify_info.fd, &buff, sizeof(buff));
-	while((p - buff) < sz){
-		struct inotify_event* ev = (struct inotify_event*)p;
+	for(; (p - buff) < sz; p += (sizeof(*ev) + ev->len)){
+		ev = (struct inotify_event*)p;
+
+		if(!(ev->mask & (IN_CLOSE_WRITE | IN_MOVED_TO))){
+			continue;
+		}
 
 		if(ev->wd == inotify_info.module_watch){
 
@@ -329,20 +346,25 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 				sb_push(irc_modules, new_mod);
 			}
 		} else if(ev->wd == inotify_info.data_watch){
-			//TODO: notify modules their data file was modified
-			//XXX: avoid doing this when they save it themselves somehow...
 			size_t len = strlen(ev->name);
-			if(len > 5 && memcmp(ev->name + (len - 5), ".data", 6) == 0){
-				fprintf(stderr, "%s got modified. TODO: do something...\n", ev->name);
+			if(len <= 5 || memcmp(ev->name + (len - 5), ".data", 6) != 0){
+				continue;
+			}
+
+			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+				if(strlen(m->ctx->name) == len - 5 && strncmp(m->ctx->name, ev->name, len - 5) == 0){
+					fprintf(stderr, "%s was modified.\n", ev->name);
+					m->data_modified = true;
+					break;
+				}
 			}
 		}
-
-		p += (sizeof(struct inotify_event) + ev->len);
 	}
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		if(m->needs_reload){
 			m->needs_reload = false;
+			m->data_modified = false;
 			
 			const char* mod_name = basename(m->lib_path);
 			fprintf(stderr, "Reloading module %s...\n", mod_name);
@@ -351,7 +373,6 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 
 			do_module_save(m);
 
-			printf("%s: %p\n", m->lib_path, m->lib_handle);
 			if(m->lib_handle){
 				dlclose(m->lib_handle);
 			}
@@ -415,8 +436,20 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 				sb_erase(irc_modules, m - irc_modules);
 				--m;
 			}
+		} else if(m->data_modified){
+			m->data_modified = false;
+			if(m->ctx && m->ctx->on_data_modified){
+				sb_push(mod_call_stack, m);
+				fprintf(stderr, "Calling on_data_modified for %s\n", m->ctx->name);
+				m->ctx->on_data_modified();
+				sb_pop(mod_call_stack);
+			}
 		}
 	}
+}
+
+int mod_sort(const void* a, const void* b){
+	return ((Module*)b)->ctx->priority - ((Module*)a)->ctx->priority;
 }
 
 int main(int argc, char** argv){
@@ -457,7 +490,7 @@ int main(int argc, char** argv){
 	inotify_info.module_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
-		IN_CLOSE_WRITE
+		IN_CLOSE_WRITE | IN_MOVED_TO
 	);
 
 	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
@@ -465,7 +498,7 @@ int main(int argc, char** argv){
 	inotify_info.data_watch = inotify_add_watch(
 		inotify_info.fd,
 		our_path,
-		IN_CLOSE_WRITE
+		IN_CLOSE_WRITE | IN_MOVED_TO
 	);
 
 	memcpy(path_end, glob_suffix, sizeof(glob_suffix));
@@ -547,8 +580,7 @@ int main(int argc, char** argv){
 		errx(1, "No modules could be loaded.");
 	}
 
-			
-	//TODO: qsort modules by priority
+	qsort(irc_modules, sb_count(irc_modules), sizeof(*irc_modules), &mod_sort);
 	
 	irc_callbacks_t callbacks = {
 		.event_connect = irc_on_connect,
