@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include "module.h"
 #include "stb_sb.h"
 #include <curl/curl.h>
@@ -23,6 +24,8 @@ enum { SCHEDULE_DAYS = 7 };
 static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 //static const char schedule_url[] = "http://127.0.0.1:8000/broadcast.csv";
 static time_t last_schedule_update;
+
+static struct tm schedule_start = {};
 static time_t schedule[SCHEDULE_DAYS] = {};
 
 static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
@@ -54,6 +57,16 @@ void tz_pop(char* oldtz){
 	tzset();
 }
 
+static bool is_upcoming_stream(void){
+	time_t now = time(0);
+	for(int i = 0; i < SCHEDULE_DAYS; ++i){
+		if((schedule[i] - now) > 0 || (now - schedule[i]) < 90*60){
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool update_schedule(void){
 
 	char* data = NULL;
@@ -79,6 +92,7 @@ static bool update_schedule(void){
 	}
 
 	memset(schedule, 0, sizeof(schedule));
+	memset(&schedule_start, 0, sizeof(schedule_start));
 
 	// this follows the struct tm format of sunday being 0, but schedule uses monday as 0
 	enum { SUN, MON, TUE, WED, THU, FRI, SAT, DAYS_IN_WEEK };
@@ -86,7 +100,6 @@ static bool update_schedule(void){
 	char* tz = tz_push(":US/Pacific");
 
 	time_t our_time_t = time(0);
-	struct tm* our_time = localtime(&our_time_t);
 	struct tm scheduled_time = {};
 
 	int record_idx = -1;
@@ -100,10 +113,27 @@ static bool update_schedule(void){
 		}
 
 		time_t sched_time_t = mktime(&scheduled_time);
-		int day_diff = (our_time_t - sched_time_t) / (24*60*60);
+		
+		if(record_idx >= 0){
+			record_idx += roundf((sched_time_t - schedule[record_idx]) / (float)(24*60*60));
+			if(record_idx >= DAYS_IN_WEEK){
+				if(is_upcoming_stream()){
+					break;
+				} else {
+					memset(schedule, 0, sizeof(schedule));
+					record_idx = -1;
+				}
+			}
+		}
 
-		if(record_idx < 0 && scheduled_time.tm_wday == MON && day_diff < DAYS_IN_WEEK){
-			record_idx = 0;
+		int day_diff = (our_time_t - sched_time_t) / (24*60*60);
+		
+		if(record_idx < 0 && day_diff < DAYS_IN_WEEK){
+			record_idx = scheduled_time.tm_wday ? scheduled_time.tm_wday - 1 : SUN;
+			schedule_start = scheduled_time;
+			schedule_start.tm_mday -= record_idx;
+ 			schedule_start.tm_isdst = -1;
+			mktime(&schedule_start);
 		}
 
 		if(record_idx >= 0){
@@ -112,11 +142,15 @@ static bool update_schedule(void){
 			} else {
 				schedule[record_idx] = sched_time_t;
 			}	
-			
-			if(++record_idx >= DAYS_IN_WEEK){
-				break;
-			}
 		}
+	}
+
+	// skip to the next week if there are no upcoming streams.
+	if(!is_upcoming_stream()){
+		memset(schedule, 0, sizeof(schedule));
+		localtime_r(&our_time_t, &schedule_start);
+		int day_off = schedule_start.tm_wday ? 8 - schedule_start.tm_wday : 1;
+		schedule_start.tm_mday += day_off;
 	}
 
 	tz_pop(tz);
@@ -192,11 +226,13 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 		times[time_bucket].bits |= (1 << i);
 	}
 
+	bool something_scheduled = false;
 	const char* days[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 	char msg_buf[256] = {};
 
 	for(int i = 0; i < time_count; ++i){
 		if(times[i].hour == TIME_UNKNOWN) continue;
+		something_scheduled = true;
 
 		inso_strcat(msg_buf, sizeof(msg_buf), "[");
 		for(int j = 0; j < SCHEDULE_DAYS; ++j){
@@ -215,21 +251,15 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 		}
 	}
 
-	struct tm t = {};
-	localtime_r(&now, &t);
-
-	int rm = t.tm_wday ? t.tm_wday - 1 : 6;
-	t.tm_mday -= rm;
-	t.tm_isdst = -1;
-	mktime(&t);
-
-	char prefix[64];
-	strftime(prefix, sizeof(prefix), "%b %d", &t);
-
-	char suffix[64];
-	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &t);
-
-	ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
+	char prefix[64], suffix[64];
+	strftime(prefix, sizeof(prefix), "%b %d", &schedule_start);
+	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &schedule_start);
+	
+	if(something_scheduled){
+		ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
+	} else {
+		ctx->send_msg(chan, "Schedule for week of %s: TBA.", prefix);
+	}
 
 	tz_pop(tz);
 }
