@@ -29,30 +29,29 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	bool ret = true;
 
-	ret = ret & regcomp(
+	ret = ret & (regcomp(
 		&yt_url_regex,
 		"youtu(\\.be\\/|be(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]+)",
 		REG_EXTENDED | REG_ICASE
-	) == 0;
+	) == 0);
 
-	ret = ret & regcomp(
+	ret = ret & (regcomp(
 		&yt_title_regex,
 		"&title=([^&]*)",
 		REG_EXTENDED | REG_ICASE
-	) == 0;
+	) == 0);
 
-	ret = ret & regcomp(
+	ret = ret & (regcomp(
 		&msdn_url_regex,
 		"msdn\\.microsoft\\.com/[^/]+/library/.*\\.aspx",
 		REG_EXTENDED | REG_ICASE
-	) == 0;
+	) == 0);
 
-	ret = ret & regcomp(
+	ret = ret & (regcomp(
 		&generic_title_regex,
 		"<title>([^<]+)</title>",
 		REG_EXTENDED | REG_ICASE
-	) == 0;
-
+	) == 0);
 
 	return ret;
 }

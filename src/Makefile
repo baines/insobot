@@ -1,5 +1,5 @@
-CFLAGS   := -D_GNU_SOURCE -std=c99 -g -fsanitize=address
-CXXFLAGS := -D_GNU_SOURCE -std=c++1y -g -Wl,--version-script=fix-dlclose.vs
+CFLAGS   := -D_GNU_SOURCE -Wall -Wno-pointer-sign -std=c99 -g -fsanitize=address
+CXXFLAGS := -D_GNU_SOURCE -Wall -std=c++1y -g -Wl,--version-script=fix-dlclose.vs
 
 module_src := $(wildcard mod_*.c)
 module_out := $(patsubst %.c,../modules/%.so,$(module_src)) ../modules/mod_markov.so

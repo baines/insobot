@@ -23,8 +23,6 @@ static bool admin_init(const IRCCoreCtx* _ctx){
 static void admin_msg(const char* chan, const char* name, const char* msg){
 	if(strcmp(name, BOT_OWNER) != 0) return;
 
-	size_t msglen = strlen(msg);
-
 	enum { FORCE_JOIN };
 
 	const char* arg = msg;

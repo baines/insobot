@@ -96,6 +96,7 @@ struct Key {
 		s.append(word1 != BAD_KEY ? get_word(word1) : "(null)");		
 		s.append(", ");
 		s.append(word2 != BAD_KEY ? get_word(word2) : "(null)");
+		return s;
 	}
 };
 
@@ -166,7 +167,6 @@ static void fix_narcissism(string nick, string& word){
 }
 
 static uint32_t lookup_or_add_word(const string& s){
-	bool found = false;
 	auto p = word_map.equal_range(hash_fn(s));
 	
 	for(auto i = p.first, j = p.second; i != j; ++i){
@@ -254,7 +254,7 @@ string markov_gen(optional<Key> opt_key = nullopt){
 		}
 		used_keys.insert(key);
 		
-		auto i = p.first, j = p.second;
+		auto i = p.first;
 		bool end_available = false;
 		size_t total = 0;
 
@@ -323,7 +323,8 @@ static string markov_get_punct(){
 	if(val < 97) return "...";
 	if(val < 98) return "‽";
 	if(val < 99) return ". FailFish";
-	if(val == 99) return ". Kappa";
+	
+	return ". Kappa";
 }
 
 static bool check_dup(const string msg){
@@ -809,7 +810,7 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 			if(word == words[1] && words[1] == words[0]) continue;
 		
 			// trim out ++ and -- after names
-			int len = word.size();
+			size_t len = word.size();
 			if (len > 2 && (word.find("++") == len - 2 || word.find("--") == len - 2)){
 				len -= 2;
 			}

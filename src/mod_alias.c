@@ -86,8 +86,11 @@ static void do_alias_cmd(const char* chan, const char* name, const char* arg, in
 		case CMD_ALIAS_DEL: {
 			if(!*arg++ || !isalnum(*arg)) goto usage_del;
 
+			bool found = false;
 			for(int i = 0; i < sb_count(alias_keys); ++i){
 				if(strcasecmp(arg, alias_keys[i]) == 0){
+					found = true;
+
 					free(alias_keys[i]);
 					sb_erase(alias_keys, i);
 					
@@ -95,12 +98,17 @@ static void do_alias_cmd(const char* chan, const char* name, const char* arg, in
 					sb_erase(alias_vals, i);
 
 					ctx->send_msg(chan, "%s: Removed alias %s.\n", name, arg);
-					return;
+					break;
 				}
 			}
-			ctx->send_msg(chan, "%s: That alias doesn't exist.", name);
+
+			if(!found){
+				ctx->send_msg(chan, "%s: That alias doesn't exist.", name);
+			}
 		} break;
 	}
+
+	ctx->save_me();
 
 	return;
 
@@ -111,8 +119,6 @@ usage_del:
 }
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
-
-	size_t msg_len = strlen(msg);
 
 	const char* m = msg;
 	int i = ctx->check_cmds(&m, "\\alias", "\\unalias", NULL);

@@ -102,7 +102,7 @@ static void load_csv(const char* content, Quote** qlist){
 
 		text_start+=3;
 
-		q.timestamp = mktime(&timestamp);
+		q.timestamp = timegm(&timestamp);
 
 		size_t len = strlen(text_start);
 		if(text_start[len - 1] != '"'){
@@ -293,8 +293,8 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 	int i = ctx->check_cmds(
 		&arg,
 		"\\q",
-		"\\qadd",
-		"\\qdel,\\qrm",
+		"\\qadd,\\q+",
+		"\\qdel,\\qrm,\\q-",
 		"\\qfix,\\qmv",
 		"\\qft,\\qfixtime",
 		"\\ql,\\qlist",
@@ -440,7 +440,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 			struct tm timestamp = {};
 			char* ret = strptime(arg2 + 1, "%F %T", &timestamp);
 			if(ret){
-				q->timestamp = mktime(&timestamp);
+				q->timestamp = timegm(&timestamp);
 				ctx->send_msg(chan, "%s: Updated quote %d's timestamp successfully.", name, id);
 				ctx->save_me();
 			} else {

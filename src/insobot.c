@@ -16,6 +16,7 @@
 #include <glob.h>
 #include <dlfcn.h>
 #include <libircclient.h>
+#include <libirc_rfcnumeric.h>
 #include "config.h"
 #include "module.h"
 #include "stb_sb.h"

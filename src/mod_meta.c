@@ -149,7 +149,6 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	);
 	if(i < 0) return;
 
-	const size_t msglen = strlen(msg);
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	
 	if(!has_cmd_perms){
@@ -201,6 +200,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 					} else {
 						sb_push(*our_mods, strdup(arg));
 						ctx->send_msg(chan, "%s: Enabled module %s.", name, arg);
+						ctx->save_me();
 					}
 				}
 			}
@@ -223,6 +223,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 						free(*m);
 						sb_erase(*our_mods, m - *our_mods);
 						ctx->send_msg(chan, "%s: Disabled module %s.", name, (*all_mods)->name);
+						ctx->save_me();
 					} else {
 						ctx->send_msg(chan, "%s: That module is already disabled here!", name);
 					}
