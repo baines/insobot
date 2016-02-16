@@ -292,8 +292,13 @@ static void print_time(const char* chan, const char* name, const char* msg){
 			found = true;
 
 			int m = live_test / SEC_IN_MIN;
-			int qa = 60 - m;
-			ctx->send_msg(chan, "%d minutes into the stream, %d until Q&A. (if Casey is on schedule)", m, qa);
+			ctx->send_msg(
+				chan,
+				"%d minute%s into the stream, %d until Q&A. (if Casey is on schedule)",
+				m,
+				m > 1 ? "s" : "",
+				60 - m
+			);
 			break;
 		}
 
@@ -301,8 +306,13 @@ static void print_time(const char* chan, const char* name, const char* msg){
 			found = true;
 
 			int m = (live_test - SEC_IN_HOUR) / SEC_IN_MIN;
-			int e = 30 - m;
-			ctx->send_msg(chan, "%d minutes into the Q&A, %d until end. (if Casey is on schedule)", m, e);
+			ctx->send_msg(
+				chan,
+				"%d minute%s into the Q&A, %d until end. (if Casey is on schedule)",
+				m,
+				m > 1 ? "s" : "",
+				30 - m
+			);
 			break;
 		}
 
