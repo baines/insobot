@@ -35,10 +35,20 @@ struct INotifyInfo {
 	char *module_path, *data_path;
 } inotify_info;
 
+enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW };
+typedef struct IRCCmd_ {
+	int cmd;
+	char *chan, *data;
+} IRCCmd;
+
+static IRCCmd* cmd_queue;
 static Module* irc_modules;
+static Module** mod_call_stack;
 static IRCModuleCtx** channel_modules;
 
 static const char *user, *pass, *serv, *port;
+
+static char** channels;
 
 static inline const char* env_else(const char* env, const char* def){
 	const char* c = getenv(env);
@@ -74,8 +84,6 @@ static inline const char* env_else(const char* env, const char* def){
 			IRC_MOD_CALL(m, ptr, args);\
 		}\
 	}
-
-static Module** mod_call_stack;
 
 static bool irc_check_perms(const char* mod, const char* chan, int id){
 	bool ret = true;
@@ -181,7 +189,6 @@ static const char* get_datafile(void){
 			IN_DELETE_SELF
 		);
 
-		printf("CREAT %s\n", datafile_buff);
 		close(creat(datafile_buff, 00600));
 
 		inotify_info.data_watch = inotify_add_watch(
@@ -198,10 +205,20 @@ static IRCModuleCtx** get_modules(void){
 	return channel_modules;
 }
 
-static char** channels;
-
 static const char** get_channels(void){
 	return (const char**)channels;
+}
+
+static void irc_cmd_enqueue(int cmd, const char* chan, const char* data){
+	if(sb_count(cmd_queue) > CMD_QUEUE_MAX) return;
+
+	IRCCmd c = {
+		.cmd  = cmd,
+		.chan = chan ? strdup(chan) : NULL,
+		.data = data ? strdup(data) : NULL
+	};
+
+	sb_push(cmd_queue, c);
 }
 
 static void join(const char* chan){
@@ -212,7 +229,7 @@ static void join(const char* chan){
 		}
 	}
 
-	irc_cmd_join(irc_ctx, chan, NULL);
+	irc_cmd_enqueue(IRC_CMD_JOIN, chan, NULL); //TODO: password protected channels?
 	irc_on_join(irc_ctx, "join", user, &chan, 1);
 	
 	sb_last(channels) = strdup(chan);
@@ -223,7 +240,7 @@ static void part(const char* chan){
 	
 	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
-			irc_cmd_part(irc_ctx, chan);
+			irc_cmd_enqueue(IRC_CMD_PART, chan, NULL);
 			irc_on_part(irc_ctx, "part", user, &chan, 1);
 			sb_erase(channels, c - channels);
 			break;
@@ -238,13 +255,52 @@ static void send_msg(const char* chan, const char* fmt, ...){
 
 	va_start(v, fmt);
 	if(vsnprintf(buff, sizeof(buff), fmt, v) > 0){
-		irc_cmd_msg(irc_ctx, chan, buff);
+		irc_cmd_enqueue(IRC_CMD_MSG, chan, buff);
 	}
 	va_end(v);
 }
 
 static void send_raw(const char* raw){
-	irc_send_raw(irc_ctx, raw);
+	irc_cmd_enqueue(IRC_CMD_RAW, NULL, raw);
+}
+
+
+static uint32_t prev_cmd_ms = 0;
+static void process_pending_cmds(){
+
+	if(!sb_count(cmd_queue)) return;
+
+	struct timespec ts = {};
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint32_t cmd_ms = (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
+
+	if((cmd_ms - prev_cmd_ms) > CMD_RATE_LIMIT_MS){
+		prev_cmd_ms = cmd_ms;
+
+		IRCCmd cmd = cmd_queue[0];
+		switch(cmd.cmd){
+
+			case IRC_CMD_JOIN: {
+				irc_cmd_join(irc_ctx, cmd.chan, cmd.data);
+			} break;
+
+			case IRC_CMD_PART: {
+				irc_cmd_part(irc_ctx, cmd.chan);
+			} break;
+
+			case IRC_CMD_MSG: {
+				irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
+			} break;
+
+			case IRC_CMD_RAW: {
+				irc_send_raw(irc_ctx, cmd.data);
+			} break;
+		}
+
+		if(cmd.chan) free(cmd.chan);
+		if(cmd.data) free(cmd.data);
+		sb_erase(cmd_queue, 0);
+	}
 }
 
 static void send_mod_msg(IRCModMsg* msg){
@@ -644,7 +700,9 @@ int main(int argc, char** argv){
 		}
 				
 		while(running && irc_is_connected(irc_ctx)){
-	
+
+			process_pending_cmds();
+
 			check_inotify(&core_ctx);
 
 			int max_fd = 0;
