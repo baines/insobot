@@ -9,6 +9,8 @@
 #include <err.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/inotify.h>
 #include <signal.h>
 #include <unistd.h>
@@ -82,7 +84,7 @@ static bool irc_check_perms(const char* mod, const char* chan, int id){
 			sb_push(mod_call_stack, m);
 			bool r = m->ctx->on_meta(mod, chan, id);
 			ret = ret & r;
-			printf("checking %s:%s:%d --> %d\n", mod, chan, id, ret);
+			//printf("checking %s:%s:%d --> %d\n", mod, chan, id, ret);
 			sb_pop(mod_call_stack);
 		}
 	}
@@ -171,6 +173,24 @@ static const char* get_datafile(void){
 	const size_t sz = sizeof(datafile_buff) - (end_ptr - datafile_buff);
 	snprintf(end_ptr, sz - 1, "/data/%s.data", caller->ctx->name);
 
+	if(access(datafile_buff, F_OK) != 0){
+		// change the inotify data watch to something we don't care about to disable it temporarily
+		inotify_info.data_watch = inotify_add_watch(
+			inotify_info.fd,
+			inotify_info.data_path,
+			IN_DELETE_SELF
+		);
+
+		printf("CREAT %s\n", datafile_buff);
+		close(creat(datafile_buff, 00600));
+
+		inotify_info.data_watch = inotify_add_watch(
+			inotify_info.fd,
+			inotify_info.data_path,
+			IN_CLOSE_WRITE | IN_MOVED_TO
+		);
+	}
+
 	return datafile_buff;
 }
 
@@ -180,21 +200,36 @@ static IRCModuleCtx** get_modules(void){
 
 static char** channels;
 
-static void join(const char* chan){
-	irc_cmd_join(irc_ctx, chan, NULL);
-	irc_on_join(irc_ctx, "join", user, &chan, 1);
+static const char** get_channels(void){
+	return (const char**)channels;
+}
 
-	for(char** c = channels; c < sb_end(channels); ++c){
+static void join(const char* chan){
+
+	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
 			return;
 		}
 	}
 
-	sb_push(channels, strdup(chan));
+	irc_cmd_join(irc_ctx, chan, NULL);
+	irc_on_join(irc_ctx, "join", user, &chan, 1);
+	
+	sb_last(channels) = strdup(chan);
+	sb_push(channels, 0);
 }
 
 static void part(const char* chan){
-	irc_cmd_part(irc_ctx, chan);
+	
+	for(char** c = channels; *c; ++c){
+		if(strcmp(*c, chan) == 0){
+			irc_cmd_part(irc_ctx, chan);
+			irc_on_part(irc_ctx, "part", user, &chan, 1);
+			sb_erase(channels, c - channels);
+			break;
+		}
+	}
+
 }
 
 static void send_msg(const char* chan, const char* fmt, ...){
@@ -255,10 +290,12 @@ out:
 static void do_module_save(Module* m){
 	if(!m->ctx || !m->ctx->on_save) return;
 
-	//XXX: I hope this is the best way to temporarily ignore an inotify watch...
-	//     inotiy_add_watch() with a 0 mask didn't seem to work.
-
-	inotify_rm_watch(inotify_info.fd, inotify_info.data_watch);
+	// change the inotify data watch to something we don't care about to disable it temporarily
+	inotify_info.data_watch = inotify_add_watch(
+		inotify_info.fd,
+		inotify_info.data_path,
+		IN_DELETE_SELF
+	);
 
 	sb_push(mod_call_stack, m);
 	
@@ -275,11 +312,13 @@ static void do_module_save(Module* m){
 		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
 	} else {
 		FILE* tmp_file = fdopen(tmp_fd, "wb");
-		m->ctx->on_save(tmp_file);
+		bool saved = m->ctx->on_save(tmp_file);
 		fclose(tmp_file);
 
-		if(rename(tmp_fname, save_fname) < 0){
+		if(saved && rename(tmp_fname, save_fname) < 0){
 			fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
+		} else if(!saved){
+			unlink(tmp_fname);
 		}
 	}
 
@@ -306,6 +345,8 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 	ssize_t sz = read(inotify_info.fd, &buff, sizeof(buff));
 	for(; (p - buff) < sz; p += (sizeof(*ev) + ev->len)){
 		ev = (struct inotify_event*)p;
+
+		printf("IN %d %x %s\n", ev->wd, ev->mask, ev->name);
 
 		if(!(ev->mask & (IN_CLOSE_WRITE | IN_MOVED_TO))){
 			continue;
@@ -419,7 +460,7 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 					}
 				}
 
-				for(char** c = channels; c < sb_end(channels); ++c){
+				for(char** c = channels; *c; ++c){
 					irc_on_join(irc_ctx, "join", user, (const char**)c, 1);
 				}
 
@@ -518,6 +559,7 @@ int main(int argc, char** argv){
 		.get_username = &get_username,
 		.get_datafile = &get_datafile,
 		.get_modules  = &get_modules,
+		.get_channels = &get_channels,
 		.send_msg     = &send_msg,
 		.send_raw     = &send_raw,
 		.send_mod_msg = &send_mod_msg,
@@ -556,6 +598,8 @@ int main(int argc, char** argv){
 	}
 
 	globfree(&glob_data);
+
+	sb_push(channels, 0);
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		bool success = true;

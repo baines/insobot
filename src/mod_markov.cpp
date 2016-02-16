@@ -518,7 +518,7 @@ static bool blacklisted(const string& word){
 	return false;
 }
 
-static void markov_write(FILE* file);
+static bool markov_write(FILE* file);
 
 static regex opinion_regex("^.*(do you (like|hate|think about|feel about)|opinion [a-z]+|thoughts [a-z]+|feelings [a-z]+|your take on) ([^?[:space:]]+).*$");
 
@@ -897,7 +897,7 @@ static void markov_read(const char* file){
 	}
 }
 
-static void markov_write(FILE* file){
+static bool markov_write(FILE* file){
 
 	__gnu_cxx::stdio_filebuf<char> buf(file, std::ios::out);
 
@@ -923,6 +923,8 @@ static void markov_write(FILE* file){
 		    .append(to_string(pair.second.count));
 	}
 	out << line << endl;
+
+	return true;
 }
 
 static bool markov_init(const IRCCoreCtx* _ctx){

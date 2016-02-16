@@ -6,7 +6,7 @@
 
 static bool whitelist_init    (const IRCCoreCtx*);
 static void whitelist_msg     (const char*, const char*, const char*);
-static void whitelist_save    (FILE*);
+static bool whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
 
 IRCModuleCtx irc_mod_ctx = {
@@ -160,7 +160,7 @@ static void whitelist_msg(const char* chan, const char* name, const char* msg){
 	}
 }
 
-static void whitelist_save(FILE* file){
+static bool whitelist_save(FILE* file){
 	for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
 		if(wle->role == ROLE_ADMIN){
 			fprintf(file, "ADMIN %s\n", wle->name);
@@ -168,6 +168,7 @@ static void whitelist_save(FILE* file){
 			fprintf(file, "WLIST %s\n", wle->name);
 		}
 	}
+	return true;
 }
 
 static void whitelist_mod_msg(const char* sender, const IRCModMsg* msg){

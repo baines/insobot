@@ -28,6 +28,10 @@ typedef struct IRCModMsg_ {
 	intptr_t    cb_arg;
 } IRCModMsg;
 
+#define MOD_MSG(ctx, cmd, arg, cb, cb_arg) (ctx)->send_mod_msg(\
+	&(IRCModMsg){ (cmd), (intptr_t)(arg), (cb), (intptr_t)(cb_arg) }\
+)
+
 struct IRCCoreCtx_;
 typedef struct IRCCoreCtx_ IRCCoreCtx;
 
@@ -50,8 +54,8 @@ typedef struct IRCModuleCtx_ {
 
 	bool (*on_init)    (const IRCCoreCtx* ctx);
 
-	// called to request the module saves any data it needs
-	void (*on_save)    (FILE* file);
+	// called to request the module saves any data it needs, return true to complete the save
+	bool (*on_save)    (FILE* file);
 
 	//TODO: should this take any arguments?
 	void (*on_data_modified)(void);
@@ -69,7 +73,8 @@ struct IRCCoreCtx_ {
 
 	const char*    (*get_username) (void);
 	const char*    (*get_datafile) (void);
-	IRCModuleCtx** (*get_modules)  (void);
+	IRCModuleCtx** (*get_modules)  (void); // null terminated
+	const char**   (*get_channels) (void); // null terminated
 	void           (*join)         (const char* chan);
 	void           (*part)         (const char* chan);
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) WARN_FMT(2);

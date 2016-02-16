@@ -12,7 +12,7 @@
 #include "config.h"
 
 static void meta_msg   (const char*, const char*, const char*);
-static void meta_save  (FILE*);
+static bool meta_save  (FILE*);
 static bool meta_check (const char*, const char*, int);
 static bool meta_init  (const IRCCoreCtx*);
 static void meta_join  (const char*, const char*);
@@ -50,7 +50,7 @@ static void free_all_strs(char** strs){
 static bool reload_file(void){
 	assert(ctx);
 
-	int fd = open(ctx->get_datafile(), O_RDONLY | O_CREAT, 00600);
+	int fd = open(ctx->get_datafile(), O_RDONLY);
 	if(fd < 0) return false;
 
 	char* file_contents = NULL;
@@ -150,14 +150,9 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 	if(i < 0) return;
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
-	
+
 	if(!has_cmd_perms){
-		ctx->send_mod_msg(&(IRCModMsg){
-			.cmd      = "check_whitelist",
-			.arg      = (intptr_t)name,
-			.callback = &whitelist_cb,
-			.cb_arg   = (intptr_t)&has_cmd_perms
-		});
+		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
 	}
 
 	if(!has_cmd_perms) return;
@@ -275,7 +270,7 @@ static void meta_join(const char* chan, const char* name){
 	}
 }
 
-static void meta_save(FILE* file){
+static bool meta_save(FILE* file){
 	for(int i = 0; i < sb_count(channels); ++i){
 		fputs(channels[i], file);
 		for(int j = 0; j < sb_count(enabled_mods_for_chan[i]); ++j){
@@ -283,5 +278,7 @@ static void meta_save(FILE* file){
 		}
 		fputc('\n', file);
 	}
+	return true;
+
 }
 

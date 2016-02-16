@@ -10,7 +10,7 @@
 static bool quotes_init (const IRCCoreCtx*);
 static void quotes_join (const char*, const char*);
 static void quotes_msg  (const char*, const char*, const char*);
-static void quotes_save (FILE*);
+static bool quotes_save (FILE*);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "quotes",
@@ -308,12 +308,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	
 	if(!has_cmd_perms){
-		ctx->send_mod_msg(&(IRCModMsg){
-			.cmd      = "check_whitelist",
-			.arg      = (intptr_t)name,
-			.callback = &whitelist_cb,
-			.cb_arg   = (intptr_t)&has_cmd_perms
-		});
+		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
 	}
 
 	if(!has_cmd_perms) return;
@@ -559,8 +554,8 @@ static const char readme_key[]  = " Quote List";
 static const char readme_val[]  =
 "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.";
 
-static void quotes_save(FILE* file){
-	if(!quotes_dirty) return;
+static bool quotes_save(FILE* file){
+	if(!quotes_dirty) return false;
 
 	yajl_gen json = yajl_gen_alloc(NULL);
 
@@ -643,5 +638,7 @@ static void quotes_save(FILE* file){
 	curl_easy_cleanup(curl);
 
 	yajl_gen_free(json);
+
+	return true;
 }
 

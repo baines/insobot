@@ -4,7 +4,7 @@
 #include <ctype.h>
 
 static void alias_msg  (const char*, const char*, const char*);
-static void alias_save (FILE*);
+static bool alias_save (FILE*);
 static bool alias_init (const IRCCoreCtx*);
 
 const IRCModuleCtx irc_mod_ctx = {
@@ -47,12 +47,7 @@ static void do_alias_cmd(const char* chan, const char* name, const char* arg, in
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	if(!has_cmd_perms){
-		ctx->send_mod_msg(&(IRCModMsg){
-			.cmd      = "check_whitelist",
-			.arg      = (intptr_t)name,
-			.callback = &whitelist_cb,
-			.cb_arg   = (intptr_t)&has_cmd_perms
-		});
+		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
 	}
 	if(!has_cmd_perms) return;
 
@@ -182,9 +177,10 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 }
 
-static void alias_save(FILE* file){
+static bool alias_save(FILE* file){
 	for(int i = 0; i < sb_count(alias_keys); ++i){
 		fprintf(file, "%s\t%s\n", alias_keys[i], alias_vals[i]);
 	}
+	return true;
 }
 
