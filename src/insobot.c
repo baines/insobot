@@ -223,30 +223,30 @@ static void irc_cmd_enqueue(int cmd, const char* chan, const char* data){
 
 static void join(const char* chan){
 
+	irc_cmd_enqueue(IRC_CMD_JOIN, chan, NULL); //TODO: password protected channels?
+	irc_on_join(irc_ctx, "join", user, &chan, 1);
+	
 	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
 			return;
 		}
 	}
 
-	irc_cmd_enqueue(IRC_CMD_JOIN, chan, NULL); //TODO: password protected channels?
-	irc_on_join(irc_ctx, "join", user, &chan, 1);
-	
 	sb_last(channels) = strdup(chan);
 	sb_push(channels, 0);
 }
 
 static void part(const char* chan){
 	
+	irc_cmd_enqueue(IRC_CMD_PART, chan, NULL);
+	irc_on_part(irc_ctx, "part", user, &chan, 1);
+
 	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
-			irc_cmd_enqueue(IRC_CMD_PART, chan, NULL);
-			irc_on_part(irc_ctx, "part", user, &chan, 1);
 			sb_erase(channels, c - channels);
 			break;
 		}
 	}
-
 }
 
 static void send_msg(const char* chan, const char* fmt, ...){
@@ -263,7 +263,6 @@ static void send_msg(const char* chan, const char* fmt, ...){
 static void send_raw(const char* raw){
 	irc_cmd_enqueue(IRC_CMD_RAW, NULL, raw);
 }
-
 
 static uint32_t prev_cmd_ms = 0;
 static void process_pending_cmds(){
