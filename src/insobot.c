@@ -224,7 +224,6 @@ static void irc_cmd_enqueue(int cmd, const char* chan, const char* data){
 static void join(const char* chan){
 
 	irc_cmd_enqueue(IRC_CMD_JOIN, chan, NULL); //TODO: password protected channels?
-	irc_on_join(irc_ctx, "join", user, &chan, 1);
 	
 	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
@@ -239,7 +238,6 @@ static void join(const char* chan){
 static void part(const char* chan){
 	
 	irc_cmd_enqueue(IRC_CMD_PART, chan, NULL);
-	irc_on_part(irc_ctx, "part", user, &chan, 1);
 
 	for(char** c = channels; *c; ++c){
 		if(strcmp(*c, chan) == 0){
@@ -281,10 +279,12 @@ static void process_pending_cmds(){
 
 			case IRC_CMD_JOIN: {
 				irc_cmd_join(irc_ctx, cmd.chan, cmd.data);
+				irc_on_join(irc_ctx, "join", cmd.data, (const char**)&cmd.chan, 1);
 			} break;
 
 			case IRC_CMD_PART: {
 				irc_cmd_part(irc_ctx, cmd.chan);
+				irc_on_part(irc_ctx, "part", cmd.data, (const char**)&cmd.chan, 1);
 			} break;
 
 			case IRC_CMD_MSG: {
@@ -292,7 +292,7 @@ static void process_pending_cmds(){
 			} break;
 
 			case IRC_CMD_RAW: {
-				irc_send_raw(irc_ctx, cmd.data);
+				irc_send_raw(irc_ctx, "%s", cmd.data);
 			} break;
 		}
 

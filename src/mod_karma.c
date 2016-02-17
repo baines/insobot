@@ -38,11 +38,17 @@ static KEntry* karma_find(const char* name){
 	return NULL;
 }
 
+static int karma_sort(const void* _a, const void* _b){
+	KEntry *a = (KEntry*)_a, *b = (KEntry*)_b;
+	return (b->up - b->down) - (a->up - a->down);
+}
+
 static void karma_add_name(const char* name){
 	if(!karma_find(name)){
 		KEntry k = {};
 		sb_push(k.names, strdup(name));
 		sb_push(klist, k);
+		qsort(klist, sb_count(klist), sizeof(*klist), &karma_sort);
 	}
 }
 
@@ -64,6 +70,7 @@ static void karma_check(const char* name, const char* msg){
 				(*i)++;
 				changes = true;
 			}
+			free(target);
 			++p;
 		}
 	}
@@ -141,11 +148,6 @@ static void karma_msg(const char* chan, const char* name, const char* msg){
 		} break;
 	}
 
-}
-
-static int karma_sort(const void* _a, const void* _b){
-	KEntry *a = (KEntry*)_a, *b = (KEntry*)_b;
-	return (b->up - b->down) - (a->up - a->down);
 }
 
 static void karma_load(void){

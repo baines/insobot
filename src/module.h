@@ -60,6 +60,9 @@ typedef struct IRCModuleCtx_ {
 	//TODO: should this take any arguments?
 	void (*on_data_modified)(void);
 
+	//TODO: nick change
+	// void (*on_nick_change)(const char* prev, const char* new);
+
 	// called before other callbacks to allow per-channel modules
 	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);
 

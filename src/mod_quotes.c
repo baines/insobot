@@ -622,6 +622,8 @@ static bool quotes_save(FILE* file){
 
 	CURLcode ret = curl_easy_perform(curl);
 
+	sb_push(data, 0);
+
 	if(ret != 0){
 		printf("CURL returned %d, %s\n", ret, curl_easy_strerror(ret));
 		if(data){

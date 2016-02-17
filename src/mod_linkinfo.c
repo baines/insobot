@@ -31,7 +31,7 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&yt_url_regex,
-		"youtu(\\.be\\/|be(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]+)",
+		"(y2u\\.be\\/|youtu\\.be\\/|youtube(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -103,12 +103,13 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 
 	CURLcode result = curl_easy_perform(curl);
 
+	sb_push(data, 0);
+
 	if(
-	 result == 0 &&
-	 data &&
-	 regexec(&yt_title_regex, data, 2, title, 0) == 0 &&
-	 title[1].rm_so != -1 &&
-	 title[1].rm_eo != -1
+		result == 0 &&
+		regexec(&yt_title_regex, data, 2, title, 0) == 0 &&
+		title[1].rm_so != -1 &&
+		title[1].rm_eo != -1
 	){
 		int len = title[1].rm_eo - title[1].rm_so, outlen = 0;
 
@@ -127,6 +128,7 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 		curl_free(str);
 	} else {
 		fprintf(stderr, "linkinfo: curl returned %d: %s\n", result, curl_easy_strerror(result));
+		fprintf(stderr, "data_len = %zu, so:%d eo:%d\n", strlen(data), title[1].rm_so, title[1].rm_eo);
 	}
 
 	curl_easy_cleanup(curl);
