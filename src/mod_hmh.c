@@ -4,16 +4,23 @@
 #include <time.h>
 #include "module.h"
 #include "stb_sb.h"
+#include "utils.h"
 #include <curl/curl.h>
 
-static void hmh_msg  (const char*, const char*, const char*);
+static void hmh_cmd  (const char*, const char*, const char*, int);
 static bool hmh_init (const IRCCoreCtx*);
+
+enum { CMD_SCHEDULE, CMD_TIME };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "hmh",
 	.desc     = "Functionalitty specific to Handmade Hero",
-	.on_msg   = &hmh_msg,
+	.on_cmd   = &hmh_cmd,
 	.on_init  = &hmh_init,
+	.commands = DEFINE_CMDS (
+		[CMD_SCHEDULE] = "!sched \\sched \\schedule",
+		[CMD_TIME]     = "!tm    \\tm    \\time"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -36,26 +43,6 @@ static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
 	return total;
 }
 
-char* tz_push(const char* tz){
-	char* oldtz = getenv("TZ");
-	if(oldtz) oldtz = strdup(oldtz);
-
-	setenv("TZ", tz, 1);
-	tzset();
-
-	return oldtz;
-}
-
-void tz_pop(char* oldtz){
-	if(oldtz){
-		setenv("TZ", oldtz, 1);
-		free(oldtz);
-	} else {
-		unsetenv("TZ");
-	}
-	tzset();
-}
-
 static bool is_upcoming_stream(void){
 	time_t now = time(0);
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
@@ -67,7 +54,7 @@ static bool is_upcoming_stream(void){
 }
 
 // converts tm_wday which uses 0..6 = sun..sat, to 0..6 = mon..sun
-static int get_dow(struct tm* tm){
+static inline int get_dow(struct tm* tm){
 	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
 }
 
@@ -171,24 +158,7 @@ static bool update_schedule(void){
 	return true;
 }
 
-// returns num bytes copied, or -(num reuired) and doesn't copy anything if not enough space.
-static int inso_strcat(char* buf, size_t sz, const char* str){
-	char* p = buf;
-	while(*p) ++p;
-
-	sz -= (p - buf);
-
-	size_t len = strlen(str) + 1;
-
-	if(len <= sz){
-		memcpy(p, str, len);
-		return len;
-	} else {
-		return sz - len;
-	}
-}
-
-static void print_schedule(const char* chan, const char* name, const char* msg){
+static void print_schedule(const char* chan, const char* name){
 	time_t now = time(0);
 
 	if(now - last_schedule_update > 3600){
@@ -275,7 +245,7 @@ static void print_schedule(const char* chan, const char* name, const char* msg){
 	tz_pop(tz);
 }
 
-static void print_time(const char* chan, const char* name, const char* msg){
+static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
 	if(now - last_schedule_update > 3600){
@@ -358,13 +328,16 @@ static void print_time(const char* chan, const char* name, const char* msg){
 
 }
 
-static void hmh_msg(const char* chan, const char* name, const char* msg){
-	if(strcasecmp(msg, "!sched") == 0){
-		print_schedule(chan, name, msg);
-	}
+static void hmh_cmd(const char* chan, const char* name, const char* msg, int cmd){
 
-	if(strcasecmp(msg, "!tm") == 0){
-		print_time(chan, name, msg);
+	switch(cmd){
+		case CMD_SCHEDULE: {
+			print_schedule(chan, name);
+		} break;
+
+		case CMD_TIME: {
+			print_time(chan, name);
+		} break;
 	}
 }
 

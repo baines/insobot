@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include "config.h"
+#include "utils.h"
 
 static void meta_cmd   (const char*, const char*, const char*, int);
 static bool meta_save  (FILE*);
@@ -112,25 +113,10 @@ static bool reload_file(void){
 	return true;
 }
  
-bool meta_init(const IRCCoreCtx* _ctx){
+static bool meta_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return reload_file();
 }
-
-static void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, ...){
-	va_list v;
-	va_start(v, fmt);
-
-	int printed = vsnprintf(*bufp, *sizep, fmt, v);
-
-	if(printed > 0){
-		*sizep -= printed;
-		*bufp += printed;
-	}
-
-	va_end(v);
-}
-
 static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
@@ -152,7 +138,7 @@ static void meta_cmd(const char* chan, const char* name, const char* arg, int cm
 
 	if(!has_cmd_perms) return;
 
-	IRCModuleCtx** all_mods = ctx->get_modules();
+	IRCModuleCtx** all_mods = ctx->get_modules(true);
 	char***        our_mods = get_enabled_modules(chan);
 
 	// this shouldn't happen, on_join should get the channel name before this can be called
@@ -224,16 +210,20 @@ static void meta_cmd(const char* chan, const char* name, const char* arg, int cm
 			}
 		} break;
 
+		//XXX: this should maybe be part of mod_help instead?
 		case CMD_MOD_INFO: {
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Which module?", name);
 				break;
 			}
 
+			//XXX: all_mods was a bad choice of name for only channel mods...
+			IRCModuleCtx** m = ctx->get_modules(false);
+
 			bool found = false;
-			for(; *all_mods; ++all_mods){
-				if(strcasecmp((*all_mods)->name, arg) == 0){
-					ctx->send_msg(chan, "%s: %s: %s", name, (*all_mods)->name, (*all_mods)->desc);
+			for(; *m; ++m){
+				if(strcasecmp((*m)->name, arg) == 0){
+					ctx->send_msg(chan, "%s: %s: %s", name, (*m)->name, (*m)->desc);
 					found = true;
 					break;
 				}
@@ -257,7 +247,7 @@ static void meta_join(const char* chan, const char* name){
 		sb_push(channels, strdup(chan));
 		sb_push(enabled_mods_for_chan, 0);
 
-		for(IRCModuleCtx** m = ctx->get_modules(); *m; ++m){
+		for(IRCModuleCtx** m = ctx->get_modules(true); *m; ++m){
 			if((*m)->flags & IRC_MOD_DEFAULT){
 				sb_push(sb_last(enabled_mods_for_chan), strdup((*m)->name));
 			}

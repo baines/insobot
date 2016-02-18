@@ -44,7 +44,6 @@ typedef struct IRCCmd_ {
 static IRCCmd* cmd_queue;
 static Module* irc_modules;
 static Module** mod_call_stack;
-static IRCModuleCtx** channel_modules;
 
 static const char *user, *pass, *serv, *port;
 
@@ -239,8 +238,23 @@ static const char* get_datafile(void){
 	return datafile_buff;
 }
 
-static IRCModuleCtx** get_modules(void){
-	return channel_modules;
+static IRCModuleCtx** mods = 0;
+
+static IRCModuleCtx** get_modules(bool chan_only){
+
+	while(sb_count(mods) > 0){
+		sb_pop(mods);
+	}
+
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		if(!chan_only || !(m->ctx->flags & IRC_MOD_GLOBAL)){
+			sb_push(mods, m->ctx);
+		}
+	}
+
+	sb_push(mods, 0);
+
+	return mods;
 }
 
 static const char** get_channels(void){
@@ -479,9 +493,7 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			if(m->lib_handle){
 				dlclose(m->lib_handle);
 			}
-
-			IRCModuleCtx* prev_ctx = m->ctx;
-
+			
 			m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
 			if(!m->lib_handle){
 				fprintf(stderr, "Error reloading module: %s\n", dlerror());
@@ -506,35 +518,12 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			}
 
 			if(success){
-				if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
-					bool found_ctx = false;
-					for(IRCModuleCtx** c = channel_modules; *c; ++c){
-						if(*c == prev_ctx){
-							*c = m->ctx;
-							found_ctx = true;
-							break;
-						}
-					}
-
-					if(!found_ctx){
-						sb_last(channel_modules) = m->ctx;
-						sb_push(channel_modules, 0);
-					}
-				}
-
 				for(char** c = channels; *c; ++c){
 					irc_on_join(irc_ctx, "join", user, (const char**)c, 1);
 				}
 
 				fprintf(stderr, "Reload successful.\n");
 			} else {
-				for(IRCModuleCtx** c = channel_modules; *c; ++c){
-					if(*c == prev_ctx){
-						sb_erase(channel_modules, c - channel_modules);
-						break;
-					}
-				}
-
 				free(m->lib_path);
 				sb_erase(irc_modules, m - irc_modules);
 				--m;
@@ -671,15 +660,11 @@ int main(int argc, char** argv){
 		}
 		sb_pop(mod_call_stack);
 
-		if(success && !(m->ctx->flags & IRC_MOD_GLOBAL)){
-			sb_push(channel_modules, m->ctx);
-		} else if(!success){
+		if(!success){
 			sb_erase(irc_modules, m - irc_modules);
 			--m;
 		}
 	}
-
-	sb_push(channel_modules, 0);
 	
 	if(sb_count(irc_modules) == 0){
 		errx(1, "No modules could be loaded.");
@@ -759,7 +744,12 @@ int main(int argc, char** argv){
 		irc_destroy_session(irc_ctx);
 	
 		if(running){
-			puts("Restarting");
+			if(getenv("INSOBOT_NO_AUTO_RESTART")){
+				puts("Restarting when you press a key...");
+				getchar();
+			} else {
+				puts("Restarting");
+			}
 			usleep(5000000);
 		}
 	} while(running);

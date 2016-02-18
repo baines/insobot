@@ -47,7 +47,7 @@ struct IRCCoreCtx_ {
 
 	const char*    (*get_username) (void);
 	const char*    (*get_datafile) (void);
-	IRCModuleCtx** (*get_modules)  (void); // null terminated
+	IRCModuleCtx** (*get_modules)  (bool channel_mods_only); // null terminated
 	const char**   (*get_channels) (void); // null terminated
 	void           (*join)         (const char* chan);
 	void           (*part)         (const char* chan);

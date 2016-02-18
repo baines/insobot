@@ -13,8 +13,8 @@
 #include <climits>
 #include <cassert>
 #include <list>
-#include <regex>
 #include <experimental/optional>
+#include <regex.h>
 #include <ext/stdio_filebuf.h>
 #include "config.h"
 #include "module.h"
@@ -520,7 +520,8 @@ static bool blacklisted(const string& word){
 
 static bool markov_write(FILE* file);
 
-static regex opinion_regex("^.*(do you (like|hate|think about|feel about)|opinion [a-z]+|thoughts [a-z]+|feelings [a-z]+|your take on) ([^?[:space:]]+).*$");
+
+static regex_t opinion_regex;
 
 static void markov_msg(const char* chan, const char* nick, const char* m){
 	bool quiet = false,
@@ -685,8 +686,7 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 	}
 	
 	// speak when we are spoken to
-
-	smatch match;
+	regmatch_t matches[4] = {};
 
 	if(
 		!msg.empty() && (
@@ -697,15 +697,14 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 	){
 		if(
 			msg.find("?") != string::npos &&
-			regex_match(msg, match, opinion_regex) &&
-			match.size() == 4
+			regexec(&opinion_regex, msg.c_str(), 4, matches, 0) == 0
 		){
 			if(random_num(3) == 0){
 				puts("** Choosing to not reply.");
 				return;
 			}
 
-			string hotword = match[3];
+			string hotword(msg.c_str() + matches[3].rm_so, msg.c_str() + matches[3].rm_so);
 			if(hotword == "me") hotword = "you";
 
 			const char* link_words[] = { "is", "are", "can", "should", "could", "will", "might", "may" };
@@ -929,6 +928,12 @@ static bool markov_write(FILE* file){
 
 static bool markov_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+
+	regcomp(
+		&opinion_regex,
+ 		"^.*(do you (like|hate|think about|feel about)|opinion [a-z]+|thoughts [a-z]+|feelings [a-z]+|your take on) ([^?[:space:]]+).*$",
+		REG_EXTENDED | REG_ICASE
+	);
 
 	markov_read(ctx->get_datafile());
 	return true;

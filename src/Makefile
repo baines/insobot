@@ -12,7 +12,7 @@ all: ../insobot $(module_out)
 ../modules/mod_markov.so: mod_markov.cpp module.h config.h
 	$(CXX) $(CXXFLAGS) -fPIC -shared $< -o $@
 
-../modules/%.so: %.c config.h module.h
+../modules/%.so: %.c config.h module.h utils.h
 	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl
 	
 clean:
