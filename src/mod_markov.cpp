@@ -938,13 +938,17 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 extern "C" const IRCModuleCtx irc_mod_ctx = {
 	"markov",
 	"Occasionally say something incomprehensible",
-	0,
+	nullptr, // cmds
+	100,     // prio
 	IRC_MOD_DEFAULT,
-	nullptr,
+	&markov_init,
+	nullptr, // quit
+	nullptr, // connect
 	&markov_msg,
 	&markov_add_name,
-	nullptr,
-	&markov_init,
+	nullptr, // part
+	nullptr, // nick
+	nullptr, // cmd
 	&markov_write
 };
 

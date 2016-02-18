@@ -4,12 +4,64 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#define WARN_FMT(x)   __attribute__ ((format (printf, x, x+1))) 
-#define WARN_SENTINEL __attribute__ ((sentinel))
+typedef struct IRCCoreCtx_ IRCCoreCtx;
+typedef struct IRCModMsg_ IRCModMsg;
+
+// defined by a module to provide info & callbacks to the core.
+typedef struct IRCModuleCtx_ {
+
+	const char*        name;
+	const char*        desc;
+	const char**       commands; // null-terminated, use DEFINE_CMDS macro
+	unsigned int       priority; // bigger number = higher priority
+	unsigned int       flags;
+	
+	bool (*on_init)    (const IRCCoreCtx* ctx);
+	void (*on_quit)    (void); //TODO
+
+	// IRC event callbacks
+	void (*on_connect) (const char* serv);
+	void (*on_msg)     (const char* chan, const char* name, const char* msg);
+	void (*on_join)    (const char* chan, const char* name);
+	void (*on_part)    (const char* chan, const char* name);
+	void (*on_nick)    (const char* prev_nick, const char* new_nick);
+
+	// called when a command listed by the module was found in a message, before on_msg
+	void (*on_cmd)     (const char* chan, const char* name, const char* arg, int cmd);
+
+	// called to request the module saves any data it needs, return true to complete the save
+	bool (*on_save)    (FILE* file);
+
+	// called when the module's data file is modified externally
+	void (*on_modified)(void);
+
+	// called before other callbacks to allow per-channel modules
+	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);
+
+	// simple inter-module communication callback
+	void (*on_mod_msg) (const char* sender, const IRCModMsg* msg);
+} IRCModuleCtx;
+
+// passed to modules to provide functions for them to use.
+struct IRCCoreCtx_ {
+
+	const char*    (*get_username) (void);
+	const char*    (*get_datafile) (void);
+	IRCModuleCtx** (*get_modules)  (void); // null terminated
+	const char**   (*get_channels) (void); // null terminated
+	void           (*join)         (const char* chan);
+	void           (*part)         (const char* chan);
+	void           (*send_msg)     (const char* chan, const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));
+	void           (*send_raw)     (const char* raw);
+	void           (*send_mod_msg) (IRCModMsg* msg);
+	void           (*save_me)      (void);
+
+};
 
 // used for on_meta callback, which determines if the callback will be called or not.
 enum  {
 	IRC_CB_MSG,
+	IRC_CB_CMD,
 	IRC_CB_JOIN,
 	IRC_CB_PART,
 };
@@ -32,60 +84,9 @@ typedef struct IRCModMsg_ {
 	&(IRCModMsg){ (cmd), (intptr_t)(arg), (cb), (intptr_t)(cb_arg) }\
 )
 
-struct IRCCoreCtx_;
-typedef struct IRCCoreCtx_ IRCCoreCtx;
-
-// defined by a module to provide info & callbacks to the core.
-typedef struct IRCModuleCtx_ {
-
-	const char*        name;
-	const char*        desc;
-
-	// bigger number = called first
-	unsigned int       priority;
-
-	unsigned int       flags;
-
-	// irc callbacks
-	void (*on_connect) (const char* serv);
-	void (*on_msg)     (const char* chan, const char* name, const char* msg);
-	void (*on_join)    (const char* chan, const char* name);
-	void (*on_part)    (const char* chan, const char* name);
-
-	bool (*on_init)    (const IRCCoreCtx* ctx);
-
-	// called to request the module saves any data it needs, return true to complete the save
-	bool (*on_save)    (FILE* file);
-
-	//TODO: should this take any arguments?
-	void (*on_data_modified)(void);
-
-	//TODO: nick change
-	// void (*on_nick_change)(const char* prev, const char* new);
-
-	// called before other callbacks to allow per-channel modules
-	bool (*on_meta)    (const char* modname, const char* chan, int callback_id);
-
-	// simple inter-module communication callback
-	void (*on_mod_msg) (const char* sender, const IRCModMsg* msg);
-
-} IRCModuleCtx;
-
-// passed to modules to provide functions for them to use.
-struct IRCCoreCtx_ {
-
-	const char*    (*get_username) (void);
-	const char*    (*get_datafile) (void);
-	IRCModuleCtx** (*get_modules)  (void); // null terminated
-	const char**   (*get_channels) (void); // null terminated
-	void           (*join)         (const char* chan);
-	void           (*part)         (const char* chan);
-	void           (*send_msg)     (const char* chan, const char* fmt, ...) WARN_FMT(2);
-	void           (*send_raw)     (const char* raw);
-	void           (*send_mod_msg) (IRCModMsg* msg);
-	int            (*check_cmds)   (const char** msg, ...) WARN_SENTINEL;
-	void           (*save_me)      (void);
-	//XXX: clang is dumb and ignores the sentinel attibute on function pointers?
-};
+#define DEFINE_CMDS(...) (const char*[]) {\
+	__VA_ARGS__,\
+	0\
+}
 
 #endif

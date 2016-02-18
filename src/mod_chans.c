@@ -4,20 +4,26 @@
 #include "config.h"
 
 static bool chans_init    (const IRCCoreCtx* ctx);
-static void chans_msg     (const char*, const char*, const char*);
+static void chans_cmd     (const char*, const char*, const char*, int);
 static void chans_join    (const char*, const char*);
 static bool chans_save    (FILE*);
 static void chans_connect (const char*);
+
+enum { CHAN_JOIN, CHAN_LEAVE };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "chans",
 	.desc       = "Allow people to add/remove the bot to/from their channel",
 	.flags      = IRC_MOD_GLOBAL,
 	.on_init    = &chans_init,
-	.on_msg     = &chans_msg,
+	.on_cmd     = &chans_cmd,
 	.on_join    = &chans_join,
 	.on_save    = &chans_save,
 	.on_connect = &chans_connect,
+	.commands   = DEFINE_CMDS (
+		[CHAN_JOIN]  = "\\join",
+		[CHAN_LEAVE] = "\\leave \\part"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -36,11 +42,7 @@ static void admin_check_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static void chans_msg(const char* chan, const char* name, const char* msg){
-
-	const char* arg = msg;
-	enum { CHAN_JOIN, CHAN_LEAVE };
-	int cmd = ctx->check_cmds(&arg, "\\join", "\\part,\\leave", NULL);
+static void chans_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool in_chan = false;
 	for(const char** c = ctx->get_channels(); *c; ++c){

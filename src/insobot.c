@@ -99,13 +99,46 @@ static bool irc_check_perms(const char* mod, const char* chan, int id){
 	return ret;
 }
 
+static void dispatch_cmds(Module* m, const char* chan, const char* name, const char* msg){
+	if(!m->ctx || !m->ctx->commands || !m->ctx->on_cmd) return;
+
+	for(const char** cmd_list = m->ctx->commands; *cmd_list; ++cmd_list){
+		const char *cmd = *cmd_list, *cmd_end;
+
+		do {
+			cmd_end = strchrnul(cmd, ' ');
+			const size_t sz = cmd_end - cmd;
+
+			if(strncmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
+				sb_push(mod_call_stack, m);
+				m->ctx->on_cmd(chan, name, msg + sz, cmd_list - m->ctx->commands);
+				sb_pop(mod_call_stack);
+				return;
+			}
+
+			while(*cmd_end == ' ') ++cmd_end;
+			cmd = cmd_end;
+		} while(*cmd_end);
+	}
+}
+
 IRC_STR_CALLBACK(on_connect) {
 	IRC_MOD_CALL_ALL(on_connect, (serv));
 }
 
 IRC_STR_CALLBACK(on_chat_msg) {
 	if(count < 2 || !params[0] || !params[1]) return;
-	IRC_MOD_CALL_ALL_CHECK(on_msg, (params[0], origin, params[1]), IRC_CB_MSG);
+	const char *_chan = params[0], *_name = origin, *_msg = params[1];
+
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		bool global = m->ctx->flags & IRC_MOD_GLOBAL;
+		if(global || irc_check_perms(m->ctx->name, _chan, IRC_CB_CMD)){
+			dispatch_cmds(m, _chan, _name, _msg);
+		}
+		if(global || irc_check_perms(m->ctx->name, _chan, IRC_CB_MSG)){
+			IRC_MOD_CALL(m, on_msg, (_chan, _name, _msg));
+		}
+	}
 }
 
 IRC_STR_CALLBACK(on_join) {
@@ -118,6 +151,11 @@ IRC_STR_CALLBACK(on_join) {
 IRC_STR_CALLBACK(on_part) {
 	if(count < 1 || !origin || !params[0]) return;
 	IRC_MOD_CALL_ALL_CHECK(on_part, (params[0], origin), IRC_CB_PART);
+}
+
+IRC_STR_CALLBACK(on_nick) {
+	if(count < 1 || !origin || !params[0]) return;
+	IRC_MOD_CALL_ALL(on_nick, (origin, params[0]));
 }
 
 static struct timeval idle_time = {};
@@ -309,37 +347,6 @@ static void send_mod_msg(IRCModMsg* msg){
 		if(m->ctx->on_mod_msg) m->ctx->on_mod_msg(sender, msg);
 		sb_pop(mod_call_stack);
 	}
-}
-
-static int check_cmds(const char** msg, ...) {
-	va_list v;
-	va_start(v, msg);
-
-	int count = 0, result = -1;
-	const char* cmd;
-
-	while((cmd = va_arg(v, const char*))){
-		const char* cmd_end;
-		
-		do {
-			cmd_end = strchrnul(cmd, ',');
-			const size_t sz = cmd_end - cmd;
-
-			if(strncmp(*msg, cmd, sz) == 0 && ((*msg)[sz] == ' ' || (*msg)[sz] == '\0')){
-				result = count;
-				*msg += sz;
-				goto out;
-			}
-
-			cmd = cmd_end + 1;
-		} while(*cmd_end);
-
-		++count;
-	}
-
-out:
-	va_end(v);
-	return result;
 }
 
 static void do_module_save(Module* m){
@@ -534,10 +541,10 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 			}
 		} else if(m->data_modified){
 			m->data_modified = false;
-			if(m->ctx && m->ctx->on_data_modified){
+			if(m->ctx && m->ctx->on_modified){
 				sb_push(mod_call_stack, m);
 				fprintf(stderr, "Calling on_data_modified for %s\n", m->ctx->name);
-				m->ctx->on_data_modified();
+				m->ctx->on_modified();
 				sb_pop(mod_call_stack);
 			}
 		}
@@ -620,7 +627,6 @@ int main(int argc, char** argv){
 		.send_mod_msg = &send_mod_msg,
 		.join         = &join,
 		.part         = &part,
-		.check_cmds   = &check_cmds,
 		.save_me      = &self_save,
 	};
 
@@ -686,6 +692,7 @@ int main(int argc, char** argv){
 		.event_channel = irc_on_chat_msg,
 		.event_join    = irc_on_join,
 		.event_part    = irc_on_part,
+		.event_nick    = irc_on_nick,
 		.event_numeric = irc_on_numeric,
 		.event_unknown = irc_on_unknown,
 	};

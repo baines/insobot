@@ -11,22 +11,30 @@
 #include <stdio.h>
 #include "config.h"
 
-static void meta_msg   (const char*, const char*, const char*);
+static void meta_cmd   (const char*, const char*, const char*, int);
 static bool meta_save  (FILE*);
 static bool meta_check (const char*, const char*, int);
 static bool meta_init  (const IRCCoreCtx*);
 static void meta_join  (const char*, const char*);
+
+enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "meta",
 	.desc     = "Manages channel permissons of other modules",
 	.priority = UINT_MAX,
 	.flags    = IRC_MOD_GLOBAL,
-	.on_msg   = &meta_msg,
+	.on_cmd   = &meta_cmd,
 	.on_save  = &meta_save,
 	.on_meta  = &meta_check,
 	.on_init  = &meta_init,
 	.on_join  = &meta_join,
+	.commands = DEFINE_CMDS (
+		[CMD_MODULES]  = "\\m     \\modules",
+		[CMD_MOD_ON]   = "\\mon   \\modon",
+		[CMD_MOD_OFF]  = "\\moff  \\modoff",
+		[CMD_MOD_INFO] = "\\minfo \\modinfo"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -134,20 +142,7 @@ static char** mod_find(char** haystack, const char* needle){
 	return NULL;
 }
 
-static void meta_msg(const char* chan, const char* name, const char* msg){
-	assert(ctx);
-	
-	enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
-	const char* arg = msg;
-	int i = ctx->check_cmds(
-		&arg,
-		"\\m,\\modules",
-		"\\mon,\\modon",
-		"\\moff,\\modoff",
-		"\\minfo,\\modinfo",
-		NULL
-	);
-	if(i < 0) return;
+static void meta_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 
@@ -172,7 +167,7 @@ static void meta_msg(const char* chan, const char* name, const char* msg){
 
 	snprintf_chain(&b, &buflen, "Modules for %s: ", chan);
 
-	switch(i){
+	switch(cmd){
 		case CMD_MODULES: {
 			for(; *all_mods; ++all_mods){
 				const char* box = mod_find(*our_mods, (*all_mods)->name) ? "☑" : "☐";

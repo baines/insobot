@@ -4,8 +4,11 @@
 #include <ctype.h>
 
 static void alias_msg  (const char*, const char*, const char*);
+static void alias_cmd  (const char*, const char*, const char*, int);
 static bool alias_save (FILE*);
 static bool alias_init (const IRCCoreCtx*);
+
+enum { ALIAS_ADD, ALIAS_DEL };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "alias",
@@ -13,7 +16,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.flags    = IRC_MOD_DEFAULT,
 	.on_save  = &alias_save,
 	.on_msg   = &alias_msg,
+	.on_cmd   = &alias_cmd,
 	.on_init  = &alias_init,
+	.commands = DEFINE_CMDS (
+		[ALIAS_ADD] = "\\alias",
+		[ALIAS_DEL] = "\\unalais"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -41,9 +49,7 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static void do_alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
-
-	enum { CMD_ALIAS_ADD, CMD_ALIAS_DEL };
+static void alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	if(!has_cmd_perms){
@@ -52,7 +58,7 @@ static void do_alias_cmd(const char* chan, const char* name, const char* arg, in
 	if(!has_cmd_perms) return;
 
 	switch(cmd){
-		case CMD_ALIAS_ADD: {
+		case ALIAS_ADD: {
 			if(!*arg++ || !isalnum(*arg)) goto usage_add;
 
 			const char* space = strchr(arg, ' ');
@@ -78,7 +84,7 @@ static void do_alias_cmd(const char* chan, const char* name, const char* arg, in
 			ctx->send_msg(chan, "%s: Alias %s set.", name, key);
 		} break;
 
-		case CMD_ALIAS_DEL: {
+		case ALIAS_DEL: {
 			if(!*arg++ || !isalnum(*arg)) goto usage_del;
 
 			bool found = false;
@@ -115,66 +121,60 @@ usage_del:
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
 
-	const char* m = msg;
-	int i = ctx->check_cmds(&m, "\\alias", "\\unalias", NULL);
-	if(i >= 0){
+	if(*msg != '!') return;
 
-		do_alias_cmd(chan, name, m, i);
+	int index = -1;
+	const char* arg = NULL;
+	size_t arg_len = 0;
 
-	} else if(*msg == '!'){
+	for(int i = 0; i < sb_count(alias_keys); ++i){
+		size_t alias_len = strlen(alias_keys[i]);
 
-		int index = -1;
-		const char* arg = NULL;
-		size_t arg_len = 0;
+		if(strncasecmp(msg + 1, alias_keys[i], alias_len) == 0){
+			index = i;
+			arg = msg + alias_len + 1;
 
-		for(int i = 0; i < sb_count(alias_keys); ++i){
-			size_t alias_len = strlen(alias_keys[i]);
-
-			if(strncasecmp(msg + 1, alias_keys[i], alias_len) == 0){
-				index = i;
-				arg = msg + alias_len + 1;
-
-				while(*arg == ' '){
-					++arg;
-				}
-
-				if(*arg){
-					arg_len = strlen(arg);
-				}
-
-				break;
+			while(*arg == ' '){
+				++arg;
 			}
-		}
-		if(index < 0) return;
 
-		size_t name_len = strlen(name);
-		char* msg_buf = NULL;
-
-		for(const char* str = alias_vals[index]; *str; ++str){
-			if(*str == '%' && *(str + 1) == 't'){
-				memcpy(sb_add(msg_buf, name_len), name, name_len);
-				++str;
-			} else if(*str == '%' && *(str + 1) == 'a'){
-				if(arg && *arg && arg_len){
-					memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
-				}
-				++str;
-			} else if(*str == '%' && *(str + 1) == 'n'){
-				if(arg && *arg && arg_len){
-					memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
-				} else {
-					memcpy(sb_add(msg_buf, name_len), name, name_len);
-				}
-				++str;
-			} else {
-				sb_push(msg_buf, *str);
+			if(*arg){
+				arg_len = strlen(arg);
 			}
-		}
-		sb_push(msg_buf, 0);
 
-		ctx->send_msg(chan, "%s", msg_buf);
-		sb_free(msg_buf);
+			break;
+		}
 	}
+	if(index < 0) return;
+
+	size_t name_len = strlen(name);
+	char* msg_buf = NULL;
+
+	for(const char* str = alias_vals[index]; *str; ++str){
+		if(*str == '%' && *(str + 1) == 't'){
+			memcpy(sb_add(msg_buf, name_len), name, name_len);
+			++str;
+		} else if(*str == '%' && *(str + 1) == 'a'){
+			if(arg && *arg && arg_len){
+				memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
+			}
+			++str;
+		} else if(*str == '%' && *(str + 1) == 'n'){
+			if(arg && *arg && arg_len){
+				memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
+			} else {
+				memcpy(sb_add(msg_buf, name_len), name, name_len);
+			}
+			++str;
+		} else {
+			sb_push(msg_buf, *str);
+		}
+	}
+
+	sb_push(msg_buf, 0);
+	ctx->send_msg(chan, "%s", msg_buf);
+
+	sb_free(msg_buf);
 }
 
 static bool alias_save(FILE* file){

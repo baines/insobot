@@ -163,7 +163,7 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 8);
 
 	CURLcode curl_ret = curl_easy_perform(curl);
 
@@ -179,7 +179,7 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 	){
 		ctx->send_msg(chan, "↑ %s: [%.*s]", tag, title_len, data + title[1].rm_so);
 	} else {
-		fprintf(stderr, "linkinfo: Couldn't extract title\n[%s]\n[%s]", curl_easy_strerror(curl_ret) ,data);
+		fprintf(stderr, "linkinfo: Couldn't extract title\n[%s]\n[%s]", curl_easy_strerror(curl_ret), data);
 	}
 
 	curl_easy_cleanup(curl);

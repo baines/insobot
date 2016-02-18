@@ -9,16 +9,27 @@
 
 static bool quotes_init (const IRCCoreCtx*);
 static void quotes_join (const char*, const char*);
-static void quotes_msg  (const char*, const char*, const char*);
+static void quotes_cmd  (const char*, const char*, const char*, int);
 static bool quotes_save (FILE*);
+
+enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES	};
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "quotes",
 	.desc     = "Saves per-channel quotes",
 	.on_init  = quotes_init,
-	.on_msg   = &quotes_msg,
+	.on_cmd   = &quotes_cmd,
 	.on_join  = &quotes_join,
 	.on_save  = &quotes_save,
+	.commands = DEFINE_CMDS (
+		[GET_QUOTE]     = "\\q    \\quote",
+		[ADD_QUOTE]     = "\\qadd \\q+",
+		[DEL_QUOTE]     = "\\qdel \\q-",
+		[FIX_QUOTE]     = "\\qfix \\qmv",
+		[FIX_TIME]      = "\\qft  \\qfixtime",
+		[LIST_QUOTES]   = "\\ql   \\qlist",
+		[SEARCH_QUOTES] = "\\qs   \\qsearch \\qfind \\qgrep"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -287,23 +298,7 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
-static void quotes_msg(const char* chan, const char* name, const char* msg){
-
-	enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES	};
-
-	const char* arg = msg;
-	int i = ctx->check_cmds(
-		&arg,
-		"\\q",
-		"\\qadd,\\q+",
-		"\\qdel,\\qrm,\\q-",
-		"\\qfix,\\qmv",
-		"\\qft,\\qfixtime",
-		"\\ql,\\qlist",
-		"\\qs,\\qsearch,\\qfind,\\qgrep",
-		NULL
-	);
-	if(i < 0) return;
+static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
 	
@@ -319,7 +314,7 @@ static void quotes_msg(const char* chan, const char* name, const char* msg){
 		return;
 	}
 
-	switch(i){
+	switch(cmd){
 		case GET_QUOTE: {
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\q <id>", name);

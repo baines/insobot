@@ -5,18 +5,26 @@
 #include "stb_sb.h" 
 
 static bool whitelist_init    (const IRCCoreCtx*);
-static void whitelist_msg     (const char*, const char*, const char*);
+static void whitelist_cmd     (const char*, const char*, const char*, int);
 static bool whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
 
-IRCModuleCtx irc_mod_ctx = {
+enum { WL_CHECK_SELF, WL_CHECK_OTHER, WL_ADD, WL_DEL };
+
+const IRCModuleCtx irc_mod_ctx = {
 	.name       = "whitelist",
 	.desc       = "Allow known users to access commands",
-	.flags      = IRC_MOD_GLOBAL, //FIXME should whitelist be per channel?
+	.flags      = IRC_MOD_GLOBAL,
 	.on_init    = &whitelist_init,
-	.on_msg     = &whitelist_msg,
+	.on_cmd     = &whitelist_cmd,
 	.on_mod_msg = &whitelist_mod_msg,
 	.on_save    = &whitelist_save,
+	.commands   = DEFINE_CMDS (
+		[WL_CHECK_SELF]  = "\\wl    \\wlcheckme \\amiwhitelisted",
+		[WL_CHECK_OTHER] = "\\iswl  \\wlcheck",
+		[WL_ADD]         = "\\wladd \\wl+",
+		[WL_DEL]         = "\\wldel \\wl-"
+	)
 };
 
 static const IRCCoreCtx* ctx;
@@ -80,24 +88,11 @@ static bool whitelist_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void whitelist_msg(const char* chan, const char* name, const char* msg){
-
-	//TODO: add / del
-	enum { WL_CHECK_SELF, WL_CHECK_OTHER, WL_ADD, WL_DEL };
-
-	const char* arg = msg;
-	int i = ctx->check_cmds(
-		&arg,
-		"\\amiwhitelisted,\\wlcheckme,\\wl",
-		"\\iswl,\\wlcheck",
-		"\\wladd,\\wl+",
-		"\\wldel,\\wl-",
-		NULL
-	);
+static void whitelist_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool is_admin = strcasecmp(chan + 1, name) == 0 || admin_check(name);
 
-	switch(i){
+	switch(cmd){
 		case WL_CHECK_SELF: {
 			const char* opt = wlist_check(name) ? "are" : "are not";
 			ctx->send_msg(chan, "%s: You %s whitelisted.", name, opt);
