@@ -78,6 +78,29 @@ static KEntry* karma_add_name(const char* name){
 	return ret;
 }
 
+static bool karma_update(KEntry* actor, const char* target, bool upvote){
+	KEntry* k;
+
+	bool narcissist = false;
+	for(char** n = actor->names; n < sb_end(actor->names); ++n){
+		if(strcasecmp(*n, target) == 0){
+			narcissist = true;
+			break;
+		}
+	}
+
+	if(!narcissist && (k = karma_find(target, false))){
+		int* i = upvote ? &k->up : &k->down;
+		(*i)++;
+		return true;
+	}
+
+	return false;
+}
+
+static const char ytmnd[] = "!ytmnd ";
+static const char ytwnd[] = "!ytwnd ";
+
 static void karma_check(KEntry* actor, const char* msg){
 
 	//TODO: prefix operators
@@ -88,28 +111,24 @@ static void karma_check(KEntry* actor, const char* msg){
 
 	if(now - actor->last_give < karma_cooldown) return;
 
-	for(const char* p = msg; *p; ++p){
-		if(*p == ' ') delim = p + 1;
+	const size_t dog_size = sizeof(ytmnd) - 1;
+	if(
+		strncasecmp(msg, ytmnd, dog_size) == 0 ||
+		strncasecmp(msg, ytwnd, dog_size) == 0
+	){
+		const char* beg = msg + dog_size;
+		const char* end = strchrnul(msg + dog_size, ' ');
+		changes = karma_update(actor, strndupa(beg, end - beg), true);
+	} else {
+		for(const char* p = msg; *p; ++p){
+			if(*p == ' ') delim = p + 1;
 
-		if((*p == '+' && *(p+1) == '+') || (*p == '-' && *(p+1) == '-')){
-			char* target = strndupa(delim, (p - delim));
-			KEntry* k;
-
-			bool narcissist = false;
-			for(char** n = actor->names; n < sb_end(actor->names); ++n){
-				if(strcasecmp(*n, target) == 0){
-					narcissist = true;
+			if((*p == '+' && *(p+1) == '+') || (*p == '-' && *(p+1) == '-')){
+				if((changes = karma_update(actor, strndupa(delim, p - delim), *p == '+'))){
 					break;
 				}
+				++p;
 			}
-
-			if(!narcissist && (k = karma_find(target, false))){
-				int* i = *p == '+' ? &k->up : &k->down;
-				(*i)++;
-				changes = true;
-				break;
-			}
-			++p;
 		}
 	}
 
@@ -239,6 +258,8 @@ static bool karma_save(FILE* f){
 	qsort(klist, sb_count(klist), sizeof(*klist), &karma_sort);
 
 	for(KEntry* k = klist; k < sb_end(klist); ++k){
+		if(k->up == 0 && k->down == 0) continue;
+
 		for(char** name = k->names; name < sb_end(k->names); ++name){
 			fprintf(f, "%s:", *name);
 		}

@@ -238,23 +238,30 @@ static const char* get_datafile(void){
 	return datafile_buff;
 }
 
-static IRCModuleCtx** mods = 0;
+static bool mod_list_dirty = true;
+static IRCModuleCtx** chan_mod_list = 0;
+static IRCModuleCtx** global_mod_list = 0;
 
 static IRCModuleCtx** get_modules(bool chan_only){
 
-	while(sb_count(mods) > 0){
-		sb_pop(mods);
-	}
+	if(mod_list_dirty){
+		while(sb_count(chan_mod_list) > 0) sb_pop(chan_mod_list);
+		while(sb_count(global_mod_list) > 0) sb_pop(global_mod_list);
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-		if(!chan_only || !(m->ctx->flags & IRC_MOD_GLOBAL)){
-			sb_push(mods, m->ctx);
+		for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+			sb_push(global_mod_list, m->ctx);
+			if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
+				sb_push(chan_mod_list, m->ctx);
+			}
 		}
+
+		sb_push(chan_mod_list, 0);
+		sb_push(global_mod_list, 0);
+
+		mod_list_dirty = false;
 	}
 
-	sb_push(mods, 0);
-
-	return mods;
+	return chan_only ? chan_mod_list : global_mod_list;
 }
 
 static const char** get_channels(void){
@@ -429,6 +436,8 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 		}
 
 		if(ev->wd == inotify_info.module_watch){
+
+			mod_list_dirty = true;
 
 			bool module_currently_loaded = false;
 			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){

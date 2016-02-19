@@ -2,13 +2,14 @@
 #include "stb_sb.h"
 #include <string.h>
 #include <ctype.h>
+#include "utils.h"
 
 static void alias_msg  (const char*, const char*, const char*);
 static void alias_cmd  (const char*, const char*, const char*, int);
 static bool alias_save (FILE*);
 static bool alias_init (const IRCCoreCtx*);
 
-enum { ALIAS_ADD, ALIAS_DEL };
+enum { ALIAS_ADD, ALIAS_DEL, ALIAS_LIST };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "alias",
@@ -19,8 +20,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &alias_cmd,
 	.on_init  = &alias_init,
 	.commands = DEFINE_CMDS (
-		[ALIAS_ADD] = "\\alias",
-		[ALIAS_DEL] = "\\unalais"
+		[ALIAS_ADD]  = "\\alias",
+		[ALIAS_DEL]  = "\\unalias \\delalias \\rmalias",
+		[ALIAS_LIST] = "\\lsalias \\lsa \\listalias \\listaliases"
 	)
 };
 
@@ -106,6 +108,24 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			if(!found){
 				ctx->send_msg(chan, "%s: That alias doesn't exist.", name);
 			}
+		} break;
+
+		case ALIAS_LIST: {
+			char alias_buf[512];
+			char* ptr = alias_buf;
+			size_t sz = sizeof(alias_buf);
+
+			const size_t total = sb_count(alias_keys);
+
+			if(total == 0){
+				inso_strcat(alias_buf, sizeof(alias_buf), "<none>.");
+			} else {
+				for(int i = 0; i < total; ++i){
+					snprintf_chain(&ptr, &sz, "!%s%s", alias_keys[i], i == (total-1) ? "." : ", ");
+				}
+			}
+
+			ctx->send_msg(chan, "%s: Current aliases: %s", name, alias_buf);
 		} break;
 	}
 

@@ -2,6 +2,7 @@
 #include "string.h"
 #include "config.h"
 #include "utils.h"
+#include "assert.h"
 
 static bool help_init (const IRCCoreCtx*);
 static void help_cmd  (const char*, const char*, const char*, int);
@@ -37,6 +38,7 @@ static void get_mod_cmds(IRCModuleCtx* mod, char* buf, size_t sz){
 	//XXX: only prints the first command alias, is that a good idea?
 	for(const char** cmd = mod->commands; *cmd; ++cmd){
 		const char* end = strchrnul(*cmd, ' ');
+		assert(end - *cmd < sizeof(cmd_buf));
 		memcpy(cmd_buf, *cmd, end - *cmd);
 		cmd_buf[end - *cmd] = 0;
 
