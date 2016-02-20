@@ -103,8 +103,6 @@ static const char ytwnd[] = "!ytwnd ";
 
 static void karma_check(KEntry* actor, const char* msg){
 
-	//TODO: prefix operators
-
 	const char* delim = msg;
 	bool changes = false;
 	time_t now = time(0);
@@ -124,7 +122,20 @@ static void karma_check(KEntry* actor, const char* msg){
 			if(*p == ' ') delim = p + 1;
 
 			if((*p == '+' && *(p+1) == '+') || (*p == '-' && *(p+1) == '-')){
-				if((changes = karma_update(actor, strndupa(delim, p - delim), *p == '+'))){
+				char* target;
+
+				if(p == delim){
+					// ++name
+
+					char* end = strchrnul(p + 2, ' ');
+					target = strndupa(p + 2, end - (p + 2));
+				} else {
+					// name++
+
+					target = strndupa(delim, p - delim);
+				}
+
+				if((changes = karma_update(actor, target, *p == '+'))){
 					break;
 				}
 				++p;
