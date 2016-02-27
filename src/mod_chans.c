@@ -62,6 +62,8 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 
 	switch(cmd){
 		case CHAN_JOIN: {
+			if(*arg) break;
+
 			if(in_chan){
 				ctx->send_msg(chan, "%s: I should already be there, I'll try rejoining.", name);
 			} else {

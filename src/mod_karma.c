@@ -42,7 +42,7 @@ typedef struct KEntry_ {
 
 static KEntry* klist;
 
-static const int karma_cooldown = 120;
+static const int karma_cooldown = 60;
 
 static KEntry* karma_find(const char* name, bool adjust){
 	for(KEntry* k = klist; k < sb_end(klist); ++k){
@@ -195,7 +195,16 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 			size_t sz = sizeof(msg_buf);
 
 			int limit = sb_count(klist);
-			if(limit > 3) limit = 3;
+			int requested = 3;
+
+			if(*arg++){
+				requested = strtol(arg, NULL, 0);
+			}
+
+			if(requested > 10) requested = 10;
+			if(requested < 1) requested = 1;
+
+			if(requested < limit) limit = requested;
 
 			for(int i = 0; i < limit; ++i){
 				int tmp = snprintf(
