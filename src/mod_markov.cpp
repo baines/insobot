@@ -688,13 +688,22 @@ static void markov_msg(const char* chan, const char* nick, const char* m){
 	// speak when we are spoken to
 	regmatch_t matches[4] = {};
 
-	if(
-		!msg.empty() && (
-			msg.find("@" BOT_NAME) != string::npos ||
-			msg.find(BOT_NAME ":") != string::npos ||
-			msg.find(BOT_NAME ",") != string::npos
-		)
-	){
+	const char* bot_name = ctx->get_username();
+	size_t      bot_name_len = strlen(bot_name);
+	const char* name_pats[] = { "@%s", "%s:", "%s," };
+	char        name_buf[256];
+	bool        found_name = false;
+
+	assert(bot_name_len + 2 < sizeof(name_buf));
+	for(size_t i = 0; i < arrsize(name_pats); ++i){
+		snprintf(name_buf, sizeof(name_buf), name_pats[i], bot_name);
+		if(msg.find(name_buf) != string::npos){
+			found_name = true;
+			break;
+		}
+	}
+
+	if(found_name){
 		if(
 			msg.find("?") != string::npos &&
 			regexec(&opinion_regex, msg.c_str(), 4, matches, 0) == 0

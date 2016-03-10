@@ -558,8 +558,8 @@ int main(int argc, char** argv){
 	srand(time(0));
 	signal(SIGINT, &handle_sig);
 	
-	user = env_else("IRC_USER", BOT_NAME);
-	pass = env_else("IRC_PASS", BOT_PASS);
+	user = env_else("IRC_USER", DEFAULT_BOT_NAME);
+	pass = env_else("IRC_PASS", NULL);
 	serv = env_else("IRC_SERV", "irc.nonexistent.domain");
 	port = env_else("IRC_PORT", "6667");
 	
