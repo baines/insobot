@@ -70,16 +70,26 @@ static bool update_schedule(void){
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, (long) last_schedule_update);
 
 	int curl_ret = curl_easy_perform(curl);
-
+	long http_code = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 	curl_easy_cleanup(curl);
 
 	sb_push(data, 0);
 
 	if(curl_ret != 0){
 		fprintf(stderr, "Error getting schedule: %s\n", curl_easy_strerror(curl_ret));
+		sb_free(data);
 		return false;
+	}
+
+	if(http_code == 304){
+		fprintf(stderr, "mod_hmh: Not modified.\n");
+		sb_free(data);
+		return true;
 	}
 
 	memset(schedule, 0, sizeof(schedule));
@@ -161,7 +171,7 @@ static bool update_schedule(void){
 static void print_schedule(const char* chan, const char* name){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 3600){
+	if(now - last_schedule_update > 1800){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
@@ -248,7 +258,7 @@ static void print_schedule(const char* chan, const char* name){
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 3600){
+	if(now - last_schedule_update > 1800){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
