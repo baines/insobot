@@ -108,6 +108,7 @@ static const char* name_path[] = { "user", "display_name", NULL };
 static void twitch_check_followers(void){
 
 	char* data = NULL;
+	yajl_val root = NULL;
 
 	CURL* curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
@@ -116,6 +117,7 @@ static void twitch_check_followers(void){
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5);
 
 	for(char** chan = enabled_chans; chan < sb_end(enabled_chans); ++chan){
 
@@ -124,6 +126,9 @@ static void twitch_check_followers(void){
 
 		curl_easy_setopt(curl, CURLOPT_URL, url);
 		CURLcode ret = curl_easy_perform(curl);
+
+		free(url);
+
 		sb_push(data, 0);
 		
 		if(ret != 0){
@@ -131,7 +136,7 @@ static void twitch_check_followers(void){
 			goto out;
 		}
 
-		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		root = yajl_tree_parse(data, NULL, 0);
 
 		if(!YAJL_IS_OBJECT(root)){
 			fprintf(stderr, "mod_twitch: root not object!\n");
@@ -185,15 +190,20 @@ static void twitch_check_followers(void){
 		if(new_follow_count == 1){
 			ctx->send_msg(*chan, "Thank you to %s for following the channel! <3", msg_buf);
 		} else if(new_follow_count > 1){
-			ctx->send_msg(*chan, "Thank you to new followers: %s! <3", msg_buf);
+			ctx->send_msg(*chan, "Thank you new followers: %s! <3", msg_buf);
 		}
 
 		sb_free(data);
 		data = NULL;
+
+		yajl_tree_free(root);
+		root = NULL;
 	}
 
 out:
 	if(data) sb_free(data);
+	if(root) yajl_tree_free(root);
+
 	curl_easy_cleanup(curl);
 }
 
