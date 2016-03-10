@@ -40,6 +40,9 @@ typedef struct IRCModuleCtx_ {
 
 	// simple inter-module communication callback
 	void (*on_mod_msg) (const char* sender, const IRCModMsg* msg);
+
+	// called every 25ms or so
+	void (*on_tick)    (void);
 } IRCModuleCtx;
 
 // passed to modules to provide functions for them to use.

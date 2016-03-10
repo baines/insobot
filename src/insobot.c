@@ -705,6 +705,15 @@ int main(int argc, char** argv){
 
 			check_inotify(&core_ctx);
 
+			//TODO: check on_meta & better timing for on_tick?
+			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+				if(m->ctx->on_tick){
+					sb_push(mod_call_stack, m);
+					m->ctx->on_tick();
+					sb_pop(mod_call_stack);
+				}
+			}
+
 			int max_fd = 0;
 			fd_set in, out;
 	
