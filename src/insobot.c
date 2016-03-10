@@ -693,12 +693,16 @@ int main(int argc, char** argv){
 
 	do {
 		irc_ctx = irc_create_session(&callbacks);
+		if(!irc_ctx){
+			fprintf(stderr, "Failed to create irc session.\n");
+		}
+
 		irc_option_set(irc_ctx, LIBIRC_OPTION_STRIPNICKS);
 
 		if(irc_connect(irc_ctx, serv, atoi(port), pass, user, user, user) != 0){
-			errx(1, "couldn't connect");
+			fprintf(stderr, "Unable to connect: %s\n", irc_strerror(irc_errno(irc_ctx)));
 		}
-				
+
 		while(running && irc_is_connected(irc_ctx)){
 
 			process_pending_cmds();
@@ -720,7 +724,9 @@ int main(int argc, char** argv){
 			FD_ZERO(&in);
 			FD_ZERO(&out);
 
-			irc_add_select_descriptors(irc_ctx, &in, &out, &max_fd);
+			if(irc_add_select_descriptors(irc_ctx, &in, &out, &max_fd) != 0){
+				fprintf(stderr, "Error adding select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
+			}
 	
 			struct timeval tv = {
 				.tv_sec  = 0,
@@ -755,7 +761,9 @@ int main(int argc, char** argv){
 					}
 				}
 			
-				irc_process_select_descriptors(irc_ctx, &in, &out);
+				if(irc_process_select_descriptors(irc_ctx, &in, &out) != 0){
+					fprintf(stderr, "Error processing select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
+				}
 			}
 		}
 	
