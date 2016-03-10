@@ -37,7 +37,7 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&yt_title_regex,
-		"&title=([^&]*)",
+		"title=([^&]*)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
