@@ -20,9 +20,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &alias_cmd,
 	.on_init  = &alias_init,
 	.commands = DEFINE_CMDS (
-		[ALIAS_ADD]  = "\\alias",
-		[ALIAS_DEL]  = "\\unalias \\delalias \\rmalias",
-		[ALIAS_LIST] = "\\lsalias \\lsa \\listalias \\listaliases"
+		[ALIAS_ADD]  = CONTROL_CHAR "alias",
+		[ALIAS_DEL]  = CONTROL_CHAR "unalias " CONTROL_CHAR "delalias " CONTROL_CHAR "rmalias",
+		[ALIAS_LIST] = CONTROL_CHAR "lsalias " CONTROL_CHAR "lsa " CONTROL_CHAR "listalias " CONTROL_CHAR "listaliases"
 	)
 };
 
@@ -134,9 +134,9 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 	return;
 
 usage_add:
-	ctx->send_msg(chan, "%s: Usage: \\alias <key> <text>", name); return;
+	ctx->send_msg(chan, "%s: Usage: "CONTROL_CHAR"alias <key> <text>", name); return;
 usage_del:
-	ctx->send_msg(chan, "%s: Usage: \\unalias <key>", name); return;
+	ctx->send_msg(chan, "%s: Usage: "CONTROL_CHAR"unalias <key>", name); return;
 }
 
 static void alias_msg(const char* chan, const char* name, const char* msg){

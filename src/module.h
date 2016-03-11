@@ -92,4 +92,6 @@ typedef struct IRCModMsg_ {
 	0\
 }
 
+#define CONTROL_CHAR "!"
+
 #endif

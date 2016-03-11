@@ -21,7 +21,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_tick  = &twitch_tick,
 	.on_save  = &twitch_save,
 	.commands = DEFINE_CMDS (
-		[FOLLOW_NOTIFY] = "\\fnotify"
+		[FOLLOW_NOTIFY] = CONTROL_CHAR"fnotify"
 	)
 };
 
