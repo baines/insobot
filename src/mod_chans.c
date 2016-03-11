@@ -21,8 +21,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save    = &chans_save,
 	.on_connect = &chans_connect,
 	.commands   = DEFINE_CMDS (
-		[CHAN_JOIN]  = "\\join",
-		[CHAN_LEAVE] = "\\leave \\part"
+		[CHAN_JOIN]  = CONTROL_CHAR"join",
+		[CHAN_LEAVE] = CONTROL_CHAR"leave " CONTROL_CHAR"part"
 	)
 };
 

@@ -16,7 +16,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = help_init,
 	.on_cmd   = &help_cmd,
 	.commands = DEFINE_CMDS (
-		[CMD_HELP] = "\\help"
+		[CMD_HELP] = CONTROL_CHAR"help"
 	)
 };
 

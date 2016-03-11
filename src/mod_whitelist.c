@@ -20,10 +20,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &whitelist_mod_msg,
 	.on_save    = &whitelist_save,
 	.commands   = DEFINE_CMDS (
-		[WL_CHECK_SELF]  = "\\wl    \\wlcheckme \\amiwhitelisted",
-		[WL_CHECK_OTHER] = "\\iswl  \\wlcheck",
-		[WL_ADD]         = "\\wladd \\wl+",
-		[WL_DEL]         = "\\wldel \\wl-"
+		[WL_CHECK_SELF]  = CONTROL_CHAR"wl    "CONTROL_CHAR"wlcheckme "CONTROL_CHAR"amiwhitelisted",
+		[WL_CHECK_OTHER] = CONTROL_CHAR"iswl  "CONTROL_CHAR"wlcheck",
+		[WL_ADD]         = CONTROL_CHAR"wladd "CONTROL_CHAR"wl+",
+		[WL_DEL]         = CONTROL_CHAR"wldel "CONTROL_CHAR"wl-"
 	)
 };
 

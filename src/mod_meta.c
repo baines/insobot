@@ -31,10 +31,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = &meta_init,
 	.on_join  = &meta_join,
 	.commands = DEFINE_CMDS (
-		[CMD_MODULES]  = "\\m     \\modules",
-		[CMD_MOD_ON]   = "\\mon   \\modon",
-		[CMD_MOD_OFF]  = "\\moff  \\modoff",
-		[CMD_MOD_INFO] = "\\minfo \\modinfo"
+		[CMD_MODULES]  = CONTROL_CHAR"m "     CONTROL_CHAR"modules",
+		[CMD_MOD_ON]   = CONTROL_CHAR"mon "   CONTROL_CHAR"modon",
+		[CMD_MOD_OFF]  = CONTROL_CHAR"moff "  CONTROL_CHAR"modoff",
+		[CMD_MOD_INFO] = CONTROL_CHAR"minfo " CONTROL_CHAR"modinfo"
 	)
 };
 

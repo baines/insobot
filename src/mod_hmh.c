@@ -18,8 +18,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &hmh_cmd,
 	.on_init  = &hmh_init,
 	.commands = DEFINE_CMDS (
-		[CMD_SCHEDULE] = "!sched \\sched \\schedule",
-		[CMD_TIME]     = "!tm    \\tm    \\time"
+		[CMD_SCHEDULE] = CONTROL_CHAR"sched " CONTROL_CHAR"schedule",
+		[CMD_TIME]     = CONTROL_CHAR"tm "CONTROL_CHAR"time"
 	)
 };
 
