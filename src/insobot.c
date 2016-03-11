@@ -23,6 +23,10 @@
 #include "module.h"
 #include "stb_sb.h"
 
+#ifndef LIBIRC_OPTION_SSL_NO_VERIFY
+	#define LIBIRC_OPTION_SSL_NO_VERIFY (1 << 3)
+#endif
+
 typedef struct Module_ {
 	char* lib_path;
 	void* lib_handle;
@@ -46,6 +50,7 @@ static Module* irc_modules;
 static Module** mod_call_stack;
 
 static const char *user, *pass, *serv, *port;
+static char *nick;
 
 static char** channels;
 
@@ -122,6 +127,10 @@ static void dispatch_cmds(Module* m, const char* chan, const char* name, const c
 }
 
 IRC_STR_CALLBACK(on_connect) {
+	printf("Our nick is %s\n", params[0]);
+	free(nick);
+	nick = strdup(params[0]);
+
 	IRC_MOD_CALL_ALL(on_connect, (serv));
 }
 
@@ -154,6 +163,11 @@ IRC_STR_CALLBACK(on_part) {
 
 IRC_STR_CALLBACK(on_nick) {
 	if(count < 1 || !origin || !params[0]) return;
+	if(strcmp(origin, nick) == 0){
+		printf("We changed nicks! new nick: %s\n", params[0]);
+		free(nick);
+		nick = strdup(params[0]);
+	}
 	IRC_MOD_CALL_ALL(on_nick, (origin, params[0]));
 }
 
@@ -166,6 +180,9 @@ IRC_STR_CALLBACK(on_unknown) {
 		ping_sent = 0;
 	} else {
 		printf("Unknown event: %s.\n", event);
+		for(int i = 0; i < count; ++i){
+			printf(". . %s\n", params[i]);
+		}
 	}
 }
 
@@ -187,6 +204,9 @@ IRC_NUM_CALLBACK(on_numeric) {
 		free(names);
 	} else {
 		printf(". . . Numeric [%u]\n", event);
+		for(int i = 0; i < count; ++i){
+			printf(". . %s\n", params[i]);
+		}
 	}
 }
 
@@ -198,7 +218,7 @@ static void handle_sig(int n){
 }
 
 static const char* get_username(void){
-	return user;
+	return nick;
 }
 
 //FIXME: would it be better to return a malloc'd string instead?
@@ -528,7 +548,7 @@ static void check_inotify(const IRCCoreCtx* core_ctx){
 
 			if(success){
 				for(char** c = channels; *c; ++c){
-					irc_on_join(irc_ctx, "join", user, (const char**)c, 1);
+					irc_on_join(irc_ctx, "join", nick, (const char**)c, 1);
 				}
 
 				fprintf(stderr, "Reload successful.\n");
@@ -562,7 +582,8 @@ int main(int argc, char** argv){
 	pass = env_else("IRC_PASS", NULL);
 	serv = env_else("IRC_SERV", "irc.nonexistent.domain");
 	port = env_else("IRC_PORT", "6667");
-	
+	nick = strdup(user);
+
 	char our_path[PATH_MAX];
 	memset(our_path, 0, sizeof(our_path));
 
@@ -697,11 +718,25 @@ int main(int argc, char** argv){
 			fprintf(stderr, "Failed to create irc session.\n");
 		}
 
+		irc_option_set(irc_ctx, LIBIRC_OPTION_DEBUG);
 		irc_option_set(irc_ctx, LIBIRC_OPTION_STRIPNICKS);
 
-		if(irc_connect(irc_ctx, serv, atoi(port), pass, user, user, user) != 0){
+		char* libirc_serv;
+		if(getenv("IRC_ENABLE_SSL")){
+			puts("Using ssl connection...");
+			asprintf(&libirc_serv, "#%s", serv);
+
+			//XXX: you might not want this!
+			irc_option_set(irc_ctx, LIBIRC_OPTION_SSL_NO_VERIFY);
+		} else {
+			libirc_serv = strdup(serv);
+		}
+
+		if(irc_connect(irc_ctx, libirc_serv, atoi(port), pass, user, user, user) != 0){
 			fprintf(stderr, "Unable to connect: %s\n", irc_strerror(irc_errno(irc_ctx)));
 		}
+
+		free(libirc_serv);
 
 		while(running && irc_is_connected(irc_ctx)){
 
@@ -740,7 +775,9 @@ int main(int argc, char** argv){
 			} else if(ret == 0){
 				timersub(&tv_orig, &tv, &tv);
 				timeradd(&tv, &idle_time, &idle_time);
-			
+
+				//TODO: figure out why this doesn't work properly over ssl
+#if 0	
 				if(idle_time.tv_sec >= 30 && !ping_sent){
 					irc_send_raw(irc_ctx, "PING %s", serv);
 					ping_sent = 1;
@@ -749,8 +786,9 @@ int main(int argc, char** argv){
 				if(idle_time.tv_sec >= 60){
 					puts("Timeout > 60... quitting");
 					irc_disconnect(irc_ctx);
+					ping_sent = 0;
 				}
-			
+#endif		
 			} else if(ret > 0){
 
 				int i;

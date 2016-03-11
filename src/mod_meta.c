@@ -142,7 +142,7 @@ static void meta_cmd(const char* chan, const char* name, const char* arg, int cm
 	char***        our_mods = get_enabled_modules(chan);
 
 	// this shouldn't happen, on_join should get the channel name before this can be called
-	if(!*our_mods){
+	if(!our_mods){
 		fprintf(stderr, "BUG: mod_meta.c: %s isn't on our list. Fix it!\n", chan);
 		return;
 	}
