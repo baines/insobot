@@ -608,6 +608,14 @@ int main(int argc, char** argv){
 	inotify_info.fd = inotify_init1(IN_NONBLOCK);
 	
 	memcpy(path_end, in_mod_suffix, sizeof(in_mod_suffix));
+
+	if(access(our_path, W_OK) != 0){
+		puts("No modules dir, creating it");
+		if(mkdir(our_path, 00750) == -1){
+			perror("Error creating modules dir");
+		}
+	}
+
 	inotify_info.module_path  = strdup(our_path);
 	inotify_info.module_watch = inotify_add_watch(
 		inotify_info.fd,
@@ -616,6 +624,14 @@ int main(int argc, char** argv){
 	);
 
 	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
+
+	if(access(our_path, W_OK) != 0){
+		puts("No modules/data dir, creating it");
+		if(mkdir(our_path, 00750) == -1){
+			perror("Error creating modules/data dir");
+		}
+	}
+
 	inotify_info.data_path  = strdup(our_path);
 	inotify_info.data_watch = inotify_add_watch(
 		inotify_info.fd,
@@ -624,7 +640,7 @@ int main(int argc, char** argv){
 	);
 
 	memcpy(path_end, glob_suffix, sizeof(glob_suffix));
-	
+
 	glob_t glob_data = {};
 	int glob_ret = 0;
 

@@ -9,10 +9,13 @@ all: ../insobot $(module_out)
 ../insobot: insobot.c config.h module.h
 	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl
 
-../modules/mod_markov.so: mod_markov.cpp module.h config.h
+../modules:
+	mkdir $@
+
+../modules/mod_markov.so: mod_markov.cpp module.h config.h ../modules
 	$(CXX) $(CXXFLAGS) -fPIC -shared $< -o $@
 
-../modules/%.so: %.c config.h module.h utils.h
+../modules/%.so: %.c config.h module.h utils.h ../modules
 	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl
 	
 clean:
