@@ -9,7 +9,7 @@ static void alias_cmd  (const char*, const char*, const char*, int);
 static bool alias_save (FILE*);
 static bool alias_init (const IRCCoreCtx*);
 
-enum { ALIAS_ADD, ALIAS_DEL, ALIAS_LIST };
+enum { ALIAS_ADD, ALIAS_DEL, ALIAS_LIST, ALIAS_SET_PERM };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "alias",
@@ -20,9 +20,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &alias_cmd,
 	.on_init  = &alias_init,
 	.commands = DEFINE_CMDS (
-		[ALIAS_ADD]  = CONTROL_CHAR "alias",
-		[ALIAS_DEL]  = CONTROL_CHAR "unalias " CONTROL_CHAR "delalias " CONTROL_CHAR "rmalias",
-		[ALIAS_LIST] = CONTROL_CHAR "lsalias " CONTROL_CHAR "lsa " CONTROL_CHAR "listalias " CONTROL_CHAR "listaliases"
+		[ALIAS_ADD]      = CONTROL_CHAR"alias ",
+		[ALIAS_DEL]      = CONTROL_CHAR"unalias "    CONTROL_CHAR"delalias "   CONTROL_CHAR"rmalias ",
+		[ALIAS_LIST]     = CONTROL_CHAR"lsalias "    CONTROL_CHAR"lsa "        CONTROL_CHAR"listalias "    CONTROL_CHAR"listaliases ",
+		[ALIAS_SET_PERM] = CONTROL_CHAR"chaliasmod " CONTROL_CHAR"chamod "       CONTROL_CHAR"aliasaccess "  CONTROL_CHAR"setaliasaccess "
 	)
 };
 
@@ -127,6 +128,47 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 
 			ctx->send_msg(chan, "%s: Current aliases: %s", name, alias_buf);
 		} break;
+
+        case ALIAS_SET_PERM: {
+			if(!*arg++ || !isalnum(*arg)) goto usage_setperm;
+            
+			const char* space = strchr(arg, ' ');
+			if(!space) goto usage_setperm;
+
+			char* key = strndupa(arg, space - arg);
+			for(char* k = key; *k; ++k) *k = tolower(*k);
+
+            Alias* alias;
+			bool found = false;
+			for(int i = 0; i < sb_count(alias_keys); ++i){
+				if(strcmp(key, alias_keys[i]) == 0){
+					found = true;
+                    alias = alias_vals + i;
+				}
+			}
+
+			if(!found){
+                ctx->send_msg(chan, "%s: No alias called '%s'.", name, key);
+                return;
+			}
+
+            int perm = -1;
+            const char* permstr = space+1;             
+            if (strcasecmp(permstr, alias_permission_strs[AP_NORMAL]) == 0)
+                perm = AP_NORMAL;
+            else if (strcasecmp(permstr, alias_permission_strs[AP_WHITELISTED]) == 0)
+                perm = AP_WHITELISTED;
+            else if (strcasecmp(permstr, alias_permission_strs[AP_ADMINONLY]) == 0)
+                perm = AP_ADMINONLY;
+            
+            if (perm == -1) {
+                ctx->send_msg(chan, "%s: Not sure what permission level '%s' is.", name, permstr);
+                return;
+            }
+                
+            alias->permission = perm;
+			ctx->send_msg(chan, "%s: Set permissions on %s to %s.", name, key, permstr);
+        } break;
 	}
 
 	ctx->save_me();
@@ -137,6 +179,8 @@ usage_add:
 	ctx->send_msg(chan, "%s: Usage: "CONTROL_CHAR"alias <key> <text>", name); return;
 usage_del:
 	ctx->send_msg(chan, "%s: Usage: "CONTROL_CHAR"unalias <key>", name); return;
+usage_setperm:
+	ctx->send_msg(chan, "%s: Usage: "CONTROL_CHAR"chaliasmod <key> [NORMAL|WLIST|ADMIN]", name); return;
 }
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
