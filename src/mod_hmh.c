@@ -18,8 +18,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &hmh_cmd,
 	.on_init  = &hmh_init,
 	.commands = DEFINE_CMDS (
-		[CMD_SCHEDULE] = CONTROL_CHAR"sched " CONTROL_CHAR"schedule",
-		[CMD_TIME]     = CONTROL_CHAR"tm "CONTROL_CHAR"time"
+		[CMD_SCHEDULE] = CONTROL_CHAR "sched " CONTROL_CHAR "schedule",
+		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time"
 	)
 };
 
@@ -86,65 +86,63 @@ static bool update_schedule(void){
 		return false;
 	}
 
-	if(http_code == 304){
-		fprintf(stderr, "mod_hmh: Not modified.\n");
-		sb_free(data);
-		return true;
-	}
-
-	memset(schedule, 0, sizeof(schedule));
-	memset(&schedule_start, 0, sizeof(schedule_start));
-
 	char* tz = tz_push(":US/Pacific");
 
 	time_t now = time(0);
 	struct tm now_tm = {}, prev_tm = {};
 	localtime_r(&now, &now_tm);
 
-	int record_idx = -1;
-	char *state, *line = strtok_r(data, "\r\n", &state);
+	if(http_code == 304){
+		fprintf(stderr, "mod_hmh: Not modified.\n");
+	} else {
+		memset(schedule, 0, sizeof(schedule));
+		memset(&schedule_start, 0, sizeof(schedule_start));
 
-	for(; line; line = strtok_r(NULL, "\r\n", &state)){
+		int record_idx = -1;
+		char *state, *line = strtok_r(data, "\r\n", &state);
 
-		struct tm scheduled_tm = {};
-		char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
-		if(*title != ','){
-			break;
-		}
+		for(; line; line = strtok_r(NULL, "\r\n", &state)){
 
-		time_t sched = mktime(&scheduled_tm);
-		int day_diff = (now - sched) / (24*60*60);
+			struct tm scheduled_tm = {};
+			char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
+			if(*title != ','){
+				break;
+			}
 
-		if(record_idx >= 0){
-			int idx_diff =  (get_dow(&scheduled_tm) - get_dow(&prev_tm));
-			record_idx += idx_diff;
-			if(record_idx >= DAYS_IN_WEEK || idx_diff < 0 || day_diff > (6*24*60*60)){
-				if(is_upcoming_stream()){
-					break;
-				} else {
-					memset(schedule, 0, sizeof(schedule));
-					record_idx = -1;
+			time_t sched = mktime(&scheduled_tm);
+			int day_diff = (now - sched) / (24*60*60);
+
+			if(record_idx >= 0){
+				int idx_diff =  (get_dow(&scheduled_tm) - get_dow(&prev_tm));
+				record_idx += idx_diff;
+				if(record_idx >= DAYS_IN_WEEK || idx_diff < 0 || day_diff > (6*24*60*60)){
+					if(is_upcoming_stream()){
+						break;
+					} else {
+						memset(schedule, 0, sizeof(schedule));
+						record_idx = -1;
+					}
 				}
 			}
-		}
-		
-		if(record_idx < 0 && day_diff < DAYS_IN_WEEK){
-			record_idx = get_dow(&scheduled_tm);
-			schedule_start = scheduled_tm;
-			schedule_start.tm_mday -= record_idx;
- 			schedule_start.tm_isdst = -1;
-			mktime(&schedule_start);
-		}
 
-		if(record_idx >= 0){
-			if(strcmp(title + 1, "off") == 0){
-				schedule[record_idx] = -1;
-			} else {
-				schedule[record_idx] = sched;
-			}	
-		}
+			if(record_idx < 0 && day_diff < DAYS_IN_WEEK){
+				record_idx = get_dow(&scheduled_tm);
+				schedule_start = scheduled_tm;
+				schedule_start.tm_mday -= record_idx;
+				schedule_start.tm_isdst = -1;
+				mktime(&schedule_start);
+			}
 
-		prev_tm = scheduled_tm;
+			if(record_idx >= 0){
+				if(strcmp(title + 1, "off") == 0){
+					schedule[record_idx] = -1;
+				} else {
+					schedule[record_idx] = sched;
+				}	
+			}
+
+			prev_tm = scheduled_tm;
+		}
 	}
 
 	// skip to the next week if there are no upcoming streams and it's past friday.
@@ -171,7 +169,17 @@ static bool update_schedule(void){
 static void print_schedule(const char* chan, const char* name){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 1800){
+	bool empty_sched = true;
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
+		if(schedule[i] != 0){
+			empty_sched = false;
+			break;
+		}
+	}
+
+	const size_t lim = empty_sched ? 30 : 1800;
+
+	if(now - last_schedule_update > lim){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
@@ -217,13 +225,13 @@ static void print_schedule(const char* chan, const char* name){
 		times[time_bucket].bits |= (1 << i);
 	}
 
-	bool something_scheduled = false;
+	empty_sched = true;
 	const char* days[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 	char msg_buf[256] = {};
 
 	for(int i = 0; i < time_count; ++i){
 		if(times[i].hour == TIME_UNKNOWN) continue;
-		something_scheduled = true;
+		empty_sched = false;
 
 		inso_strcat(msg_buf, sizeof(msg_buf), "[");
 		for(int j = 0; j < DAYS_IN_WEEK; ++j){
@@ -246,7 +254,7 @@ static void print_schedule(const char* chan, const char* name){
 	strftime(prefix, sizeof(prefix), "%b %d", &schedule_start);
 	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &schedule_start);
 	
-	if(something_scheduled){
+	if(!empty_sched){
 		ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
 	} else {
 		ctx->send_msg(chan, "Schedule for week of %s: TBA.", prefix);
