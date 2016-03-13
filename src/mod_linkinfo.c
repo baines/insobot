@@ -2,7 +2,9 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <curl/curl.h>
+#include <yajl/yajl_tree.h>
 #include <string.h>
+#include <assert.h>
 #include "stb_sb.h"
 
 static void linkinfo_msg  (const char*, const char*, const char*);
@@ -23,6 +25,9 @@ static regex_t yt_title_regex;
 
 static regex_t msdn_url_regex;
 static regex_t generic_title_regex;
+
+static regex_t twitter_url_regex;
+static const char* twitter_token;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -52,6 +57,17 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 		"<title>([^<]+)</title>",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
+
+	ret = ret & (regcomp(
+		&twitter_url_regex,
+		"twitter.com/[^/]+/status/([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	twitter_token = getenv("INSOBOT_TWITTER_TOKEN");
+	if(!twitter_token || !*twitter_token){
+		fputs("mod_linkinfo: no twitter token, expanding tweets won't work.\n", stderr);
+	}
 
 	return ret;
 }
@@ -187,6 +203,170 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 	sb_free(data);
 }
 
+typedef struct {
+	char *from, *to;
+	size_t from_len, to_len;
+} Replacement;
+
+//XXX: this isn't very good. it only replaces a couple of escape sequences that turn up in the twitter api for whatever reason.
+static void dodgy_html_unescape(char* msg, size_t len){
+
+	#define RTAG(x, y) { .from = (x), .to = (y), .from_len = sizeof(x) - 1, .to_len = sizeof(y) - 1 }
+	Replacement tags[] = {
+		RTAG("&amp;", "&"),
+		RTAG("&gt;", ">"),
+		RTAG("&lt;", "<")
+	};
+	#undef RTAG
+
+	for(char* p = msg; *p; ++p){
+		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
+			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
+				const int sz = tags[i].from_len - tags[i].to_len;
+				assert(sz >= 0);
+
+				memmove(p, p + sz, len - (p - msg));
+				memcpy(p, tags[i].to, tags[i].to_len);
+			}
+		}
+	}
+
+}
+
+static int twitter_add_url_replacements(Replacement** out, yajl_val urls, const char** exp_url_path){
+	int size = 0;
+	const char* tco_url_path[] = { "url", NULL };
+
+	for(int i = 0; i < urls->u.array.len; ++i){
+		yajl_val tco_url = yajl_tree_get(urls->u.array.values[i], tco_url_path, yajl_t_string);
+		yajl_val exp_url = yajl_tree_get(urls->u.array.values[i], exp_url_path, yajl_t_string);
+
+		if(!tco_url || !exp_url) continue;
+
+		Replacement ur = {
+			.from     = tco_url->u.string,
+			.from_len = strlen(tco_url->u.string),
+			.to       = exp_url->u.string,
+			.to_len   = strlen(exp_url->u.string)
+		};
+
+		int size_diff = ur.to_len - ur.from_len;
+		if(size_diff > 0) size += size_diff;
+
+		sb_push(*out, ur);
+	}
+
+	return size;
+}
+
+static void do_twitter_info(const char* chan, const char* msg, regmatch_t* matches){
+
+	if(!twitter_token){
+		fputs("Can't fetch tweet, no twitter_token\n", stderr);
+		return;
+	}
+
+	char* tweet_id = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+	char* auth_token = NULL;
+	char* data = NULL;
+	char* url = NULL;
+
+	asprintf(&auth_token, "Authorization: Bearer %s", twitter_token);
+	asprintf(&url, "https://api.twitter.com/1.1/statuses/show/%s.json", tweet_id);
+
+	CURL* curl = curl_easy_init();
+
+	struct curl_slist* headers = curl_slist_append(NULL, auth_token);
+
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+
+	curl_easy_perform(curl);
+
+	sb_push(data, 0);
+
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(curl);
+
+	free(auth_token);
+	free(url);
+
+//	printf("TWITTER DEBUG: [%s]\n", data);
+
+	const char* text_path[] = { "text", NULL };
+	const char* user_path[] = { "user", "name", NULL };
+	const char* urls_path[] = { "entities", "urls", NULL };
+	const char* media_path[] = { "entities", "media", NULL };
+
+	yajl_val root = yajl_tree_parse(data, NULL, 0);
+
+	if(!root){
+		fprintf(stderr, "mod_linkinfo: Can't parse twitter json!\n");
+		goto out;
+	}
+
+	yajl_val text = yajl_tree_get(root, text_path, yajl_t_string);
+	yajl_val user = yajl_tree_get(root, user_path, yajl_t_string);
+	yajl_val urls = yajl_tree_get(root, urls_path, yajl_t_array);
+	yajl_val media = yajl_tree_get(root, media_path, yajl_t_array);
+
+
+	if(!text || !user){
+		fprintf(stderr, "mod_linkinfo: text or user null!\n");
+		goto out;
+	}
+
+	Replacement* url_replacements = NULL;
+
+	const char* exp_url_path[] = { "expanded_url", NULL };
+	const char* media_url_path[] = { "media_url_https", NULL };
+
+	size_t text_mem_size = strlen(text->u.string) + 1;
+
+	//XXX: The expanding will break here if a media url comes before a url, can this happen?
+
+	if(urls)  text_mem_size += twitter_add_url_replacements(&url_replacements, urls, exp_url_path);
+	if(media) text_mem_size += twitter_add_url_replacements(&url_replacements, media, media_url_path);
+
+	char* fixed_text = alloca(text_mem_size);
+
+	const char* read_ptr = text->u.string;
+	char* write_ptr = fixed_text;
+
+	for(int i = 0; i < sb_count(url_replacements); ++i){
+		const char* p = strstr(read_ptr, url_replacements[i].from);
+		assert(p);
+
+		size_t sz = p - read_ptr;
+		memcpy(write_ptr, read_ptr, sz);
+		memcpy(write_ptr + sz, url_replacements[i].to, url_replacements[i].to_len);
+
+		read_ptr = p + url_replacements[i].from_len;
+		write_ptr += (sz + url_replacements[i].to_len);
+	}
+
+	strcpy(write_ptr, read_ptr);
+
+	dodgy_html_unescape(fixed_text, strlen(fixed_text));
+
+	sb_free(url_replacements);
+
+	ctx->send_msg(chan, "↑ Tweet by %s: [%s]", user->u.string, fixed_text);
+
+out:
+	if(root){
+		yajl_tree_free(root);
+	}
+
+	sb_free(data);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -197,5 +377,9 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
 		do_generic_info(chan, msg, matches, "MSDN");
+	}
+
+	if(regexec(&twitter_url_regex, msg, 2, matches, 0) == 0){
+		do_twitter_info(chan, msg, matches);
 	}
 }

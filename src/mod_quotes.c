@@ -178,9 +178,7 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 		return false;
 	}
 
-	char url_buf[1024];
-	snprintf(url_buf, sizeof(url_buf), "%s:%s", gist_user, gist_token);
-	gist_auth = strdup(url_buf);
+	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
 
 	CURL* curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
@@ -189,11 +187,8 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
 
-	snprintf(url_buf, sizeof(url_buf), "https://api.github.com/gists/%s", gist_id);
-	gist_api_url = strdup(url_buf);
-
-	snprintf(url_buf, sizeof(url_buf), "https://gist.github.com/%s", gist_id);
-	gist_pub_url = strdup(url_buf);
+	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
+	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
 
 	char* data = NULL;
 
