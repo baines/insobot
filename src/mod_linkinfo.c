@@ -352,7 +352,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 
 	strcpy(write_ptr, read_ptr);
 
-	for(char* c = fixed_text; *c; ++c) if(*c < ' ') *c = ' ';
+	for(unsigned char* c = fixed_text; *c; ++c) if(*c < ' ') *c = ' ';
 
 	dodgy_html_unescape(fixed_text, strlen(fixed_text));
 
