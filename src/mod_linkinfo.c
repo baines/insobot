@@ -316,7 +316,6 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	yajl_val urls = yajl_tree_get(root, urls_path, yajl_t_array);
 	yajl_val media = yajl_tree_get(root, media_path, yajl_t_array);
 
-
 	if(!text || !user){
 		fprintf(stderr, "mod_linkinfo: text or user null!\n");
 		goto out;
@@ -352,6 +351,8 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	}
 
 	strcpy(write_ptr, read_ptr);
+
+	for(char* c = fixed_text; *c; ++c) if(*c < ' ') *c = ' ';
 
 	dodgy_html_unescape(fixed_text, strlen(fixed_text));
 
