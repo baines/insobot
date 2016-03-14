@@ -109,6 +109,7 @@ static bool update_schedule(void){
 				break;
 			}
 
+			scheduled_tm.tm_isdst = -1;
 			time_t sched = mktime(&scheduled_tm);
 			int day_diff = (now - sched) / (24*60*60);
 
