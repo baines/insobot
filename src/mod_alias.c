@@ -283,6 +283,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 				if(strcasecmp(permstr, alias_permission_strs[i]) == 0){
 					alias_vals[idx].permission = i;
 					ctx->send_msg(chan, "%s: Set permissions on %s to %s.", name, key, permstr);
+					perm_set = true;
 					break;
 				}
 			}
