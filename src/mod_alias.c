@@ -97,6 +97,7 @@ static void alias_load(FILE* f){
 
 			if(fscanf(f, " %m[^\n]", &token) == 1){
 				val.msg = token;
+				val.me_action = (strstr(token, "/me") == token);
 				sb_push(alias_keys, keys);
 				sb_push(alias_vals, val);
 				fprintf(stderr, "Loaded alias [%s] = [%s]\n", *keys, val.msg);
