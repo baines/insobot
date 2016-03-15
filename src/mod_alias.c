@@ -45,6 +45,7 @@ char* alias_permission_strs[] = {
 
 typedef struct {
     int permission;
+    bool me_action;
     char** keys;
     char* msg;
 } Alias;
@@ -65,6 +66,7 @@ static void alias_new(char* key, char* msg, int perm) {
     fprintf(stderr, "New alias: [%s] = [%s] (Access level %s)\n", key, msg, alias_permission_strs[perm]);
     Alias value = {
         .permission = perm,
+        .me_action = (strstr(msg, "/me") == msg),
         .keys       = NULL,
         .msg        = msg,
     };
@@ -105,15 +107,6 @@ static void alias_remove_reference(int ikey) {
     }
 }
 
-// Adds another key that maps to the same value as oldkey
-static void alias_add_reference(int i_oldkey, char* newkey) {
-    Alias* value = alias_get_i(i_oldkey);
-    int ival = value - alias_pool;
-    sb_push(value->keys, newkey);
-    sb_push(alias_keys, newkey);
-    sb_push(alias_val_offsets, ival);
-}
-
 // Updates the msg and/or permission flag of an alias.
 // If update_other_references is false, and other keys point to this alias,
 //   we'll make a new alias struct and point the key at that instead.
@@ -133,11 +126,37 @@ static void alias_update(int ikey, char* key, char* msg, int perm, bool update_o
 
         Alias value = {
             .permission = perm,
+            .me_action = (strstr(msg, "/me") == msg),
             .keys       = NULL,
             .msg        = msg,
         };
         sb_push(alias_pool, value);
         alias_val_offsets[ikey] = sb_count(alias_pool) - 1;
+    }
+}
+
+// Adds another key that maps to the same value as oldkey
+static void alias_add_reference(int i_oldkey, char* newkey) {
+    bool found = false;
+    int i_newkey;
+    for(i_newkey = 0; i_newkey < sb_count(alias_keys); ++i_newkey){
+        if(strcmp(newkey, alias_keys[i_newkey]) == 0){
+            found = true;
+            break;
+        }
+    }
+
+    Alias* value = alias_get_i(i_oldkey);
+    int ival = value - alias_pool;
+    sb_push(value->keys, newkey);
+
+    if(found){
+        alias_remove_reference(i_newkey);
+        alias_val_offsets[i_newkey] = ival;
+    }
+    else {
+        sb_push(alias_keys, newkey);
+        sb_push(alias_val_offsets, ival);
     }
 }
 
@@ -266,6 +285,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
                         found = true;
                         alias_add_reference(i, strdup(key));
                         ctx->send_msg(chan, "%s: Alias %s set.", name, key);
+                        break;
                     }
                 }
                 if (!found) {
@@ -385,7 +405,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	for(int i = 0; i < sb_count(alias_keys); ++i){
 		size_t alias_len = strlen(alias_keys[i]);
 
-		if(strncasecmp(msg + 1, alias_keys[i], alias_len) == 0){
+		if(strncasecmp(msg + 1, alias_keys[i], alias_len) == 0 && (!msg[alias_len + 1] || msg[alias_len + 1] == ' ')){
 			index = i;
 			arg = msg + alias_len + 1;
 
@@ -419,7 +439,10 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 	if(!has_cmd_perms) return;
 
-	for(const char* str = value->msg; *str; ++str){
+    if (value->me_action)
+        memcpy(sb_add(msg_buf, 7), "\001ACTION", 7);
+
+	for(const char* str = value->msg + (value->me_action ? 3 : 0); *str; ++str){
 		if(*str == '%' && *(str + 1) == 't'){
 			memcpy(sb_add(msg_buf, name_len), name, name_len);
 			++str;
@@ -439,6 +462,9 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 			sb_push(msg_buf, *str);
 		}
 	}
+
+    if (value->me_action)
+        memcpy(sb_add(msg_buf, 1), "\001", 1);
 
 	sb_push(msg_buf, 0);
 	ctx->send_msg(chan, "%s", msg_buf);
