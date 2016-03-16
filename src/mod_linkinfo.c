@@ -23,6 +23,7 @@ static const IRCCoreCtx* ctx;
 
 static regex_t yt_url_regex;
 static regex_t yt_title_regex;
+static regex_t yt_length_regex;
 
 static regex_t msdn_url_regex;
 static regex_t generic_title_regex;
@@ -46,6 +47,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ret = ret & (regcomp(
 		&yt_title_regex,
 		"title=([^&]*)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&yt_length_regex,
+		"length_seconds=([0-9]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -124,7 +131,7 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
-	regmatch_t title[2];
+	regmatch_t title[2], length[2];
 
 	CURLcode result = curl_easy_perform(curl);
 
@@ -133,6 +140,7 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 	if(
 		result == 0 &&
 		regexec(&yt_title_regex, data, 2, title, 0) == 0 &&
+		regexec(&yt_length_regex, data, 2, length, 0) == 0 &&
 		title[1].rm_so != -1 &&
 		title[1].rm_eo != -1
 	){
@@ -148,7 +156,21 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 			if(!str[i]) str[i] = ' ';
 		}
 
-		ctx->send_msg(chan, "↑ YT Video: [%.*s]", outlen, str);
+		enum { SEC_IN_HOUR = (60*60), SEC_IN_MIN = 60 };
+
+		char length_str[32] = {};
+		char* ls_ptr = length_str;
+		size_t ls_sz = sizeof(length_str);
+
+		int secs = strtoul(data + length[1].rm_so, NULL, 10);
+		if(secs > SEC_IN_HOUR){
+			snprintf_chain(&ls_ptr, &ls_sz, "%d:", secs / SEC_IN_HOUR);
+			secs %= SEC_IN_HOUR;
+		}
+		snprintf_chain(&ls_ptr, &ls_sz, "%02d:", secs / SEC_IN_MIN);
+		snprintf_chain(&ls_ptr, &ls_sz, "%02d", secs % SEC_IN_MIN);
+
+		ctx->send_msg(chan, "↑ YT Video: [%.*s] [%s]", outlen, str, length_str);
 
 		curl_free(str);
 	} else {
@@ -447,7 +469,7 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 
 	int price_hi = price->u.number.i / 100, price_lo = price->u.number.i % 100;
 
-	ctx->send_msg(chan, "↑ Steam: [%s] [%s] [$%d.%2d]", title->u.string, plat_str, price_hi, price_lo);
+	ctx->send_msg(chan, "↑ Steam: [%s] [%s] [$%d.%02d]", title->u.string, plat_str, price_hi, price_lo);
 
 out:
 	if(data) sb_free(data);
