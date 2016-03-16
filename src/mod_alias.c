@@ -149,6 +149,7 @@ static void alias_add(const char* key, const char* msg, int perm){
 
 	if(alias_find(key, &idx, NULL)){
 		alias = alias_vals + idx;
+		free(alias->msg);
 	} else {
 		char** keys = NULL;
 		Alias a = {};
@@ -158,10 +159,6 @@ static void alias_add(const char* key, const char* msg, int perm){
 		sb_push(alias_vals, a);
 
 		alias = &sb_last(alias_vals);
-	}
-
-	if(alias->msg){
-		free(alias_vals[idx].msg);
 	}
 
 	alias->msg        = strdup(msg);
@@ -222,7 +219,6 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 					free(otherkey);
 				}
 			} else {
-				fprintf(stderr, "ADDING [%s]\n", space+1);
 				alias_add(key, space+1, AP_NORMAL);
 				ctx->send_msg(chan, "%s: Alias %s set.", name, key);
 			}

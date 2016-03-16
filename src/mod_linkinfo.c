@@ -6,6 +6,7 @@
 #include <string.h>
 #include <assert.h>
 #include "stb_sb.h"
+#include "utils.h"
 
 static void linkinfo_msg  (const char*, const char*, const char*);
 static bool linkinfo_init (const IRCCoreCtx*);
@@ -28,6 +29,8 @@ static regex_t generic_title_regex;
 
 static regex_t twitter_url_regex;
 static const char* twitter_token;
+
+static regex_t steam_url_regex;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -61,6 +64,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ret = ret & (regcomp(
 		&twitter_url_regex,
 		"twitter.com/[^/]+/status/([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&steam_url_regex,
+		"store.steampowered.com/app/([0-9]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -145,6 +154,7 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 	} else {
 		fprintf(stderr, "linkinfo: curl returned %d: %s\n", result, curl_easy_strerror(result));
 		fprintf(stderr, "data_len = %zu, so:%d eo:%d\n", strlen(data), title[1].rm_so, title[1].rm_eo);
+		ctx->send_msg(chan, "Error getting YT data. Blame insofaras.");
 	}
 
 	curl_easy_cleanup(curl);
@@ -196,6 +206,7 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 		ctx->send_msg(chan, "↑ %s: [%.*s]", tag, title_len, data + title[1].rm_so);
 	} else {
 		fprintf(stderr, "linkinfo: Couldn't extract title\n[%s]\n[%s]", curl_easy_strerror(curl_ret), data);
+		ctx->send_msg(chan, "Error getting %s data. Blame insofaras.", tag);
 	}
 
 	curl_easy_cleanup(curl);
@@ -368,6 +379,81 @@ out:
 	sb_free(data);
 }
 
+static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches){
+	const char* appid = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+
+	char* url;
+	asprintf(&url, "http://store.steampowered.com/api/appdetails?appids=%s&cc=US", appid);
+
+	char* data = NULL;
+	yajl_val root = NULL;
+
+	CURL* curl = curl_easy_init();
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 8);
+
+	CURLcode ret = curl_easy_perform(curl);
+	curl_easy_cleanup(curl);
+
+	free(url);
+
+	if(ret != 0){
+		fprintf(stderr, "mod_linkinfo: steam curl err %s\n", curl_easy_strerror(ret));
+		goto out;
+	}
+
+	sb_push(data, 0);
+
+	root = yajl_tree_parse(data, NULL, 0);
+	if(!root){
+		fprintf(stderr, "mod_linkinfo: steam root null!\n");
+		goto out;
+	}
+
+	const char* title_path[] = { appid, "data", "name", NULL };
+	const char* price_path[] = { appid, "data", "price_overview", "final", NULL };
+	const char* plats_path[] = { appid, "data", "platforms", NULL };
+
+	yajl_val title = yajl_tree_get(root, title_path, yajl_t_string);
+	yajl_val price = yajl_tree_get(root, price_path, yajl_t_number);
+	yajl_val plats = yajl_tree_get(root, plats_path, yajl_t_object);
+
+	if(!title || !price || !plats){
+		fprintf(stderr, "mod_linkinfo: steam title/price/plats null!\n");
+		goto out;
+	}
+
+	char plat_str[16] = {};
+	for(int i = 0; i < plats->u.object.len; ++i){
+		if(!plats->u.object.values[i] || plats->u.object.values[i]->type != yajl_t_true){
+			continue;
+		}
+
+		const char* tag = NULL;
+		if(*plat_str) inso_strcat(plat_str, sizeof(plat_str), "/");
+
+		if(strcmp(plats->u.object.keys[i], "linux"  ) == 0) tag = "LNX";
+		if(strcmp(plats->u.object.keys[i], "mac"    ) == 0) tag = "MAC";
+		if(strcmp(plats->u.object.keys[i], "windows") == 0) tag = "WIN";
+
+		if(tag)	inso_strcat(plat_str, sizeof(plat_str), tag);
+	}
+
+	int price_hi = price->u.number.i / 100, price_lo = price->u.number.i % 100;
+
+	ctx->send_msg(chan, "↑ Steam: [%s] [%s] [$%d.%2d]", title->u.string, plat_str, price_hi, price_lo);
+
+out:
+	if(data) sb_free(data);
+	if(root) yajl_tree_free(root);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -382,5 +468,9 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	if(regexec(&twitter_url_regex, msg, 2, matches, 0) == 0){
 		do_twitter_info(chan, msg, matches);
+	}
+
+	if(regexec(&steam_url_regex, msg, 2, matches, 0) == 0){
+		do_steam_info(chan, msg, matches);
 	}
 }
