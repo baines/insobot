@@ -307,8 +307,9 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 
 	if(*msg != '!') return;
 
+	const char* key = strndupa(msg+1, strchrnul(msg, ' ') - (msg+1));
 	int idx, sub_idx;
-	if(!alias_find(msg + 1, &idx, &sub_idx)){
+	if(!alias_find(key, &idx, &sub_idx)){
 		return;
 	}
 
