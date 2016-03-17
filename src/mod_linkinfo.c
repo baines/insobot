@@ -276,6 +276,15 @@ static int twitter_add_url_replacements(Replacement** out, yajl_val urls, const 
 
 		if(!tco_url || !exp_url) continue;
 
+
+		//XXX: better image url hack
+		if(strcmp(*exp_url_path, "media_url_https") == 0){
+			char* better_url;
+			asprintf(&better_url, "%s:orig", exp_url->u.string);
+			free(exp_url->u.string);
+			exp_url->u.string = better_url;
+		}
+
 		Replacement ur = {
 			.from     = tco_url->u.string,
 			.from_len = strlen(tco_url->u.string),

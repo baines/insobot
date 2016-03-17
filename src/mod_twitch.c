@@ -151,6 +151,8 @@ static void twitch_check_followers(void){
 
 		char msg_buf[256] = {};
 		size_t new_follow_count = 0;
+		size_t chan_idx = chan - enabled_chans;
+		time_t new_time = chan_last_time[chan_idx];
 
 		for(size_t i = 0; i < follows->u.array.len; ++i){
 			yajl_val user = follows->u.array.values[i];
@@ -176,16 +178,18 @@ static void twitch_check_followers(void){
 
 			time_t follow_time = mktime(&follow_tm);
 
-			int j = chan - enabled_chans;
-			if(follow_time > chan_last_time[j]){
+			if(follow_time > chan_last_time[chan_idx]){
 				++new_follow_count;
 				if(i){
 					inso_strcat(msg_buf, sizeof(msg_buf), ", ");
 				}
 				inso_strcat(msg_buf, sizeof(msg_buf), name->u.string);
-				chan_last_time[j] = follow_time;
+
+				if(follow_time > new_time) new_time = follow_time;
 			}
 		}
+
+		chan_last_time[chan_idx] = new_time;
 
 		if(new_follow_count == 1){
 			ctx->send_msg(*chan, "Thank you to %s for following the channel! <3", msg_buf);
