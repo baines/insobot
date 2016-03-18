@@ -6,6 +6,7 @@
 #include <yajl/yajl_tree.h>
 #include <yajl/yajl_gen.h>
 #include <ctype.h>
+#include "utils.h"
 
 static bool quotes_init (const IRCCoreCtx*);
 static void quotes_join (const char*, const char*);
@@ -148,15 +149,6 @@ static void load_csv(const char* content, Quote** qlist){
 
 }
 
-static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
-	char** out = (char**)data;
-	const size_t total = sz * nmemb;
-
-	memcpy(sb_add(*out, total), ptr, total);
-
-	return total;
-}
-
 static bool quotes_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
@@ -180,22 +172,13 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 
 	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
 
-	CURL* curl = curl_easy_init();
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
+	char* data = NULL;
 
 	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
 	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
 
-	char* data = NULL;
-
-	curl_easy_setopt(curl, CURLOPT_URL, gist_api_url);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-
+	CURL* curl = inso_curl_init(gist_api_url, &data);
+	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
 	CURLcode ret = curl_easy_perform(curl);
 	
 	curl_easy_cleanup(curl);
@@ -504,7 +487,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, chan+1, date);
 			} else if(found_count > 1){
 				if(more_flag){
-					memcpy(buf_ptr - 2, msg_end, sizeof(msg_end));
+					memcpy(buf_ptr, msg_end, sizeof(msg_end));
 				} else {
 					buf_ptr[-2] = '.';
 					buf_ptr[-1] = '\0';
@@ -571,7 +554,7 @@ static bool quotes_save(FILE* file){
 		yajl_gen_map_open(json);
 
 		yajl_gen_string(json, content_key, sizeof(content_key) - 1);
-		
+
 		char* csv = gen_escaped_csv(chan_quotes[i]);
 		yajl_gen_string(json, csv, strlen(csv));
 		sb_free(csv);
@@ -588,18 +571,11 @@ static bool quotes_save(FILE* file){
 	yajl_gen_get_buf(json, &payload, &len);
 	printf("Payload: [%zu] [%s]\n", len, payload);
 
-	CURL* curl = curl_easy_init();
-
-	struct curl_slist* slist = curl_slist_append(NULL, "Content-Type: application/json");
-
 	char* data = NULL;
 
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
+	CURL* curl = inso_curl_init(gist_api_url, &data);
+	struct curl_slist* slist = curl_slist_append(NULL, "Content-Type: application/json");
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
-	curl_easy_setopt(curl, CURLOPT_URL, gist_api_url);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
@@ -607,8 +583,6 @@ static bool quotes_save(FILE* file){
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 	curl_easy_setopt(curl, CURLOPT_WRITEHEADER, stderr);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &fwrite);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
 	CURLcode ret = curl_easy_perform(curl);
 

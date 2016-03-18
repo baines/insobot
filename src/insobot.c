@@ -113,7 +113,7 @@ static void dispatch_cmds(Module* m, const char* chan, const char* name, const c
 			cmd_end = strchrnul(cmd, ' ');
 			const size_t sz = cmd_end - cmd;
 
-			if(strncmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
+			if(strncasecmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
 				sb_push(mod_call_stack, m);
 				m->ctx->on_cmd(chan, name, msg + sz, cmd_list - m->ctx->commands);
 				sb_pop(mod_call_stack);

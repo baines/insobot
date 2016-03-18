@@ -34,15 +34,6 @@ static time_t last_schedule_update;
 static struct tm schedule_start = {};
 static time_t schedule[DAYS_IN_WEEK] = {};
 
-static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
-	char** out = (char**)data;
-	const size_t total = sz * nmemb;
-
-	memcpy(sb_add(*out, total), ptr, total);
-
-	return total;
-}
-
 static bool is_upcoming_stream(void){
 	time_t now = time(0);
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
@@ -62,14 +53,7 @@ static bool update_schedule(void){
 
 	char* data = NULL;
 
-	CURL* curl = curl_easy_init();
-	curl_easy_setopt(curl, CURLOPT_URL, schedule_url);
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+	CURL* curl = inso_curl_init(schedule_url, &data);
 	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
 	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, (long) last_schedule_update);
 

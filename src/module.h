@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include "config.h"
 
 typedef struct IRCCoreCtx_ IRCCoreCtx;
 typedef struct IRCModMsg_ IRCModMsg;
@@ -91,7 +92,5 @@ typedef struct IRCModMsg_ {
 	__VA_ARGS__,\
 	0\
 }
-
-#define CONTROL_CHAR "!"
 
 #endif

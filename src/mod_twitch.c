@@ -11,7 +11,7 @@ static void twitch_cmd  (const char*, const char*, const char*, int);
 static void twitch_tick (void);
 static bool twitch_save (FILE*);
 
-enum { FOLLOW_NOTIFY };
+enum { FOLLOW_NOTIFY, UPTIME };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "twitch",
@@ -21,7 +21,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_tick  = &twitch_tick,
 	.on_save  = &twitch_save,
 	.commands = DEFINE_CMDS (
-		[FOLLOW_NOTIFY] = CONTROL_CHAR"fnotify"
+		[FOLLOW_NOTIFY] = CONTROL_CHAR "fnotify",
+		[UPTIME]        = CONTROL_CHAR "uptime " CONTROL_CHAR_2 "uptime"
 	)
 };
 
@@ -29,6 +30,16 @@ static const IRCCoreCtx* ctx;
 static char** enabled_chans;
 static time_t* chan_last_time;
 static time_t last_check;
+
+typedef struct {
+	char* chan;
+	time_t stream_start;
+	time_t last_update;
+} UptimeInfo;
+
+UptimeInfo* uptime_info;
+
+static size_t uptime_check_interval = 120;
 
 static bool twitch_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -47,17 +58,58 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
+static void twitch_check_uptime(UptimeInfo* info){
+
+	char* data = NULL;
+	yajl_val root = NULL;
+
+	char* url;
+	asprintf(&url, "https://api.twitch.tv/kraken/streams/%s", info->chan + 1);
+
+	CURL* curl = inso_curl_init(url, &data);
+	CURLcode ret = curl_easy_perform(curl);
+	sb_push(data, 0);
+
+	const char* created_path[] = { "stream", "created_at", NULL };
+
+	if(ret == 0 && (root = yajl_tree_parse(data, NULL, 0))){
+
+		yajl_val start = yajl_tree_get(root, created_path, yajl_t_string);
+
+		if(start){
+			struct tm created_tm = {};
+			const char* end = strptime(start->u.string, "%Y-%m-%dT%TZ", &created_tm);
+			if(end && !*end){
+				info->stream_start = timegm(&created_tm);
+			} else {
+				info->stream_start = 0;
+			}
+		} else {
+			info->stream_start = 0;
+		}
+
+		yajl_tree_free(root);
+
+	} else {
+		fprintf(stderr, "mod_twitch: error getting uptime.\n");
+	}
+
+	curl_easy_cleanup(curl);
+	free(url);
+	sb_free(data);
+}
+
 static void mod_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
 
 static void twitch_cmd(const char* chan, const char* name, const char* arg, int cmd){
-	bool has_perms = strcasecmp(chan + 1, name) == 0;
-	if(!has_perms) MOD_MSG(ctx, "check_admin", name, &mod_cb, &has_perms);
-	if(!has_perms) return;
+	bool is_admin = strcasecmp(chan + 1, name) == 0;
+	if(!is_admin) MOD_MSG(ctx, "check_admin", name, &mod_cb, &is_admin);
 
 	switch(cmd){
 		case FOLLOW_NOTIFY: {
+			if(!is_admin) return;
 			if(!*arg++) break;
 
 			bool found = false;
@@ -87,16 +139,48 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 				}
 			}
 		} break;
+
+		case UPTIME: {
+			time_t now = time(0);
+
+			int index = -1;
+			for(int i = 0; i < sb_count(uptime_info); ++i){
+				if(strcmp(uptime_info[i].chan, chan) == 0){
+					index = i;
+					break;
+				}
+			}
+
+			if(index < 0){
+				UptimeInfo ui = { .chan = strdup(chan) };
+				sb_push(uptime_info, ui);
+				index = sb_count(uptime_info) - 1;
+			}
+
+			if(now - uptime_info[index].last_update > uptime_check_interval){
+				twitch_check_uptime(uptime_info + index);
+				uptime_info[index].last_update = now;
+			}
+
+			if(uptime_info[index].stream_start != 0){
+				int minutes = (now - uptime_info[index].stream_start) / 60;
+				char time_buf[256];
+				char *time_ptr = time_buf;
+				size_t time_sz = sizeof(time_buf);
+
+				if(minutes > 60){
+					int h = minutes / 60;
+					snprintf_chain(&time_ptr, &time_sz, "%d hour%s, ", h, h == 1 ? "" : "s");
+					minutes %= 60;
+				}
+				snprintf_chain(&time_ptr, &time_sz, "%d minute%s.", minutes, minutes == 1 ? "" : "s");
+
+				ctx->send_msg(chan, "%s: The stream has been live for %s", name, time_buf);
+			} else {
+				ctx->send_msg(chan, "%s: The stream is not live.", name);
+			}
+		} break;
 	}
-}
-
-static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
-	char** out = (char**)data;
-	const size_t total = sz * nmemb;
-
-	memcpy(sb_add(*out, total), ptr, total);
-
-	return total;
 }
 
 static const size_t follower_check_interval = 120;
@@ -110,14 +194,7 @@ static void twitch_check_followers(void){
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	CURL* curl = curl_easy_init();
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5);
+	CURL* curl = inso_curl_init(NULL, &data);
 
 	for(char** chan = enabled_chans; chan < sb_end(enabled_chans); ++chan){
 

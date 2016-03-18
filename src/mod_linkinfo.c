@@ -88,15 +88,6 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	return ret;
 }
 
-static size_t curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
-	char** out = (char**)data;
-	const size_t total = sz * nmemb;
-
-	memcpy(sb_add(*out, total), ptr, total);
-
-	return total;
-}
-
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
 	regmatch_t* match = matches + 4;
 
@@ -121,21 +112,11 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 
 	fprintf(stderr, "linkinfo: Fetching [%s]\n", url);
 
-	CURL* curl = curl_easy_init();
-
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+	CURL* curl = inso_curl_init(url, &data);
+	CURLcode result = curl_easy_perform(curl);
+	sb_push(data, 0);
 
 	regmatch_t title[2], length[2];
-
-	CURLcode result = curl_easy_perform(curl);
-
-	sb_push(data, 0);
 
 	if(
 		result == 0 &&
@@ -199,20 +180,12 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 
 	fprintf(stderr, "linkinfo: Fetching [%s]\n", url);
 
-	CURL* curl = curl_easy_init();
 
 	/* if you get curl SSL Connect errors here for some reason, it seems like a bug in 
 	 * the gnutls version of curl, using the openssl version fixed it for me
 	 */
 
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 8);
-
+	CURL* curl = inso_curl_init(url, &data);
 	CURLcode curl_ret = curl_easy_perform(curl);
 
 	sb_push(data, 0);
@@ -276,7 +249,6 @@ static int twitter_add_url_replacements(Replacement** out, yajl_val urls, const 
 
 		if(!tco_url || !exp_url) continue;
 
-
 		//XXX: better image url hack
 		if(strcmp(*exp_url_path, "media_url_https") == 0){
 			char* better_url;
@@ -316,18 +288,10 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	asprintf(&auth_token, "Authorization: Bearer %s", twitter_token);
 	asprintf(&url, "https://api.twitter.com/1.1/statuses/show/%s.json", tweet_id);
 
-	CURL* curl = curl_easy_init();
+	CURL* curl = inso_curl_init(url, &data);
 
 	struct curl_slist* headers = curl_slist_append(NULL, auth_token);
-
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
 	curl_easy_perform(curl);
 
@@ -419,16 +383,7 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	CURL* curl = curl_easy_init();
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
-	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 8);
-
+	CURL* curl = inso_curl_init(url, &data);
 	CURLcode ret = curl_easy_perform(curl);
 	curl_easy_cleanup(curl);
 
