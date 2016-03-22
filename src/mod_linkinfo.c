@@ -121,7 +121,6 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 	if(
 		result == 0 &&
 		regexec(&yt_title_regex, data, 2, title, 0) == 0 &&
-		regexec(&yt_length_regex, data, 2, length, 0) == 0 &&
 		title[1].rm_so != -1 &&
 		title[1].rm_eo != -1
 	){
@@ -143,13 +142,19 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 		char* ls_ptr = length_str;
 		size_t ls_sz = sizeof(length_str);
 
-		int secs = strtoul(data + length[1].rm_so, NULL, 10);
-		if(secs > SEC_IN_HOUR){
-			snprintf_chain(&ls_ptr, &ls_sz, "%d:", secs / SEC_IN_HOUR);
-			secs %= SEC_IN_HOUR;
+		if(strstr(data, "ps=live")){
+			strcpy(length_str, "LIVE");
+		} else if(regexec(&yt_length_regex, data, 2, length, 0) == 0){
+			int secs = strtoul(data + length[1].rm_so, NULL, 10);
+			if(secs > SEC_IN_HOUR){
+				snprintf_chain(&ls_ptr, &ls_sz, "%d:", secs / SEC_IN_HOUR);
+				secs %= SEC_IN_HOUR;
+			}
+			snprintf_chain(&ls_ptr, &ls_sz, "%02d:", secs / SEC_IN_MIN);
+			snprintf_chain(&ls_ptr, &ls_sz, "%02d", secs % SEC_IN_MIN);
+		} else {
+			strcpy(length_str, "00:00");
 		}
-		snprintf_chain(&ls_ptr, &ls_sz, "%02d:", secs / SEC_IN_MIN);
-		snprintf_chain(&ls_ptr, &ls_sz, "%02d", secs % SEC_IN_MIN);
 
 		ctx->send_msg(chan, "↑ YT Video: [%.*s] [%s]", outlen, str, length_str);
 

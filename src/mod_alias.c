@@ -245,7 +245,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			const size_t total = sb_count(alias_keys);
 
 			if(total == 0){
-				inso_strcat(alias_buf, sizeof(alias_buf), "<none>.");
+				strcpy(alias_buf, "<none>.");
 			} else {
 				for(int i = 0; i < total; ++i){
 					const size_t subtotal = sb_count(alias_keys[i]);
