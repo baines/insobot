@@ -4,22 +4,24 @@
 #include <ctype.h>
 #include "utils.h"
 
-static void alias_msg  (const char*, const char*, const char*);
-static void alias_cmd  (const char*, const char*, const char*, int);
-static bool alias_save (FILE*);
-static bool alias_init (const IRCCoreCtx*);
+static void alias_msg      (const char*, const char*, const char*);
+static void alias_cmd      (const char*, const char*, const char*, int);
+static bool alias_save     (FILE*);
+static bool alias_init     (const IRCCoreCtx*);
+static void alias_modified (void);
 
 enum { ALIAS_ADD, ALIAS_DEL, ALIAS_LIST, ALIAS_SET_PERM };
 
 const IRCModuleCtx irc_mod_ctx = {
-	.name     = "alias",
-	.desc     = "Allows defining simple responses to !commands",
-	.flags    = IRC_MOD_DEFAULT,
-	.on_save  = &alias_save,
-	.on_msg   = &alias_msg,
-	.on_cmd   = &alias_cmd,
-	.on_init  = &alias_init,
-	.commands = DEFINE_CMDS (
+	.name        = "alias",
+	.desc        = "Allows defining simple responses to !commands",
+	.flags       = IRC_MOD_DEFAULT,
+	.on_save     = &alias_save,
+	.on_modified = &alias_modified,
+	.on_msg      = &alias_msg,
+	.on_cmd      = &alias_cmd,
+	.on_init     = &alias_init,
+	.commands    = DEFINE_CMDS (
 		[ALIAS_ADD]      = CONTROL_CHAR "alias ",
 		[ALIAS_DEL]      = CONTROL_CHAR "unalias "    CONTROL_CHAR "delalias " CONTROL_CHAR "rmalias ",
 		[ALIAS_LIST]     = CONTROL_CHAR "lsalias "    CONTROL_CHAR "lsa "      CONTROL_CHAR "listalias "   CONTROL_CHAR "listaliases",
@@ -53,11 +55,13 @@ typedef struct {
 static char*** alias_keys;
 static Alias*  alias_vals;
 
-static void alias_load(FILE* f){
+static void alias_load(){
 	int save_format_ver = 0;
 	char** keys = NULL;
 	Alias val = { .permission = AP_NORMAL };
 
+	FILE* f = fopen(ctx->get_datafile(), "rb");
+	
 	if(fscanf(f, "VERSION %d\n", &save_format_ver) == 1){
 		if(save_format_ver != 2){
 			fprintf(stderr, "Unknown save format version %d! Can't load any aliases.\n", save_format_ver);
@@ -116,16 +120,27 @@ static void alias_load(FILE* f){
 			keys = NULL;
 		}
 	}
+
+	fclose(f);
 }
 
 static bool alias_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
-
-	FILE* f = fopen(ctx->get_datafile(), "rb");
-	alias_load(f);
-	fclose(f);
-
+	alias_load();
 	return true;
+}
+
+static void alias_modified(void){
+	for(int i = 0; i < sb_count(alias_keys); ++i){
+		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+			free(alias_keys[i][j]);
+		}
+		sb_free(alias_keys[i]);
+		free(alias_vals[i].msg);
+	}
+	sb_free(alias_vals);
+
+	alias_load();
 }
 
 static bool alias_find(const char* key, int* idx, int* sub_idx){

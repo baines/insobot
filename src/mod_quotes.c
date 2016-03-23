@@ -8,21 +8,23 @@
 #include <ctype.h>
 #include "utils.h"
 
-static bool quotes_init (const IRCCoreCtx*);
-static void quotes_join (const char*, const char*);
-static void quotes_cmd  (const char*, const char*, const char*, int);
-static bool quotes_save (FILE*);
+static bool quotes_init     (const IRCCoreCtx*);
+static void quotes_modified (void);
+static void quotes_join     (const char*, const char*);
+static void quotes_cmd      (const char*, const char*, const char*, int);
+static bool quotes_save     (FILE*);
 
 enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES	};
 
 const IRCModuleCtx irc_mod_ctx = {
-	.name     = "quotes",
-	.desc     = "Saves per-channel quotes",
-	.on_init  = quotes_init,
-	.on_cmd   = &quotes_cmd,
-	.on_join  = &quotes_join,
-	.on_save  = &quotes_save,
-	.commands = DEFINE_CMDS (
+	.name        = "quotes",
+	.desc        = "Saves per-channel quotes",
+	.on_init     = &quotes_init,
+	.on_modified = &quotes_modified,
+	.on_cmd      = &quotes_cmd,
+	.on_join     = &quotes_join,
+	.on_save     = &quotes_save,
+	.commands    = DEFINE_CMDS (
 		[GET_QUOTE]     = CONTROL_CHAR"q    "CONTROL_CHAR"quote",
 		[ADD_QUOTE]     = CONTROL_CHAR"qadd "CONTROL_CHAR"q+",
 		[DEL_QUOTE]     = CONTROL_CHAR"qdel "CONTROL_CHAR"q-",
@@ -149,34 +151,20 @@ static void load_csv(const char* content, Quote** qlist){
 
 }
 
-static bool quotes_init(const IRCCoreCtx* _ctx){
-	ctx = _ctx;
+static bool quotes_reload(void){
 
-	char* gist_id = getenv("INSOBOT_GIST_ID");
-	if(!gist_id || !*gist_id){
-		fputs("mod_quotes: No INSOBOT_GIST_ID env, can't continue.\n", stderr);
-		return false;
+	for(int i = 0; i < sb_count(channels); ++i){
+		free(channels[i]);
+		for(int j = 0; j < sb_count(chan_quotes[i]); ++j){
+			free(chan_quotes[i][j].text);
+		}
+		sb_free(chan_quotes[i]);
 	}
-
-	char* gist_user = getenv("INSOBOT_GIST_USER");
-	if(!gist_user || !*gist_user){
-		fputs("mod_quotes: No INSOBOT_GIST_USER env, can't continue.\n", stderr);
-		return false;
-	}
-	
-	char* gist_token = getenv("INSOBOT_GIST_TOKEN");
-	if(!gist_token || !*gist_token){
-		fputs("mod_quotes: No INSOBOT_GIST_TOKEN env, can't continue.\n", stderr);
-		return false;
-	}
-
-	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
+	sb_free(channels);
+	sb_free(chan_quotes);
 
 	char* data = NULL;
-
-	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
-	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
-
+	
 	CURL* curl = inso_curl_init(gist_api_url, &data);
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
 	CURLcode ret = curl_easy_perform(curl);
@@ -241,6 +229,38 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	yajl_tree_free(root);
 
 	return true;
+}
+
+static bool quotes_init(const IRCCoreCtx* _ctx){
+	ctx = _ctx;
+
+	char* gist_id = getenv("INSOBOT_GIST_ID");
+	if(!gist_id || !*gist_id){
+		fputs("mod_quotes: No INSOBOT_GIST_ID env, can't continue.\n", stderr);
+		return false;
+	}
+
+	char* gist_user = getenv("INSOBOT_GIST_USER");
+	if(!gist_user || !*gist_user){
+		fputs("mod_quotes: No INSOBOT_GIST_USER env, can't continue.\n", stderr);
+		return false;
+	}
+	
+	char* gist_token = getenv("INSOBOT_GIST_TOKEN");
+	if(!gist_token || !*gist_token){
+		fputs("mod_quotes: No INSOBOT_GIST_TOKEN env, can't continue.\n", stderr);
+		return false;
+	}
+
+	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
+	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
+	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
+
+	return quotes_reload();
+}
+
+static void quotes_modified(void){
+	printf("RELOAD: %d\n", quotes_reload());
 }
 
 static Quote** get_quotes(const char* chan){

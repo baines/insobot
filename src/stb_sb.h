@@ -17,7 +17,7 @@
 
 #endif
 
-#define stb_sb_free(a)         ((a) ? free(stb__sbraw(a)),0 : 0)
+#define stb_sb_free(a)         ((a) ? free(stb__sbraw(a)),(a)=0,0 : 0)
 #define stb_sb_push(a,v)       (stb__sbmaybegrow(a,1), (a)[stb__sbn(a)++] = (v))
 #define stb_sb_count(a)        ((a) ? stb__sbn(a) : 0)
 #define stb_sb_add(a,n)        (stb__sbmaybegrow(a,n), stb__sbn(a)+=(n), &(a)[stb__sbn(a)-(n)])

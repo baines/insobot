@@ -6,12 +6,13 @@
 #include "module.h"
 #include "stb_sb.h"
 
-static void karma_msg  (const char*, const char*, const char*);
-static void karma_cmd  (const char*, const char*, const char*, int);
-static void karma_nick (const char*, const char*);
-static void karma_join (const char*, const char*);
-static bool karma_save (FILE*);
-static bool karma_init (const IRCCoreCtx*);
+static void karma_msg      (const char*, const char*, const char*);
+static void karma_cmd      (const char*, const char*, const char*, int);
+static void karma_nick     (const char*, const char*);
+static void karma_join     (const char*, const char*);
+static bool karma_save     (FILE*);
+static bool karma_init     (const IRCCoreCtx*);
+static void karma_modified (void);
 
 enum { KARMA_SHOW, KARMA_TOP };
 
@@ -25,9 +26,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_join  = &karma_join,
 	.on_init  = &karma_init,
 	.on_save  = &karma_save,
+	.on_modified = &karma_modified,
 	.commands = DEFINE_CMDS (
-		[KARMA_SHOW] = "\\karma !karma",
-		[KARMA_TOP]  = "\\ktop  !ktop"
+		[KARMA_SHOW] = CONTROL_CHAR "karma " CONTROL_CHAR_2 "karma",
+		[KARMA_TOP]  = CONTROL_CHAR "ktop "  CONTROL_CHAR_2 "ktop"
 	)
 };
 
@@ -229,6 +231,8 @@ static void karma_nick(const char* prev, const char* cur){
 	KEntry* k = karma_find(prev, false);
 	if(!k) return;
 
+	printf("mod_karma: nick change %s -> %s\n", prev, cur);
+
 	bool already_known = false;
 	for(char** n = k->names; n < sb_end(k->names); ++n){
 		if(strcasecmp(*n, cur) == 0){
@@ -293,4 +297,16 @@ static bool karma_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	karma_load();
 	return true;
+}
+
+static void karma_modified(void){
+	for(int i = 0; i < sb_count(klist); ++i){
+		for(int j = 0; j < sb_count(klist[i].names); ++j){
+			free(klist[i].names[j]);
+		}
+		sb_free(klist[i].names);
+	}
+	sb_free(klist);
+
+	karma_load();
 }
