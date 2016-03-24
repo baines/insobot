@@ -10,7 +10,7 @@ static bool alias_save     (FILE*);
 static bool alias_init     (const IRCCoreCtx*);
 static void alias_modified (void);
 
-enum { ALIAS_ADD, ALIAS_DEL, ALIAS_LIST, ALIAS_SET_PERM };
+enum { ALIAS_ADD, ALIAS_ADD_GLOBAL, ALIAS_DEL, ALIAS_DEL_GLOBAL, ALIAS_LIST, ALIAS_SET_PERM };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name        = "alias",
@@ -22,10 +22,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd      = &alias_cmd,
 	.on_init     = &alias_init,
 	.commands    = DEFINE_CMDS (
-		[ALIAS_ADD]      = CONTROL_CHAR "alias ",
-		[ALIAS_DEL]      = CONTROL_CHAR "unalias "    CONTROL_CHAR "delalias " CONTROL_CHAR "rmalias ",
-		[ALIAS_LIST]     = CONTROL_CHAR "lsalias "    CONTROL_CHAR "lsa "      CONTROL_CHAR "listalias "   CONTROL_CHAR "listaliases",
-		[ALIAS_SET_PERM] = CONTROL_CHAR "chaliasmod " CONTROL_CHAR "chamod "   CONTROL_CHAR "aliasaccess " CONTROL_CHAR "setaliasaccess"
+		[ALIAS_ADD]        = CONTROL_CHAR "alias",
+		[ALIAS_ADD_GLOBAL] = CONTROL_CHAR "galias",
+		[ALIAS_DEL]        = CONTROL_CHAR "unalias "    CONTROL_CHAR "delalias "  CONTROL_CHAR "rmalias ",
+		[ALIAS_DEL_GLOBAL] = CONTROL_CHAR "gunalias "   CONTROL_CHAR "gdelalias " CONTROL_CHAR "grmalias ",
+		[ALIAS_LIST]       = CONTROL_CHAR "lsalias "    CONTROL_CHAR "lsa "       CONTROL_CHAR "listalias "   CONTROL_CHAR "listaliases",
+		[ALIAS_SET_PERM]   = CONTROL_CHAR "chaliasmod " CONTROL_CHAR "chamod "    CONTROL_CHAR "aliasaccess " CONTROL_CHAR "setaliasaccess"
 	)
 };
 
@@ -51,7 +53,6 @@ typedef struct {
 	char* msg;
 } Alias;
 
-//TODO: aliases should be per-channel
 static char*** alias_keys;
 static Alias*  alias_vals;
 
@@ -143,33 +144,65 @@ static void alias_modified(void){
 	alias_load();
 }
 
-static bool alias_find(const char* key, int* idx, int* sub_idx){
+static bool alias_valid_1st_char(char c){
+	// this needs to exclude atleast irc channel prefixes: # & + ~ . !
+	return isalnum(c);
+}
 
+enum { ALIAS_NOT_FOUND = 0, ALIAS_FOUND_CHAN = 1, ALIAS_FOUND_GLOBAL = 2 };
+
+static int alias_find(const char* chan, const char* key, int* idx, int* sub_idx){
+
+	if(chan){
+		char full_key[strlen(chan) + strlen(key) + 2];
+		snprintf(full_key, sizeof(full_key), "%s,%s", chan, key);
+
+		for(int i = 0; i < sb_count(alias_keys); ++i){
+			for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+				if(strcasecmp(full_key, alias_keys[i][j]) == 0){
+					if(idx) *idx = i;
+					if(sub_idx) *sub_idx = j;
+					return ALIAS_FOUND_CHAN;
+				}
+			}
+		}
+	}
+	
 	for(int i = 0; i < sb_count(alias_keys); ++i){
 		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
 			if(strcasecmp(key, alias_keys[i][j]) == 0){
 				if(idx) *idx = i;
 				if(sub_idx) *sub_idx = j;
-				return true;
+				return ALIAS_FOUND_GLOBAL;
 			}
 		}
 	}
 
-	return false;
+	return ALIAS_NOT_FOUND;
 }
 
-static void alias_add(const char* key, const char* msg, int perm){
+static void alias_add(const char* chan, const char* key, const char* msg, int perm){
 	Alias* alias;
 	int idx;
 
-	if(alias_find(key, &idx, NULL)){
+	int required = chan ? ALIAS_FOUND_CHAN : ALIAS_FOUND_GLOBAL;
+
+	if(alias_find(chan, key, &idx, NULL) == required){
 		alias = alias_vals + idx;
 		free(alias->msg);
 	} else {
+
+		char* full_key;
+		if(chan){
+			asprintf(&full_key, "%s,%s", chan, key);
+		} else {
+			full_key = strdup(key);
+		}
+
 		char** keys = NULL;
 		Alias a = {};
 
-		sb_push(keys, strdup(key));
+		sb_push(keys, full_key);
 		sb_push(alias_keys, keys);
 		sb_push(alias_vals, a);
 
@@ -195,15 +228,17 @@ static void whitelist_cb(intptr_t result, intptr_t arg){
 
 static void alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
-	if(!has_cmd_perms){
-		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
-	}
-	if(!has_cmd_perms) return;
+	bool is_admin = strcasecmp(chan+1, name) == 0;
+	bool is_wlist = is_admin;
+
+	if(!is_wlist) MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &is_wlist);
+	if(!is_admin) MOD_MSG(ctx, "check_admin", name, &whitelist_cb, &is_admin);
+
+	if(!is_wlist) return;
 
 	switch(cmd){
 		case ALIAS_ADD: {
-			if(!*arg++ || !isalnum(*arg)) goto usage_add;
+			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_add;
 
 			const char* space = strchr(arg, ' ');
 			if(!space) goto usage_add;
@@ -221,61 +256,146 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 				}
 
 				int idx, sub_idx;
-				if(alias_find(key, &idx, &sub_idx)){
-					alias_del(idx, sub_idx);
+				if(alias_find(chan, key, &idx, &sub_idx) == ALIAS_FOUND_CHAN){
+					if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
+						ctx->send_msg("%s: You don't have permission to change %s.\n", name, key);
+						break;
+					} else {
+						alias_del(idx, sub_idx);
+					}
 				}
 
 				int otheridx;
-				if(alias_find(otherkey, &otheridx, NULL)){
-					sb_push(alias_keys[otheridx], strdup(key));
+				if(alias_find(chan, otherkey, &otheridx, NULL)){
+					char* chan_key;
+					asprintf(&chan_key, "%s,%s", chan, key);
+					sb_push(alias_keys[otheridx], chan_key);
 					ctx->send_msg(chan, "%s: Alias %s set.", name, key);
 				} else {
 					ctx->send_msg(chan, "%s: Can't alias %s as %s is not defined.", name, key, otherkey);
 					free(otherkey);
 				}
 			} else {
-				alias_add(key, space+1, AP_NORMAL);
+				alias_add(chan, key, space+1, AP_NORMAL);
 				ctx->send_msg(chan, "%s: Alias %s set.", name, key);
 			}
 
 		} break;
 
+		case ALIAS_ADD_GLOBAL: {
+			//TODO: implement the -> thing for global aliases? should only be able to alias global to global i think
+			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_add;
+
+			const char* space = strchr(arg, ' ');
+			if(!space) goto usage_add;
+
+			char* key = strndupa(arg, space - arg);
+			for(char* k = key; *k; ++k) *k = tolower(*k);
+
+			alias_add(NULL, key, space+1, AP_NORMAL);
+			ctx->send_msg(chan, "%s: Global alias %s set.", name, key);
+		} break;
+
 		case ALIAS_DEL: {
-			if(!*arg++ || !isalnum(*arg)) goto usage_del;
+			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_del;
 
 			int idx, sub_idx;
-			if(alias_find(arg, &idx, &sub_idx)){
-				alias_del(idx, sub_idx);
-				ctx->send_msg(chan, "%s: Removed alias %s.\n", name, arg);
+			int found = alias_find(chan, arg, &idx, &sub_idx);
+
+			if(found == ALIAS_FOUND_CHAN){
+				if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
+					ctx->send_msg("%s: You don't have permission to delete %s.\n", name, arg);
+					break;
+				} else {
+					alias_del(idx, sub_idx);
+					ctx->send_msg(chan, "%s: Removed alias %s.\n", name, arg);
+				}
+			} else if(found == ALIAS_FOUND_GLOBAL){
+				//TODO: create a blank alias for this channel to disable the global one only here.
+				ctx->send_msg(chan, "%s: That's a global alias, poke insofaras to implement hiding them per channel, or use " CONTROL_CHAR "gdelalias to remove it everywhere." , name);
 			} else {
 				ctx->send_msg(chan, "%s: That alias doesn't exist.", name);
 			}
 		} break;
 
-		case ALIAS_LIST: {
-			char alias_buf[512];
-			char* ptr = alias_buf;
-			size_t sz = sizeof(alias_buf);
+		case ALIAS_DEL_GLOBAL: {
+			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_del;
 
+			int idx, sub_idx;
+			if(alias_find(NULL, arg, &idx, &sub_idx)){
+				if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
+					ctx->send_msg("%s: You don't have permission to change %s.\n", name, arg);
+					break;
+				} else {
+					alias_del(idx, sub_idx);
+					ctx->send_msg(chan, "%s: Removed global alias %s.\n", name, arg);
+				}
+			} else {
+				ctx->send_msg(chan, "%s: That global alias doesn't exist.", name);
+			}
+		} break;
+
+		case ALIAS_LIST: {
+			//XXX: this is probably over-complicated
+
+			const char** aliases_to_print = NULL;
 			const size_t total = sb_count(alias_keys);
 
-			if(total == 0){
-				strcpy(alias_buf, "<none>.");
-			} else {
-				for(int i = 0; i < total; ++i){
-					const size_t subtotal = sb_count(alias_keys[i]);
-					for(int j = 0; j < subtotal; ++j){
-						const bool last = (i == total - 1) && (j == subtotal - 1);
-						snprintf_chain(&ptr, &sz, "!%s%s", alias_keys[i][j], last ? "." : ", ");
+			for(int i = 0; i < total; ++i){
+				const size_t subtotal = sb_count(alias_keys[i]);
+
+				for(int j = 0; j < subtotal; ++j){
+					const char* key = alias_keys[i][j];
+
+					// channel specific alias, only print if the channel matches
+					if(!alias_valid_1st_char(*key)){
+						char* endptr = strchr(key, ',');
+						if(endptr && strncmp(chan, key, endptr - key) == 0){
+							key = endptr + 1;
+						} else {
+							key = NULL;
+						}
+					}
+
+					if(key){
+						bool already_printed = false;
+						for(int k = 0; k < sb_count(aliases_to_print); ++k){
+							if(strcmp(aliases_to_print[k], key) == 0){
+								already_printed = true;
+								break;
+							}
+						}
+
+						if(!already_printed){
+							sb_push(aliases_to_print, key);
+						}
 					}
 				}
 			}
 
+			char alias_buf[512];
+			char* ptr = alias_buf;
+			size_t sz = sizeof(alias_buf);
+		
+			if(sb_count(aliases_to_print) == 0){
+				strcpy(alias_buf, "<none>.");
+			} else {
+				for(int i = 0; i < sb_count(aliases_to_print); ++i){
+					const bool last = i == sb_count(aliases_to_print) - 1;
+					snprintf_chain(&ptr, &sz, "!%s%s", aliases_to_print[i], last ? "." : ", ");
+				}
+			}
+
+			sb_free(aliases_to_print);
+
 			ctx->send_msg(chan, "%s: Current aliases: %s", name, alias_buf);
 		} break;
 
+		//FIXME: potential issues:
+		// * changing permissions of global alias through local alias ptr
+		
 		case ALIAS_SET_PERM: {
-			if(!*arg++ || !isalnum(*arg)) goto usage_setperm;
+			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_setperm;
 
 			const char* space = strchr(arg, ' ');
 			if(!space) goto usage_setperm;
@@ -284,7 +404,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			for(char* k = key; *k; ++k) *k = tolower(*k);
 
 			int idx;
-			if(!alias_find(key, &idx, NULL)){
+			if(!alias_find(chan, key, &idx, NULL)){
 				ctx->send_msg(chan, "%s: No alias called '%s'.", name, key);
 				break;
 			}
@@ -293,9 +413,13 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			const char* permstr = space+1;
 			for(int i = 0; i < AP_COUNT; ++i){
 				if(strcasecmp(permstr, alias_permission_strs[i]) == 0){
-					alias_vals[idx].permission = i;
-					ctx->send_msg(chan, "%s: Set permissions on %s to %s.", name, key, permstr);
-					perm_set = true;
+					if(i == AP_ADMINONLY && !is_admin){
+						ctx->send_msg(chan, "%s: You don't have permission to set that permission... Yeah.", name);
+					} else {
+						alias_vals[idx].permission = i;
+						ctx->send_msg(chan, "%s: Set permissions on %s to %s.", name, key, permstr);
+						perm_set = true;
+					}
 					break;
 				}
 			}
@@ -311,20 +435,20 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 	return;
 
 usage_add:
-	ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "alias <key> <text>", name); return;
+	ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "(g)alias <key> <text>", name); return;
 usage_del:
-	ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "unalias <key>", name); return;
+	ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "(g)unalias <key>", name); return;
 usage_setperm:
 	ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "chaliasmod <key> [NORMAL|WLIST|ADMIN]", name); return;
 }
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
 
-	if(*msg != '!') return;
+	if(*msg != '!' || !alias_valid_1st_char(msg[1])) return;
 
 	const char* key = strndupa(msg+1, strchrnul(msg, ' ') - (msg+1));
 	int idx, sub_idx;
-	if(!alias_find(key, &idx, &sub_idx)){
+	if(!alias_find(chan, key, &idx, &sub_idx)){
 		return;
 	}
 
