@@ -67,7 +67,7 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 			if(in_chan){
 				ctx->send_msg(chan, "%s: I should already be there, I'll try rejoining.", name);
 			} else {
-				ctx->send_msg(chan, "%s: Joining your channel.", name);
+				ctx->send_msg(chan, "%s: Joining your channel. Use " CONTROL_CHAR "leave in there to undo.", name);
 			}
 			ctx->join(name_chan);
 		} break;
