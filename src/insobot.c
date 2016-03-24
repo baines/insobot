@@ -51,14 +51,14 @@ typedef struct IRCCmd_ {
 enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW };
 
 static IRCCmd* cmd_queue;
-static uint32_t prev_cmd_ms = 0;
+static uint32_t prev_cmd_ms;
 
-static irc_session_t* irc_ctx = NULL;
+static irc_session_t* irc_ctx;
 
 static Module* irc_modules;
 static Module** mod_call_stack;
-static IRCModuleCtx** chan_mod_list = 0;
-static IRCModuleCtx** global_mod_list = 0;
+static IRCModuleCtx** chan_mod_list;
+static IRCModuleCtx** global_mod_list;
 static bool mod_list_dirty = true;
 
 static const char *user, *pass, *serv, *port;
@@ -70,7 +70,7 @@ static char*** chan_nicks;
 static INotifyInfo inotify_info;
 
 static struct timeval idle_time = {};
-static int ping_sent = 0;
+static int ping_sent;
 
 static sig_atomic_t running = 1;
 
@@ -502,6 +502,17 @@ IRC_STR_CALLBACK(on_nick) {
 		free(bot_nick);
 		bot_nick = strdup(params[0]);
 	}
+
+	for(int i = 0; i < sb_count(channels) - 1; ++i){
+		for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+			if(strcasecmp(chan_nicks[i][j], origin) == 0){
+				free(chan_nicks[i][j]);
+				chan_nicks[i][j] = strdup(params[0]);
+				break;
+			}
+		}
+	}
+
 	IRC_MOD_CALL_ALL(on_nick, (origin, params[0]));
 }
 
