@@ -14,7 +14,7 @@ static void quotes_join     (const char*, const char*);
 static void quotes_cmd      (const char*, const char*, const char*, int);
 static bool quotes_save     (FILE*);
 
-enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES	};
+enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES, GET_RANDOM };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name        = "quotes",
@@ -25,13 +25,14 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_join     = &quotes_join,
 	.on_save     = &quotes_save,
 	.commands    = DEFINE_CMDS (
-		[GET_QUOTE]     = CONTROL_CHAR"q    "CONTROL_CHAR"quote",
-		[ADD_QUOTE]     = CONTROL_CHAR"qadd "CONTROL_CHAR"q+",
-		[DEL_QUOTE]     = CONTROL_CHAR"qdel "CONTROL_CHAR"q-",
-		[FIX_QUOTE]     = CONTROL_CHAR"qfix "CONTROL_CHAR"qmv",
-		[FIX_TIME]      = CONTROL_CHAR"qft  "CONTROL_CHAR"qfixtime",
-		[LIST_QUOTES]   = CONTROL_CHAR"ql   "CONTROL_CHAR"qlist",
-		[SEARCH_QUOTES] = CONTROL_CHAR"qs   "CONTROL_CHAR"qsearch " CONTROL_CHAR"qfind " CONTROL_CHAR"qgrep"
+		[GET_QUOTE]     = CONTROL_CHAR "q "    CONTROL_CHAR "quote",
+		[ADD_QUOTE]     = CONTROL_CHAR "qadd " CONTROL_CHAR "q+",
+		[DEL_QUOTE]     = CONTROL_CHAR "qdel " CONTROL_CHAR "q- "      CONTROL_CHAR "qrm",
+		[FIX_QUOTE]     = CONTROL_CHAR "qfix " CONTROL_CHAR "qmv",
+		[FIX_TIME]      = CONTROL_CHAR "qft "  CONTROL_CHAR "qfixtime",
+		[LIST_QUOTES]   = CONTROL_CHAR "ql "   CONTROL_CHAR "qlist",
+		[SEARCH_QUOTES] = CONTROL_CHAR "qs "   CONTROL_CHAR "qsearch " CONTROL_CHAR "qfind "  CONTROL_CHAR "qgrep",
+		[GET_RANDOM]    = CONTROL_CHAR "qr "   CONTROL_CHAR "qrand "   CONTROL_CHAR "qrandom"
 	)
 };
 
@@ -518,6 +519,26 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 
 		} break;
+
+		//TODO: can probably be merged with GET_QUOTE?
+		case GET_RANDOM: {
+			if(!sb_count(*quotes)){
+				ctx->send_msg(chan, "%s: No quotes here :(", name);
+				break;
+			}
+
+			int id = rand() % sb_count(*quotes);
+
+			Quote* q = get_quote(chan, id);
+			if(q){
+				struct tm* date_tm = gmtime(&q->timestamp);
+				char date[256];
+				strftime(date, sizeof(date), "%F", date_tm);
+				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", id, q->text, chan+1, date);
+			} else {
+				ctx->send_msg(chan, "%s: Can't find that quote.", name);
+			}
+		}
 	}
 }
 
