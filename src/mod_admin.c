@@ -38,7 +38,7 @@ static void admin_cmd(const char* chan, const char* name, const char* arg, int c
 	switch(cmd){
 		case FORCE_JOIN: {
 			if(!*arg++) break;
-			ctx->send_msg(chan, "@%s: joining %s.", BOT_OWNER, arg);
+			ctx->send_msg(chan, "@%s: joining %s.", name, arg);
 			ctx->join(arg);
 		} break;
 	}

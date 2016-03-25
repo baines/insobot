@@ -146,7 +146,7 @@ static void alias_modified(void){
 
 static bool alias_valid_1st_char(char c){
 	// this needs to exclude atleast irc channel prefixes: # & + ~ . !
-	return isalnum(c);
+	return c == '\\' || isalnum(c);
 }
 
 enum { ALIAS_NOT_FOUND = 0, ALIAS_FOUND_CHAN = 1, ALIAS_FOUND_GLOBAL = 2 };
@@ -448,12 +448,28 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 
 	const char* key = strndupa(msg+1, strchrnul(msg, ' ') - (msg+1));
 	int idx, sub_idx;
-	if(!alias_find(chan, key, &idx, &sub_idx)){
+	int found_result = alias_find(chan, key, &idx, &sub_idx);
+
+	size_t alias_key_len;
+
+	if(found_result == ALIAS_FOUND_CHAN){
+		char* p = strchr(alias_keys[idx][sub_idx], ',');
+		if(!p){
+			fprintf(stderr, "mod_alias: strange per-channel key! fix me!\n");
+			return;
+		}
+
+		alias_key_len = strlen(p+1);
+
+	} else if(found_result == ALIAS_FOUND_GLOBAL){
+
+		alias_key_len = strlen(alias_keys[idx][sub_idx]);
+
+	} else {
 		return;
 	}
 
-	size_t alias_len = strlen(alias_keys[idx][sub_idx]);
-	const char* arg = msg + alias_len + 1;
+	const char* arg = msg + alias_key_len + 1;
 
 	while(*arg == ' ') ++arg;
 
