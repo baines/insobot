@@ -44,6 +44,9 @@ typedef struct IRCModuleCtx_ {
 
 	// called every 25ms or so
 	void (*on_tick)    (void);
+
+	// called if something was written to stdin
+	void (*on_stdin)   (const char* text);
 } IRCModuleCtx;
 
 // passed to modules to provide functions for them to use.

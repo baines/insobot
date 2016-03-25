@@ -382,12 +382,8 @@ static void util_check_inotify(const IRCCoreCtx* core_ctx){
 			}
 		} else if(m->data_modified){
 			m->data_modified = false;
-			if(m->ctx && m->ctx->on_modified){
-				sb_push(mod_call_stack, m);
-				fprintf(stderr, "Calling on_data_modified for %s\n", m->ctx->name);
-				m->ctx->on_modified();
-				sb_pop(mod_call_stack);
-			}
+			fprintf(stderr, "Calling on_data_modified for %s\n", m->ctx->name);
+			IRC_MOD_CALL(m, on_modified, ());
 		}
 	}
 }
@@ -876,19 +872,14 @@ int main(int argc, char** argv){
 			util_check_inotify(&core_ctx);
 
 			//TODO: check on_meta & better timing for on_tick?
-			for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-				if(m->ctx->on_tick){
-					sb_push(mod_call_stack, m);
-					m->ctx->on_tick();
-					sb_pop(mod_call_stack);
-				}
-			}
+			IRC_MOD_CALL_ALL(on_tick, ());
 
 			int max_fd = 0;
 			fd_set in, out;
 	
 			FD_ZERO(&in);
 			FD_ZERO(&out);
+			FD_SET(STDIN_FILENO, &in);
 
 			if(irc_add_select_descriptors(irc_ctx, &in, &out, &max_fd) != 0){
 				fprintf(stderr, "Error adding select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
@@ -921,7 +912,7 @@ int main(int argc, char** argv){
 				}
 #endif		
 			} else if(ret > 0){
-
+#if 0
 				int i;
 				for(i = 0; i <= max_fd; ++i){
 					if(FD_ISSET(i, &in)){
@@ -929,9 +920,18 @@ int main(int argc, char** argv){
 						break;
 					}
 				}
-			
+#endif
 				if(irc_process_select_descriptors(irc_ctx, &in, &out) != 0){
 					fprintf(stderr, "Error processing select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
+				}
+
+				if(FD_ISSET(STDIN_FILENO, &in)){
+					char stdin_buf[1024];
+					ssize_t n =  read(STDIN_FILENO, stdin_buf, sizeof(stdin_buf));
+					if(n > 0){
+						stdin_buf[n-1] = 0; // remove \n
+						IRC_MOD_CALL_ALL(on_stdin, (stdin_buf));
+					}
 				}
 			}
 		}

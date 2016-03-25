@@ -31,6 +31,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	)
 };
 
+#define ALIAS_CHAR '!'
+
 static const IRCCoreCtx* ctx;
 
 enum {
@@ -444,33 +446,15 @@ usage_setperm:
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
 
-	if(*msg != '!' || !alias_valid_1st_char(msg[1])) return;
+	if(*msg != ALIAS_CHAR || !alias_valid_1st_char(msg[1])) return;
 
 	const char* key = strndupa(msg+1, strchrnul(msg, ' ') - (msg+1));
 	int idx, sub_idx;
-	int found_result = alias_find(chan, key, &idx, &sub_idx);
-
-	size_t alias_key_len;
-
-	if(found_result == ALIAS_FOUND_CHAN){
-		char* p = strchr(alias_keys[idx][sub_idx], ',');
-		if(!p){
-			fprintf(stderr, "mod_alias: strange per-channel key! fix me!\n");
-			return;
-		}
-
-		alias_key_len = strlen(p+1);
-
-	} else if(found_result == ALIAS_FOUND_GLOBAL){
-
-		alias_key_len = strlen(alias_keys[idx][sub_idx]);
-
-	} else {
+	if(!alias_find(chan, key, &idx, &sub_idx)){
 		return;
 	}
 
-	const char* arg = msg + alias_key_len + 1;
-
+	const char* arg = msg + strlen(key) + 1;
 	while(*arg == ' ') ++arg;
 
 	size_t arg_len = strlen(arg);

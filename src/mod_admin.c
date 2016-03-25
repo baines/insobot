@@ -4,6 +4,7 @@
 
 static bool admin_init (const IRCCoreCtx*);
 static void admin_cmd  (const char*, const char*, const char*, int);
+static void admin_stdin(const char*);
 
 enum { FORCE_JOIN };
 
@@ -13,6 +14,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.flags    = IRC_MOD_GLOBAL,
 	.on_init  = admin_init,
 	.on_cmd   = &admin_cmd,
+	.on_stdin = &admin_stdin,
 	.commands = DEFINE_CMDS (
 		[FORCE_JOIN] = CONTROL_CHAR "fjoin"
 	)
@@ -42,4 +44,8 @@ static void admin_cmd(const char* chan, const char* name, const char* arg, int c
 			ctx->join(arg);
 		} break;
 	}
+}
+
+static void admin_stdin(const char* text){
+	// TODO: administrative stdin commands
 }
