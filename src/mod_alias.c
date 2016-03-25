@@ -43,6 +43,7 @@ enum {
 	AP_COUNT,
 };
 
+//NOTE: must be uppercase
 char* alias_permission_strs[] = {
 	"NORMAL",
 	"WLIST",
@@ -92,7 +93,7 @@ static void alias_load(){
 					if(perm_idx >= 0){
 						val.permission = perm_idx;
 					} else {
-						fprintf(stderr, "Unknown permission in file %s!\n", token);
+						fprintf(stderr, "Unknown permission in file: '%s'\n", token);
 					}
 
 					free(token);

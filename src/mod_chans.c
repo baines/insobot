@@ -21,8 +21,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save    = &chans_save,
 	.on_connect = &chans_connect,
 	.commands   = DEFINE_CMDS (
-		[CHAN_JOIN]  = CONTROL_CHAR"join",
-		[CHAN_LEAVE] = CONTROL_CHAR"leave " CONTROL_CHAR"part"
+		[CHAN_JOIN]  = CONTROL_CHAR "join",
+		[CHAN_LEAVE] = CONTROL_CHAR "leave " CONTROL_CHAR "part"
 	)
 };
 
@@ -58,7 +58,7 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 	memcpy(name_chan + 1, name, name_len + 1);
 
 	bool can_use_leave = strcasecmp(chan + 1, name) == 0;
-	MOD_MSG(ctx, "check_admin", name, &admin_check_cb, &can_use_leave);
+	if(!can_use_leave) MOD_MSG(ctx, "check_admin", name, &admin_check_cb, &can_use_leave);
 
 	switch(cmd){
 		case CHAN_JOIN: {
