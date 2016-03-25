@@ -16,7 +16,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = help_init,
 	.on_cmd   = &help_cmd,
 	.commands = DEFINE_CMDS (
-		[CMD_HELP] = CONTROL_CHAR"help"
+		[CMD_HELP] = CONTROL_CHAR "help"
 	)
 };
 
@@ -69,7 +69,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 	switch(cmd){
 		case CMD_HELP: {
 			if(!*arg++){
-				ctx->send_msg(chan, "%s: Use \\help <module> to list its commands. Available modules: %s", name, mod_names);
+				ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module> to list its commands. Available modules: %s", name, mod_names);
 			} else {
 				const char* mod_end = strchrnul(arg, ' ');
 				char* mod = strndupa(arg, mod_end - arg);
