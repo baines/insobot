@@ -33,6 +33,8 @@ static const char* twitter_token;
 
 static regex_t steam_url_regex;
 
+static regex_t vimeo_url_regex;
+
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
@@ -77,6 +79,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ret = ret & (regcomp(
 		&steam_url_regex,
 		"store.steampowered.com/app/([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&vimeo_url_regex,
+		"https?://vimeo.com/([0-9]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -445,6 +453,69 @@ out:
 	if(root) yajl_tree_free(root);
 }
 
+static void do_vimeo_info(const char* chan, const char* msg, regmatch_t* matches){
+
+	char* data = NULL;
+	yajl_val root = NULL;
+
+	char* id = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+	char* url;
+	asprintf(&url, "https://vimeo.com/api/oembed.json?url=https%%3A%%2F%%2Fvimeo.com%%2F%s", id); 
+
+	CURL* curl = inso_curl_init(url, &data);
+	int ret = curl_easy_perform(curl);
+	curl_easy_cleanup(curl);
+	free(url);
+
+	sb_push(data, 0);
+
+	if(ret != 0){
+		fprintf(stderr, "mod_linkinfo: vimeo curl err %s\n", curl_easy_strerror(ret));
+		ctx->send_msg(chan, "Error getting Vimeo data. Blame insofaras.");
+		goto out;
+	}
+
+	root = yajl_tree_parse(data, NULL, 0);
+	if(!root){
+		fprintf(stderr, "mod_linkinfo: vimeo err getting root json\n");
+		ctx->send_msg(chan, "Error getting Vimeo data. Blame insofaras.");
+		goto out;
+	}
+
+	const char* title_path[] = { "title", NULL };
+	const char* duration_path[] = { "duration", NULL };
+
+	yajl_val title = yajl_tree_get(root, title_path, yajl_t_string);
+	yajl_val duration = yajl_tree_get(root, duration_path, yajl_t_number);
+
+	if(!title || !duration){
+		fprintf(stderr, "mod_linkinfo: vimeo err title/duration null\n");
+		ctx->send_msg(chan, "Error getting Vimeo data. Blame insofaras.");
+		goto out;
+	}
+
+	enum { SEC_IN_HOUR = (60*60), SEC_IN_MIN = 60 };
+
+	char length_str[32] = {};
+	char* ls_ptr = length_str;
+	size_t ls_sz = sizeof(length_str);
+
+	int secs = duration->u.number.i;
+
+	if(secs > SEC_IN_HOUR){
+		snprintf_chain(&ls_ptr, &ls_sz, "%d:", secs / SEC_IN_HOUR);
+		secs %= SEC_IN_HOUR;
+	}
+	snprintf_chain(&ls_ptr, &ls_sz, "%02d:", secs / SEC_IN_MIN);
+	snprintf_chain(&ls_ptr, &ls_sz, "%02d", secs % SEC_IN_MIN);
+
+	ctx->send_msg(chan, "↑ Vimeo: [%s] [%s]", title->u.string, length_str);
+
+out:
+	if(root) yajl_tree_free(root);
+	sb_free(data);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -463,5 +534,9 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	if(regexec(&steam_url_regex, msg, 2, matches, 0) == 0){
 		do_steam_info(chan, msg, matches);
+	}
+
+	if(regexec(&vimeo_url_regex, msg, 2, matches, 0) == 0){
+		do_vimeo_info(chan, msg, matches);
 	}
 }
