@@ -427,7 +427,17 @@ IRC_STR_CALLBACK(on_connect) {
 
 IRC_STR_CALLBACK(on_chat_msg) {
 	if(count < 2 || !params[0] || !params[1]) return;
-	const char *_chan = params[0], *_name = origin, *_msg = params[1];
+	const char *_chan = params[0], *_name = origin;
+
+	char* _msg = strdupa(params[1]);
+	size_t len = strlen(_msg);
+
+	// trim spaces at end of messages
+	if(len > 0){
+		for(char* p = _msg + len - 1; *p == ' '; --p){
+			*p = 0;
+		}
+	}
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		bool global = m->ctx->flags & IRC_MOD_GLOBAL;
