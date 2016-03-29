@@ -419,7 +419,7 @@ static void markov_replace(char** msg, const char* from, const char* to){
 		off = p - *msg;
 
 		if(to_len > from_len){
-			(void)sb_add(*msg, to_len - from_len);
+			memset(sb_add(*msg, to_len - from_len), 0, to_len - from_len);
 		} else {
 			stb__sbn(*msg) -= (from_len - to_len);
 		}
@@ -431,6 +431,8 @@ static void markov_replace(char** msg, const char* from, const char* to){
 		memcpy(p, to, to_len);
 
 		off += to_len;
+
+		msg_len += (to_len - from_len);
 	}
 
 }
@@ -588,7 +590,6 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 
 			for(char** c = markov_nicks; c < sb_end(markov_nicks); ++c){
 				if(strcasecmp(word, *c) == 0){
-					printf("Skipping name [%s]\n", word);
 					continue;
 				}
 			}
