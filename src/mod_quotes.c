@@ -477,11 +477,11 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			Quote* last_found_q = NULL;
 			bool more_flag = false;
 
-			char msg_buf[256];
+			char msg_buf[128];
 			memcpy(msg_buf, msg_start, sizeof(msg_start));
 
 			char* buf_ptr = msg_buf + sizeof(msg_start) - 1;
-			size_t buf_len = 256 - (sizeof(msg_start) + sizeof(msg_end) - 1);
+			ssize_t buf_len = 128 - (sizeof(msg_start) + sizeof(msg_end) - 1);
 
 			for(; qlist < sb_end(*quotes); ++qlist){
 				if(strcasestr(qlist->text, arg) != NULL){
@@ -489,11 +489,10 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 					last_found_q = qlist;
 
 					int ret = snprintf(buf_ptr, buf_len, "%d, ", qlist->id);
-					if(ret > 0){
+					if(ret <= buf_len){
 						buf_ptr += ret;
 						buf_len -= ret;
-					}
-					if(buf_len <= 0){
+					} else {
 						more_flag = true;
 						break;
 					}
@@ -503,7 +502,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(found_count == 1){
 				Quote* q = last_found_q;
 				struct tm* date_tm = gmtime(&q->timestamp);
-				char date[256];
+				char date[32];
 				strftime(date, sizeof(date), "%F", date_tm);
 				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, chan+1, date);
 			} else if(found_count > 1){

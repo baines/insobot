@@ -678,12 +678,8 @@ static void core_send_raw(const char* raw){
 }
 
 static void core_send_mod_msg(IRCModMsg* msg){
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-		const char* sender = sb_last(mod_call_stack)->ctx->name;
-		sb_push(mod_call_stack, m);
-		if(m->ctx->on_mod_msg) m->ctx->on_mod_msg(sender, msg);
-		sb_pop(mod_call_stack);
-	}
+	const char* sender = sb_last(mod_call_stack)->ctx->name;
+	IRC_MOD_CALL_ALL(on_mod_msg, (sender, msg));
 }
 
 static void core_self_save(void){
