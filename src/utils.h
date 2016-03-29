@@ -54,7 +54,7 @@ static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, .
 
 	int printed = vsnprintf(*bufp, *sizep, fmt, v);
 
-	if(printed > 0){
+	if(printed != -1 && printed <= *sizep){
 		*sizep -= printed;
 		*bufp += printed;
 	}
