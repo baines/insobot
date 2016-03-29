@@ -7,6 +7,26 @@
 #include <curl/curl.h>
 #include "stb_sb.h"
 
+#define INSO_MIN(x, y)({ \
+	typeof(x) _x = (x);  \
+	typeof(y) _y = (y);  \
+	_x <= _y ? _x : _y;  \
+})
+
+#define INSO_MAX(x, y)({ \
+	typeof(x) _x = (x);  \
+	typeof(y) _y = (y);  \
+	_x > _y ? _x : _y;   \
+})
+
+#define ARRAY_SIZE(x)({                                          \
+	_Static_assert(                                              \
+		!__builtin_types_compatible_p(typeof(x), typeof(&x[0])), \
+		"!!!! ARRAY_SIZE used on a pointer !!!!"                 \
+	);                                                           \
+	sizeof(x) / sizeof(*x);                                      \
+})
+
 static inline size_t inso_curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
 	char** out = (char**)data;
 	const size_t total = sz * nmemb;

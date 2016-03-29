@@ -338,6 +338,7 @@ static void util_check_inotify(const IRCCoreCtx* core_ctx){
 			util_module_save(m);
 
 			if(m->lib_handle){
+				IRC_MOD_CALL(m, on_quit, ());
 				dlclose(m->lib_handle);
 			}
 			
