@@ -5,13 +5,13 @@ module_out := $(patsubst %.c,../modules/%.so,$(module_src))
 
 all: ../insobot $(module_out)
 
-../insobot: insobot.c config.h module.h
-	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl
+../insobot: insobot.c config.h module.h stb_sb.h
+	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl -lrt
 
 ../modules:
 	mkdir $@
 
-../modules/%.so: %.c config.h module.h utils.h | ../modules
+../modules/%.so: %.c config.h module.h utils.h stb_sb.h | ../modules
 	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl -lz
 	
 clean:

@@ -56,6 +56,7 @@ static void * stb__sbgrowf(void *arr, int increment, int itemsize)
 #ifdef STB_SB_MMAP
 
 #include <sys/mman.h>
+#include <stdio.h>
 
 #define sbmm_free(a)    ((a) ? munmap(stb__sbraw(a), stb__sbm(a)),(a)=0,0 : 0)
 #define sbmm_push(a,v)  (stb__sbmaybegrow_mm(a,1), (a)[stb__sbn(a)++] = (v))
@@ -74,32 +75,42 @@ static void * stb__sbgrowf(void *arr, int increment, int itemsize)
 
 static inline void * stb__sbgrowf_mm(void *arr, int increment, int itemsize)
 {
-   int inc_cur = arr ? stb__sbm(arr) + (2*SB_PAGE_SIZE) : 0;
-   int min_needed = (stb_sb_count(arr) + increment) * itemsize + sizeof(int)*2;
+   int inc_cur = arr ? stb__sbm(arr) + SB_PAGE_SIZE : 0;
+   int min_needed = stb_sb_count(arr) + increment;
    int m = inc_cur > min_needed ? inc_cur : min_needed;
 
-   m = (m + (SB_PAGE_SIZE-1)) & ~(SB_PAGE_SIZE-1);
+   size_t mem_needed = m * itemsize + sizeof(int) * 2;
+   mem_needed = (mem_needed + (SB_PAGE_SIZE-1)) & ~(SB_PAGE_SIZE-1);
 
-   int* p;
+   size_t mem_have = !arr ? 0 : stb__sbm(arr) * itemsize + sizeof(int) * 2;
+   mem_have = (mem_have + (SB_PAGE_SIZE-1)) & ~(SB_PAGE_SIZE-1);
+
+   int* p = 0;
    if(arr){
 	   p = mremap(
 		   stb__sbraw(arr),
-		   stb__sbm(arr),
-		   m,
+		   mem_have,
+		   mem_needed,
 		   MREMAP_MAYMOVE
 	   );
+	   if(p == MAP_FAILED){
+		   perror("mremap");
+	   }
    } else {
 	   p = mmap(
 		   0,
-		   m,
+		   mem_needed,
 		   PROT_READ | PROT_WRITE,
 		   MAP_PRIVATE | MAP_ANONYMOUS,
 		   -1,
 		   0
 	   );
+	   if(p == MAP_FAILED){
+		   perror("mmap");
+	   }
    }
 
-   if (p) {
+   if (p != MAP_FAILED) {
       if (!arr)
          p[1] = 0;
       p[0] = m;
