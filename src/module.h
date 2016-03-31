@@ -62,7 +62,7 @@ struct IRCCoreCtx_ {
 	void           (*send_raw)     (const char* raw);
 	void           (*send_mod_msg) (IRCModMsg* msg);
 	void           (*save_me)      (void);
-
+	void           (*log)          (const char* fmt, ...) __attribute__ ((format (printf, 1, 2)));
 };
 
 // used for on_meta callback, which determines if the callback will be called or not.

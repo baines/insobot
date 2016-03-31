@@ -687,6 +687,21 @@ static void core_self_save(void){
 	util_module_save(sb_last(mod_call_stack));
 }
 
+static void core_log(const char* fmt, ...){
+	char time_buf[64];
+	time_t now = time(0);
+	struct tm* now_tm = localtime(&now);
+	strftime(time_buf, sizeof(time_buf), "[%F][%T]", now_tm);
+
+	const char* mod_name = sb_count(mod_call_stack) ? sb_last(mod_call_stack)->ctx->name : "CORE";
+	fprintf(stderr, "%s %s: ", time_buf, mod_name);
+
+	va_list v;
+	va_start(v, fmt);
+	vfprintf(stderr, fmt, v);
+	va_end(v);
+}
+
 /***************
  * entry point *
  * *************/
@@ -781,6 +796,7 @@ int main(int argc, char** argv){
 		.join         = &core_join,
 		.part         = &core_part,
 		.save_me      = &core_self_save,
+		.log          = &core_log,
 	};
 
 	printf("Found %zu modules\n", glob_data.gl_pathc);
@@ -891,7 +907,7 @@ int main(int argc, char** argv){
 			if(irc_add_select_descriptors(irc_ctx, &in, &out, &max_fd) != 0){
 				fprintf(stderr, "Error adding select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
 			}
-	
+
 			struct timeval tv = {
 				.tv_sec  = 0,
 				.tv_usec = 250000,

@@ -126,6 +126,7 @@ static void whitelist_cmd(const char* chan, const char* name, const char* arg, i
 				ctx->send_msg(chan, "%s: Whitelisted %s.", name, arg);
 				WLEntry wle = { .name = strdup(arg), .role = ROLE_WHITELISTED };
 				sb_push(wlist, wle);
+				ctx->save_me();
 			}
 		} break;
 
@@ -143,6 +144,7 @@ static void whitelist_cmd(const char* chan, const char* name, const char* arg, i
 					ctx->send_msg(chan, "%s: Unwhitelisted %s.", name, arg);
 					free(wle->name);
 					sb_erase(wlist, wle - wlist);
+					ctx->save_me();
 					found = true;
 					break;
 				}
