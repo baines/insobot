@@ -99,6 +99,27 @@ static void twitch_check_uptime(UptimeInfo* info){
 	sb_free(data);
 }
 
+static bool is_channel_live(const char* chan){
+	time_t now = time(0);
+
+	int index = -1;
+	for(int i = 0; i < sb_count(uptime_info); ++i){
+		if(strcmp(uptime_info[i].chan, chan) == 0){
+			index = i;
+			break;
+		}
+	}
+
+	if(index < 0) return false;
+
+	if(now - uptime_info[index].last_update > uptime_check_interval){
+		twitch_check_uptime(uptime_info + index);
+		uptime_info[index].last_update = now;
+	}
+
+	return uptime_info[index].stream_start != 0;
+}
+
 static void mod_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }
@@ -198,6 +219,10 @@ static void twitch_check_followers(void){
 
 	for(char** chan = enabled_chans; chan < sb_end(enabled_chans); ++chan){
 
+		if(!chan || !is_channel_live(*chan)){
+			continue;
+		}
+
 		char* url;
 		asprintf(&url, twitch_api_template, *chan + 1);
 
@@ -291,7 +316,7 @@ out:
 static void twitch_tick(void){
 	time_t now = time(0);
 
-	if(now - last_check > follower_check_interval){
+	if(sb_count(enabled_chans) && (now - last_check > follower_check_interval)){
 		puts("Checking twitch followers...");
 		twitch_check_followers();
 		last_check = now;
