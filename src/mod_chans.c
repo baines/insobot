@@ -105,7 +105,7 @@ static void chans_connect(const char* serv){
 
 	//TODO: maybe spread the joins out over some time?
 
-	if(strcasecmp(serv, "irc.twitch.tv") == 0 || getenv("IRC_DO_TWITCH_CAP")){
+	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_DO_TWITCH_CAP")){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
 	}
 
@@ -134,6 +134,7 @@ static void chans_connect(const char* serv){
 		printf("mod_chans: Joining %s (file)\n", file_chan);
 		ctx->join(file_chan);
 	}
+	fclose(f);
 
 	suppress_join_save = false;
 	ctx->save_me();

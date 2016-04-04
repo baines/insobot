@@ -123,6 +123,9 @@ static const char* bad_end_words[] = {
 	"the",
 	"a",
 	"as",
+	"if",
+	",",
+	"/"
 	NULL
 };
 
@@ -463,7 +466,7 @@ static void markov_add(word_idx_t indices[static 3]){
 
 		for(uint32_t i = chain_keys[key_idx].val_idx; i != -1; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
-				chain_vals[i].count++;
+				if(chain_vals[i].count < UCHAR_MAX) ++chain_vals[i].count;
 				found = true;
 				break;
 			}

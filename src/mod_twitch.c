@@ -204,7 +204,7 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 	}
 }
 
-static const size_t follower_check_interval = 120;
+static const size_t follower_check_interval = 60;
 static const char twitch_api_template[] = "https://api.twitch.tv/kraken/channels/%s/follows?limit=10";
 static const char* follows_path[] = { "follows", NULL };
 static const char* date_path[] = { "created_at", NULL };
