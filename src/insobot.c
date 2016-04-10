@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <glob.h>
 #include <dlfcn.h>
+#include <pthread.h>
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
 #include "config.h"
@@ -116,6 +117,37 @@ static const char* core_get_datafile(void);
 /****************
  * Helper funcs *
  ****************/
+
+static void* util_log_thread_main(void* _arg){
+	int* fds = _arg;
+	int orig_stdout = fds[0];
+	int pipe_fd = fds[1];
+
+	char time_buf[64];
+	char c;
+
+	bool do_time = true;
+
+	while(true){
+		do {
+			ssize_t result = read(pipe_fd, &c, 1);
+			if(result <= 0) continue;
+
+			if(do_time){
+				time_t now = time(0);
+				size_t time_size = strftime(time_buf, sizeof(time_buf), "[%F %T] ", localtime(&now));
+				write(orig_stdout, time_buf, time_size);
+				do_time = false;
+			}
+
+			write(orig_stdout, &c, 1);
+		} while(c != '\n');
+
+		do_time = true;
+	}
+
+	return NULL;
+}
 
 static void util_handle_sig(int n){
 	running = 0;
@@ -688,6 +720,7 @@ static void core_self_save(void){
 }
 
 static void core_log(const char* fmt, ...){
+/*
 	char time_buf[64];
 	time_t now = time(0);
 	struct tm* now_tm = localtime(&now);
@@ -695,7 +728,7 @@ static void core_log(const char* fmt, ...){
 
 	const char* mod_name = sb_count(mod_call_stack) ? sb_last(mod_call_stack)->ctx->name : "CORE";
 	fprintf(stderr, "%s %s: ", time_buf, mod_name);
-
+*/
 	va_list v;
 	va_start(v, fmt);
 	vfprintf(stderr, fmt, v);
@@ -710,6 +743,18 @@ int main(int argc, char** argv){
 
 	srand(time(0));
 	signal(SIGINT, &util_handle_sig);
+
+	int fds[3] = { dup(STDOUT_FILENO) };
+
+	pipe(fds + 1);
+	dup2(fds[2], STDOUT_FILENO);
+	dup2(fds[2], STDERR_FILENO);
+
+	setlinebuf(stdout);
+	setlinebuf(stderr);
+
+	pthread_t log_thread;
+	pthread_create(&log_thread, NULL, &util_log_thread_main, fds);
 	
 	user = util_env_else("IRC_USER", DEFAULT_BOT_NAME);
 	pass = util_env_else("IRC_PASS", NULL);

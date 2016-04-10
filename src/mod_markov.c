@@ -125,7 +125,7 @@ static const char* bad_end_words[] = {
 	"as",
 	"if",
 	",",
-	"/"
+	"/",
 	NULL
 };
 
