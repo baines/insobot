@@ -175,12 +175,11 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 
 	switch(cmd){
 		case KARMA_SHOW: {
-			if(!wlist) return;
-
 			if(!*arg++){
 				int total = actor->up - actor->down;
 				ctx->send_msg(chan, "%s: You have %d karma [+%d|-%d].", name, total, actor->up, actor->down);
 			} else {
+				if(!wlist) return;
 				KEntry* k = karma_find(arg, false);
 				if(k){
 					int total = k->up - k->down;

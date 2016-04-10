@@ -110,7 +110,11 @@ static bool is_channel_live(const char* chan){
 		}
 	}
 
-	if(index < 0) return false;
+	if(index < 0){
+		UptimeInfo ui = { .chan = strdup(chan) };
+		sb_push(uptime_info, ui);
+		index = sb_count(uptime_info) - 1;
+	}
 
 	if(now - uptime_info[index].last_update > uptime_check_interval){
 		twitch_check_uptime(uptime_info + index);

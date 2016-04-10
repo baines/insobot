@@ -305,8 +305,6 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
 	}
 
-	if(!has_cmd_perms) return;
-
 	Quote** quotes = get_quotes(chan);
 	if(!quotes){
 		fprintf(stderr, "mod_quotes: BUG, got message from channel we don't know about?\n");
@@ -337,6 +335,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case ADD_QUOTE: {
+			if(!has_cmd_perms) break;
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\qadd <text>", name);
 				break;
@@ -357,6 +356,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case DEL_QUOTE: {
+			if(!has_cmd_perms) break;
 			if(!*arg){
 				ctx->send_msg(chan, "%s: Usage: \\qdel <id>", name);
 				break;
@@ -380,6 +380,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case FIX_QUOTE: {
+			if(!has_cmd_perms) break;
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
 				break;
@@ -409,6 +410,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case FIX_TIME: {
+			if(!has_cmd_perms) break;
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
 				break;
