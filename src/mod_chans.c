@@ -2,6 +2,7 @@
 #include <string.h>
 #include "module.h"
 #include "config.h"
+#include "stb_sb.h"
 
 static bool chans_init    (const IRCCoreCtx* ctx);
 static void chans_cmd     (const char*, const char*, const char*, int);
@@ -27,6 +28,8 @@ const IRCModuleCtx irc_mod_ctx = {
 };
 
 static const IRCCoreCtx* ctx;
+
+static char** join_list;
 
 static inline const char* env_else(const char* env, const char* def){
 	const char* c = getenv(env);
@@ -85,10 +88,21 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 	}
 }
 
-static bool suppress_join_save = false;
-
 static void chans_join(const char* chan, const char* name){
-	if(strcmp(name, ctx->get_username()) != 0 || suppress_join_save) return;
+	if(strcmp(name, ctx->get_username()) != 0) return;
+
+	for(int i = 0; i < sb_count(join_list); ++i){
+		if(strcmp(join_list[i], chan) == 0){
+			free(join_list[i]);
+			sb_erase(join_list, i);
+			break;
+		}
+	}
+
+	if(sb_count(join_list)){
+		ctx->join(join_list[0]);
+	}
+
 	ctx->save_me();
 }
 
@@ -100,10 +114,6 @@ static bool chans_save(FILE* file){
 }
 
 static void chans_connect(const char* serv){
-
-	suppress_join_save = true;
-
-	//TODO: maybe spread the joins out over some time?
 
 	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_DO_TWITCH_CAP")){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
@@ -122,7 +132,7 @@ static void chans_connect(const char* serv){
 
 	do {
 		printf("mod_chans: Joining %s (env)\n", c);
-		ctx->join(c);
+		sb_push(join_list, strdup(c));
 	} while((c = strtok_r(NULL, ", ", &state)));
 
 	free(channels);
@@ -132,10 +142,11 @@ static void chans_connect(const char* serv){
 	FILE* f = fopen(ctx->get_datafile(), "rb");
 	while(fscanf(f, "%255s", file_chan) == 1){
 		printf("mod_chans: Joining %s (file)\n", file_chan);
-		ctx->join(file_chan);
+		sb_push(join_list, strdup(file_chan));
 	}
 	fclose(f);
 
-	suppress_join_save = false;
-	ctx->save_me();
+	if(sb_count(join_list)){
+		ctx->join(join_list[0]);
+	}
 }

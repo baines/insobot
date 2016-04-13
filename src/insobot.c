@@ -131,7 +131,10 @@ static void* util_log_thread_main(void* _arg){
 	while(true){
 		do {
 			ssize_t result = read(pipe_fd, &c, 1);
-			if(result <= 0) continue;
+			if(result <= 0){
+				dprintf(orig_stdout, "read: %s\n", strerror(errno));
+				continue;
+			}
 
 			if(do_time){
 				time_t now = time(0);
