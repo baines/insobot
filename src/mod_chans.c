@@ -100,10 +100,15 @@ static void chans_join(const char* chan, const char* name){
 	}
 
 	if(sb_count(join_list)){
-		ctx->join(join_list[0]);
+		char* c = sb_last(join_list);
+		ctx->join(c);
+		free(c);
+		sb_pop(join_list);
 	}
 
-	ctx->save_me();
+	if(!sb_count(join_list)){
+		ctx->save_me();
+	}
 }
 
 static bool chans_save(FILE* file){
@@ -147,6 +152,9 @@ static void chans_connect(const char* serv){
 	fclose(f);
 
 	if(sb_count(join_list)){
-		ctx->join(join_list[0]);
+		char* c = sb_last(join_list);
+		ctx->join(c);
+		free(c);
+		sb_pop(join_list);
 	}
 }
