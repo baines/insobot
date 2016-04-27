@@ -547,7 +547,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				} else {
 					buf_ptr[-2] = '.';
 					buf_ptr[-1] = 0;
-					ctx->send_msg(chan, "%s: Matching qyotes: %s", name, msg_buf);
+					ctx->send_msg(chan, "%s: Matching quotes: %s", name, msg_buf);
 				}
 			} else {
 				ctx->send_msg(chan, "%s: No matches.", name);
