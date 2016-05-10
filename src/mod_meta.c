@@ -117,9 +117,6 @@ static bool meta_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return reload_file();
 }
-static void whitelist_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
-}
 
 static char** mod_find(char** haystack, const char* needle){
 	for(int i = 0; i < sb_count(haystack); ++i){
@@ -130,12 +127,7 @@ static char** mod_find(char** haystack, const char* needle){
 
 static void meta_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
-
-	if(!has_cmd_perms){
-		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
-	}
-
+	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || inso_is_wlist(ctx, name);
 	if(!has_cmd_perms) return;
 
 	IRCModuleCtx** all_mods = ctx->get_modules(true);

@@ -3,6 +3,7 @@
 #include "module.h"
 #include "config.h"
 #include "stb_sb.h"
+#include "utils.h"
 
 static bool chans_init    (const IRCCoreCtx* ctx);
 static void chans_cmd     (const char*, const char*, const char*, int);
@@ -41,31 +42,26 @@ static bool chans_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void admin_check_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
-}
-
 static void chans_cmd(const char* chan, const char* name, const char* arg, int cmd){
-
-	bool in_chan = false;
-	for(const char** c = ctx->get_channels(); *c; ++c){
-		if(strcasecmp(name, (*c)+1) == 0){
-			in_chan = true;
-			break;
-		}
-	}
 
 	size_t name_len = strlen(name);
 	char* name_chan = alloca(name_len + 2);
 	name_chan[0] = '#';
 	memcpy(name_chan + 1, name, name_len + 1);
 
-	bool can_use_leave = strcasecmp(chan + 1, name) == 0;
-	if(!can_use_leave) MOD_MSG(ctx, "check_admin", name, &admin_check_cb, &can_use_leave);
+	bool can_use_leave = strcasecmp(chan + 1, name) == 0 || inso_is_admin(ctx, name);
 
 	switch(cmd){
 		case CHAN_JOIN: {
 			if(*arg) break;
+
+			bool in_chan = false;
+			for(const char** c = ctx->get_channels(); *c; ++c){
+				if(strcasecmp(name, (*c)+1) == 0){
+					in_chan = true;
+					break;
+				}
+			}
 
 			if(in_chan){
 				ctx->send_msg(chan, "%s: I should already be there, I'll try rejoining.", name);
@@ -77,6 +73,14 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 
 		case CHAN_LEAVE: {
 			if(!can_use_leave) break;
+
+			bool in_chan = false;
+			for(const char** c = ctx->get_channels(); *c; ++c){
+				if(strcasecmp(chan, *c) == 0){
+					in_chan = true;
+					break;
+				}
+			}
 
 			if(in_chan){
 				ctx->send_msg(chan, "Goodbye, %s.", name);

@@ -142,6 +142,7 @@ static void alias_modified(void){
 		sb_free(alias_keys[i]);
 		free(alias_vals[i].msg);
 	}
+	sb_free(alias_keys);
 	sb_free(alias_vals);
 
 	alias_load();
@@ -225,17 +226,10 @@ static void alias_del(int idx, int sub_idx){
 	}
 }
 
-static void whitelist_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
-}
-
 static void alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool is_admin = strcasecmp(chan+1, name) == 0;
-	bool is_wlist = is_admin;
-
-	if(!is_wlist) MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &is_wlist);
-	if(!is_admin) MOD_MSG(ctx, "check_admin", name, &whitelist_cb, &is_admin);
+	bool is_admin = strcasecmp(chan+1, name) == 0 || inso_is_admin(ctx, name); 
+	bool is_wlist = is_admin || inso_is_wlist(ctx, name);
 
 	if(!is_wlist) return;
 
@@ -466,9 +460,9 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	bool has_cmd_perms = (value->permission == AP_NORMAL) || strcasecmp(chan+1, name) == 0;
 	if(!has_cmd_perms){
 		if (value->permission == AP_WHITELISTED){
-			MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
+			MOD_MSG(ctx, "check_whitelist", name, &inso_permission_cb, &has_cmd_perms);
 		} else if (value->permission == AP_ADMINONLY){
-			MOD_MSG(ctx, "check_admin", name, &whitelist_cb, &has_cmd_perms);
+			MOD_MSG(ctx, "check_admin", name, &inso_permission_cb, &has_cmd_perms);
 		} else {
 			// Some kind of weird unknown permission type. Assume normal access.
 			has_cmd_perms = true;

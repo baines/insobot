@@ -7,16 +7,18 @@
 #include "utils.h"
 #include <curl/curl.h>
 
-static void hmh_cmd  (const char*, const char*, const char*, int);
-static bool hmh_init (const IRCCoreCtx*);
+static void hmh_cmd     (const char*, const char*, const char*, int);
+static bool hmh_init    (const IRCCoreCtx*);
+static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
 
 enum { CMD_SCHEDULE, CMD_TIME };
 
 const IRCModuleCtx irc_mod_ctx = {
-	.name     = "hmh",
-	.desc     = "Functionalitty specific to Handmade Hero",
-	.on_cmd   = &hmh_cmd,
-	.on_init  = &hmh_init,
+	.name       = "hmh",
+	.desc       = "Functionalitty specific to Handmade Hero",
+	.on_cmd     = &hmh_cmd,
+	.on_init    = &hmh_init,
+	.on_mod_msg = &hmh_mod_msg,
 	.commands = DEFINE_CMDS (
 		[CMD_SCHEDULE] = CONTROL_CHAR "sched " CONTROL_CHAR "schedule",
 		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time"
@@ -248,6 +250,21 @@ static void print_schedule(const char* chan, const char* name){
 	tz_pop(tz);
 }
 
+static bool is_during_stream(void){
+	time_t now = time(0);
+
+	bool live = false;
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
+		int diff = now - schedule[i];
+		if(diff > 0 && diff < (60*90)){
+			live = true;
+			break;
+		}
+	}
+
+	return live;
+}
+
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
@@ -269,7 +286,7 @@ static void print_time(const char* chan, const char* name){
 				chan,
 				"%d minute%s into the stream, %d until Q&A. (if Casey is on schedule)",
 				m,
-				m > 1 ? "s" : "",
+				m != 1 ? "s" : "",
 				60 - m
 			);
 			break;
@@ -283,7 +300,7 @@ static void print_time(const char* chan, const char* name){
 				chan,
 				"%d minute%s into the Q&A, %d until end. (if Casey is on schedule)",
 				m,
-				m > 1 ? "s" : "",
+				m != 1 ? "s" : "",
 				30 - m
 			);
 			break;
@@ -312,15 +329,15 @@ static void print_time(const char* chan, const char* name){
 					chan,
 					"Next stream in %d hour%s, %d minute%s.",
 					h,
-					h > 1 ? "s" : "",
+					h != 1 ? "s" : "",
 					m,
-					m > 1 ? "s" : ""
+					m != 1 ? "s" : ""
 				);
 				break;
 			}
 
 			int d = diff / SEC_IN_DAY;
-			ctx->send_msg(chan, "Next stream in %d day%s.", d, d > 1 ? "s" : "");
+			ctx->send_msg(chan, "Next stream in %d day%s.", d, d != 1 ? "s" : "");
 			break;
 		}
 	}
@@ -347,4 +364,10 @@ static void hmh_cmd(const char* chan, const char* name, const char* msg, int cmd
 static bool hmh_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return true;
+}
+
+static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "is_hmh_live") == 0){
+		msg->callback(is_during_stream(), msg->cb_arg);
+	}
 }

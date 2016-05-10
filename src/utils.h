@@ -101,4 +101,21 @@ static inline void tz_pop(char* oldtz){
 	}
 	tzset();
 }
+
+static inline void inso_permission_cb(intptr_t result, intptr_t arg){
+	if(result) *(bool*)arg = true;
+}
+
+static inline bool inso_is_wlist(const IRCCoreCtx* ctx, const char* name){
+	bool result = false;
+	MOD_MSG(ctx, "check_whitelist", name, &inso_permission_cb, &result);
+	return result;
+}
+
+static inline bool inso_is_admin(const IRCCoreCtx* ctx, const char* name){
+	bool result = false;
+	MOD_MSG(ctx, "check_admin", name, &inso_permission_cb, &result);
+	return result;
+}
+
 #endif

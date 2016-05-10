@@ -5,6 +5,7 @@
 #include <time.h>
 #include "module.h"
 #include "stb_sb.h"
+#include "utils.h"
 
 static void karma_msg      (const char*, const char*, const char*);
 static void karma_cmd      (const char*, const char*, const char*, int);
@@ -69,7 +70,6 @@ static KEntry* karma_add_name(const char* name){
 	KEntry* ret = karma_find(name, true);
 
 	if(!ret) {
-		printf("mod_karma: adding %s\n", name);
 		KEntry k = {};
 		sb_push(k.names, strdup(name));
 		sb_push(klist, k);
@@ -156,22 +156,11 @@ static void karma_msg(const char* chan, const char* name, const char* msg){
 	karma_check(karma_add_name(name), msg);
 }
 
-static void mod_msg_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
-}
-
 static void karma_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	KEntry* actor = karma_add_name(name);
 
-	bool admin = strcasecmp(chan + 1, name) == 0;
-	MOD_MSG(ctx, "check_admin", name, &mod_msg_cb, &admin);
-
-	printf("check_admin %s = %d\n", name, admin);
-
-	bool wlist = false;
-	MOD_MSG(ctx, "check_whitelist", name, &mod_msg_cb, &wlist);
-
-	printf("check_wlist %s = %d\n", name, wlist);
+	bool admin = strcasecmp(chan + 1, name) == 0 || inso_is_admin(ctx, name);
+	bool wlist = inso_is_wlist(ctx, name);
 
 	switch(cmd){
 		case KARMA_SHOW: {
@@ -229,8 +218,6 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 static void karma_nick(const char* prev, const char* cur){
 	KEntry* k = karma_find(prev, false);
 	if(!k) return;
-
-	printf("mod_karma: nick change %s -> %s\n", prev, cur);
 
 	bool already_known = false;
 	for(char** n = k->names; n < sb_end(k->names); ++n){

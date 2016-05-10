@@ -11,7 +11,7 @@ static void twitch_cmd  (const char*, const char*, const char*, int);
 static void twitch_tick (void);
 static bool twitch_save (FILE*);
 
-enum { FOLLOW_NOTIFY, UPTIME };
+enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "twitch",
@@ -22,49 +22,72 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save  = &twitch_save,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY] = CONTROL_CHAR "fnotify",
-		[UPTIME]        = CONTROL_CHAR "uptime " CONTROL_CHAR_2 "uptime"
+		[UPTIME]        = CONTROL_CHAR "uptime " CONTROL_CHAR_2 "uptime",
+		[TWITCH_VOD]    = CONTROL_CHAR "vod "    CONTROL_CHAR_2 "vod"
 	)
 };
 
 static const IRCCoreCtx* ctx;
-static char** enabled_chans;
-static time_t* chan_last_time;
-static time_t last_check;
+
+static const size_t uptime_check_interval = 120;
+static const size_t follower_check_interval = 60;
+
+static time_t last_follower_check;
 
 typedef struct {
-	char* chan;
+	bool do_follower_notify;
 	time_t stream_start;
-	time_t last_update;
-} UptimeInfo;
+	time_t last_uptime_check;
+	time_t last_follower_time;
+	char* vod_url;
+} TwitchInfo;
 
-UptimeInfo* uptime_info;
+char**      twitch_keys;
+TwitchInfo* twitch_vals;
 
-static size_t uptime_check_interval = 120;
+static TwitchInfo* twitch_get_or_add(const char* chan){
+	for(char** c = twitch_keys; c < sb_end(twitch_keys); ++c){
+		if(strcmp(*c, chan) == 0){
+			return twitch_vals + (c - twitch_keys);
+		}
+	}
+
+	TwitchInfo ti = {};
+
+	sb_push(twitch_keys, strdup(chan));
+	sb_push(twitch_vals, ti);
+
+	return twitch_vals + sb_count(twitch_vals) - 1;
+}
 
 static bool twitch_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
 	time_t now = time(0);
-	last_check = now;
+	last_follower_check = now;
 
 	FILE* f = fopen(ctx->get_datafile(), "r");
 	char chan[256];
 	while(fscanf(f, "%255s", chan) == 1){
-		sb_push(enabled_chans, strdup(chan));
-		sb_push(chan_last_time, now);
+		TwitchInfo* t = twitch_get_or_add(chan);
+		t->do_follower_notify = true;
+		t->last_follower_time = now;
 	}
 	fclose(f);
 
 	return true;
 }
 
-static void twitch_check_uptime(UptimeInfo* info){
+static void twitch_check_uptime(size_t index){
+
+	char* chan       = twitch_keys[index];
+	TwitchInfo* info = twitch_vals + index;
 
 	char* data = NULL;
 	yajl_val root = NULL;
 
 	char* url;
-	asprintf(&url, "https://api.twitch.tv/kraken/streams/%s", info->chan + 1);
+	asprintf(&url, "https://api.twitch.tv/kraken/streams/%s", chan + 1);
 
 	CURL* curl = inso_curl_init(url, &data);
 	CURLcode ret = curl_easy_perform(curl);
@@ -83,9 +106,17 @@ static void twitch_check_uptime(UptimeInfo* info){
 				info->stream_start = timegm(&created_tm);
 			} else {
 				info->stream_start = 0;
+				if(info->vod_url){
+					free(info->vod_url);
+					info->vod_url = NULL;
+				}
 			}
 		} else {
 			info->stream_start = 0;
+			if(info->vod_url){
+				free(info->vod_url);
+				info->vod_url = NULL;
+			}
 		}
 
 		yajl_tree_free(root);
@@ -99,68 +130,94 @@ static void twitch_check_uptime(UptimeInfo* info){
 	sb_free(data);
 }
 
-static bool is_channel_live(const char* chan){
+static bool twitch_check_live(size_t index){
 	time_t now = time(0);
 
-	int index = -1;
-	for(int i = 0; i < sb_count(uptime_info); ++i){
-		if(strcmp(uptime_info[i].chan, chan) == 0){
-			index = i;
+	TwitchInfo* t = twitch_vals + index;
+
+	if(now - t->last_uptime_check > uptime_check_interval){
+		twitch_check_uptime(index);
+		t->last_uptime_check = now;
+	}
+
+	return t->stream_start != 0;
+}
+
+static void twitch_print_vod(size_t index, const char* name){
+
+	char* chan    = twitch_keys[index];
+	TwitchInfo* t = twitch_vals + index;
+
+	char* url;
+	char* data = NULL;
+	asprintf(&url, "https://api.twitch.tv/kraken/channels/%s/videos?broadcasts=true&limit=1", chan + 1);
+
+	CURL* curl = inso_curl_init(url, &data);
+	curl_easy_perform(curl);
+
+	free(url);
+	sb_push(data, 0);
+
+	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	if(!root){
+		fprintf(stderr, "twitch_print_vod: root null\n");
+		goto out;
+	}
+
+	const char* videos_path[]  = { "videos", NULL };
+	const char* status_path[]  = { "status", NULL };
+	const char* vod_url_path[] = { "url", NULL };
+
+	yajl_val videos = yajl_tree_get(root, videos_path, yajl_t_array);
+	if(!videos){
+		fprintf(stderr, "twitch_print_vod: videos null\n");
+		goto out;
+	}
+
+	for(size_t i = 0; i < videos->u.array.len; ++i){
+		yajl_val status  = yajl_tree_get(videos->u.array.values[i], status_path , yajl_t_string);
+		yajl_val vod_url = yajl_tree_get(videos->u.array.values[i], vod_url_path, yajl_t_string);
+
+		if(!status || !vod_url){
+			fprintf(stderr, "twitch_print_vod: status or url null\n");
+			goto out;
+		}
+
+		if(strcmp(status->u.string, "recording") == 0){
+			t->vod_url = strdup(vod_url->u.string);
+			ctx->send_msg(chan, "%s: %s\n", name, vod_url->u.string);
 			break;
 		}
 	}
 
-	if(index < 0){
-		UptimeInfo ui = { .chan = strdup(chan) };
-		sb_push(uptime_info, ui);
-		index = sb_count(uptime_info) - 1;
-	}
-
-	if(now - uptime_info[index].last_update > uptime_check_interval){
-		twitch_check_uptime(uptime_info + index);
-		uptime_info[index].last_update = now;
-	}
-
-	return uptime_info[index].stream_start != 0;
-}
-
-static void mod_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
+out:
+	if(data) sb_free(data);
+	if(root) yajl_tree_free(root);
 }
 
 static void twitch_cmd(const char* chan, const char* name, const char* arg, int cmd){
-	bool is_admin = strcasecmp(chan + 1, name) == 0;
-	if(!is_admin) MOD_MSG(ctx, "check_admin", name, &mod_cb, &is_admin);
+	bool is_admin = strcasecmp(chan + 1, name) == 0 || inso_is_admin(ctx, name);
 
 	switch(cmd){
 		case FOLLOW_NOTIFY: {
 			if(!is_admin) return;
 			if(!*arg++) break;
 
-			bool found = false;
-			char** c;
-			for(c = enabled_chans; c < sb_end(enabled_chans); ++c){
-				if(strcasecmp(*c, chan) == 0){
-					found = true;
-					break;
-				}
-			}
+			TwitchInfo* t = twitch_get_or_add(chan);
 
 			if(strcasecmp(arg, "off") == 0){
-				if(found){
+				if(t->do_follower_notify){
 					ctx->send_msg(chan, "%s: Disabled follow notifier.", name);
-					sb_erase(enabled_chans, c - enabled_chans);
-					sb_erase(chan_last_time, c - enabled_chans);
+					t->do_follower_notify = false;
 				} else {
 					ctx->send_msg(chan, "%s: It's already disabled.", name);
 				}
 			} else if(strcasecmp(arg, "on") == 0){
-				if(found){
+				if(t->do_follower_notify){
 					ctx->send_msg(chan, "%s: It's already enabled.", name);
 				} else {
 					ctx->send_msg(chan, "%s: Enabled follow notifier.", name);
-					sb_push(enabled_chans, strdup(chan));
-					sb_push(chan_last_time, time(0));
+					t->do_follower_notify = true;
 				}
 			}
 		} break;
@@ -168,27 +225,10 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 		case UPTIME: {
 			time_t now = time(0);
 
-			int index = -1;
-			for(int i = 0; i < sb_count(uptime_info); ++i){
-				if(strcmp(uptime_info[i].chan, chan) == 0){
-					index = i;
-					break;
-				}
-			}
+			TwitchInfo* t = twitch_get_or_add(chan);
 
-			if(index < 0){
-				UptimeInfo ui = { .chan = strdup(chan) };
-				sb_push(uptime_info, ui);
-				index = sb_count(uptime_info) - 1;
-			}
-
-			if(now - uptime_info[index].last_update > uptime_check_interval){
-				twitch_check_uptime(uptime_info + index);
-				uptime_info[index].last_update = now;
-			}
-
-			if(uptime_info[index].stream_start != 0){
-				int minutes = (now - uptime_info[index].stream_start) / 60;
+			if(twitch_check_live(t - twitch_vals)){
+				int minutes = (now - t->stream_start) / 60;
 				char time_buf[256];
 				char *time_ptr = time_buf;
 				size_t time_sz = sizeof(time_buf);
@@ -205,10 +245,25 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 				ctx->send_msg(chan, "%s: The stream is not live.", name);
 			}
 		} break;
+
+		case TWITCH_VOD: {
+
+			TwitchInfo* t = twitch_get_or_add(chan);
+
+			if(twitch_check_live(t - twitch_vals)){
+				if(t->vod_url){
+					ctx->send_msg(chan, "%s: %s", name, t->vod_url);
+				} else {
+					twitch_print_vod(t - twitch_vals, name);
+				}
+			} else if(t->vod_url){
+				free(t->vod_url);
+				t->vod_url = NULL;
+			}
+		} break;
 	}
 }
 
-static const size_t follower_check_interval = 60;
 static const char twitch_api_template[] = "https://api.twitch.tv/kraken/channels/%s/follows?limit=10";
 static const char* follows_path[] = { "follows", NULL };
 static const char* date_path[] = { "created_at", NULL };
@@ -221,14 +276,17 @@ static void twitch_check_followers(void){
 
 	CURL* curl = inso_curl_init(NULL, &data);
 
-	for(char** chan = enabled_chans; chan < sb_end(enabled_chans); ++chan){
+	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 
-		if(!chan || !is_channel_live(*chan)){
+		char* chan    = twitch_keys[i];
+		TwitchInfo* t = twitch_vals + i;
+
+		if(!t->do_follower_notify || !twitch_check_live(i)){
 			continue;
 		}
 
 		char* url;
-		asprintf(&url, twitch_api_template, *chan + 1);
+		asprintf(&url, twitch_api_template, chan + 1);
 
 		curl_easy_setopt(curl, CURLOPT_URL, url);
 		CURLcode ret = curl_easy_perform(curl);
@@ -257,11 +315,10 @@ static void twitch_check_followers(void){
 
 		char msg_buf[256] = {};
 		size_t new_follow_count = 0;
-		size_t chan_idx = chan - enabled_chans;
-		time_t new_time = chan_last_time[chan_idx];
+		time_t new_time = t->last_follower_time;
 
-		for(size_t i = 0; i < follows->u.array.len; ++i){
-			yajl_val user = follows->u.array.values[i];
+		for(size_t j = 0; j < follows->u.array.len; ++j){
+			yajl_val user = follows->u.array.values[j];
 
 			yajl_val date = yajl_tree_get(user, date_path, yajl_t_string);
 			if(!date){
@@ -284,9 +341,9 @@ static void twitch_check_followers(void){
 
 			time_t follow_time = mktime(&follow_tm);
 
-			if(follow_time > chan_last_time[chan_idx]){
+			if(follow_time > t->last_follower_time){
 				++new_follow_count;
-				if(i){
+				if(j){
 					inso_strcat(msg_buf, sizeof(msg_buf), ", ");
 				}
 				inso_strcat(msg_buf, sizeof(msg_buf), name->u.string);
@@ -295,12 +352,12 @@ static void twitch_check_followers(void){
 			}
 		}
 
-		chan_last_time[chan_idx] = new_time;
+		t->last_follower_time = new_time;
 
 		if(new_follow_count == 1){
-			ctx->send_msg(*chan, "Thank you to %s for following the channel! <3", msg_buf);
+			ctx->send_msg(chan, "Thank you to %s for following the channel! <3", msg_buf);
 		} else if(new_follow_count > 1){
-			ctx->send_msg(*chan, "Thank you new followers: %s! <3", msg_buf);
+			ctx->send_msg(chan, "Thank you new followers: %s! <3", msg_buf);
 		}
 
 		sb_free(data);
@@ -320,16 +377,18 @@ out:
 static void twitch_tick(void){
 	time_t now = time(0);
 
-	if(sb_count(enabled_chans) && (now - last_check > follower_check_interval)){
+	if(sb_count(twitch_keys) && (now - last_follower_check > follower_check_interval)){
 		puts("Checking twitch followers...");
 		twitch_check_followers();
-		last_check = now;
+		last_follower_check = now;
 	}
 }
 
 static bool twitch_save(FILE* f){
-	for(char** c = enabled_chans; c < sb_end(enabled_chans); ++c){
-		fprintf(f, "%s\n", *c);
+	for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
+		if(t->do_follower_notify){
+			fprintf(f, "%s\n", twitch_keys[t - twitch_vals]);
+		}
 	}
 	return true;
 }

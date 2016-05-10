@@ -399,14 +399,53 @@ static time_t last_say;
 
 static void markov_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	time_t now = time(0);
-	if(now - last_say < say_cooldown) return;
+
+	bool admin = inso_is_admin(ctx, name);
 
 	switch(cmd){
-		case MARKOV_SAY: markov_send(chan); break;
-		case MARKOV_ASK: markov_ask(chan);  break;
+
+		case MARKOV_SAY: {
+			if(now - last_say >= say_cooldown){
+				markov_send(chan);
+				last_say = now;
+			}
+		} break;
+
+		case MARKOV_ASK: {
+			if(now - last_say >= say_cooldown){
+				markov_ask(chan);
+				last_say = now;
+			}
+		} break;
+
+		case MARKOV_INTERVAL: {
+			if(!admin) break;
+
+			if(*arg++){
+				int chance = strtoul(arg, NULL, 0);
+				if(chance != 0){
+					msg_chance = chance;
+				}
+			}
+
+			ctx->send_msg(chan, "%s: interval = %zu.", name, msg_chance);
+		} break;
+
+		case MARKOV_STATUS: {
+			if(!admin) break;
+
+			ctx->send_msg(
+				chan,
+				"%s: markov status: %d keys, %d chains, %dKB word mem.",
+				name,
+				sbmm_count(chain_keys),
+				sbmm_count(chain_vals),
+				sbmm_count(word_mem) / 1024
+			);
+
+		} break;
 	}
 
-	last_say = now;
 }
 
 static void markov_replace(char** msg, const char* from, const char* to){

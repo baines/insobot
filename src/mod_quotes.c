@@ -293,10 +293,6 @@ static Quote* get_quote(const char* chan, int id){
 	return NULL;
 }
 
-static void whitelist_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
-}
-
 static const char* get_chan(const char* chan, const char** arg, Quote** qlist){
 	if(**arg != '#'){
 		if(qlist){
@@ -322,11 +318,7 @@ static const char* get_chan(const char* chan, const char** arg, Quote** qlist){
 
 static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool has_cmd_perms = strcasecmp(chan+1, name) == 0;
-	
-	if(!has_cmd_perms){
-		MOD_MSG(ctx, "check_whitelist", name, &whitelist_cb, &has_cmd_perms);
-	}
+	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || inso_is_admin(ctx, name);
 
 	Quote** quotes = get_quotes(chan);
 	if(!quotes){
