@@ -1030,19 +1030,20 @@ int main(int argc, char** argv){
 
 	// clean stuff up so real leaks are more obvious in valgrind
 
-	curl_global_cleanup();
-
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		util_module_save(m);
 		IRC_MOD_CALL(m, on_quit, ());
 		free(m->lib_path);
 		dlclose(m->lib_handle);
 	}
+
 	sb_free(irc_modules);
 	sb_free(chan_mod_list);
 	sb_free(global_mod_list);
 	sb_free(mod_call_stack);
 	sb_free(cmd_queue);
+
+	curl_global_cleanup();
 
 	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
 		free(channels[i]);

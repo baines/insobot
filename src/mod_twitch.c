@@ -293,7 +293,6 @@ static void twitch_check_followers(void){
 
 		curl_easy_setopt(curl, CURLOPT_URL, url);
 		CURLcode ret = curl_easy_perform(curl);
-		curl_easy_cleanup(curl);
 
 		free(url);
 
