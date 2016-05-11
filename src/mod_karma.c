@@ -14,6 +14,7 @@ static void karma_join     (const char*, const char*);
 static bool karma_save     (FILE*);
 static bool karma_init     (const IRCCoreCtx*);
 static void karma_modified (void);
+static void karma_quit     (void);
 
 enum { KARMA_SHOW, KARMA_TOP };
 
@@ -26,6 +27,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_nick  = &karma_nick,
 	.on_join  = &karma_join,
 	.on_init  = &karma_init,
+	.on_quit  = &karma_quit,
 	.on_save  = &karma_save,
 	.on_modified = &karma_modified,
 	.commands = DEFINE_CMDS (
@@ -285,7 +287,7 @@ static bool karma_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void karma_modified(void){
+static void karma_quit(void){
 	for(int i = 0; i < sb_count(klist); ++i){
 		for(int j = 0; j < sb_count(klist[i].names); ++j){
 			free(klist[i].names[j]);
@@ -293,6 +295,9 @@ static void karma_modified(void){
 		sb_free(klist[i].names);
 	}
 	sb_free(klist);
+}
 
+static void karma_modified(void){
+	karma_quit();
 	karma_load();
 }

@@ -10,6 +10,7 @@ static bool twitch_init (const IRCCoreCtx*);
 static void twitch_cmd  (const char*, const char*, const char*, int);
 static void twitch_tick (void);
 static bool twitch_save (FILE*);
+static void twitch_quit (void);
 
 enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD };
 
@@ -20,6 +21,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &twitch_cmd,
 	.on_tick  = &twitch_tick,
 	.on_save  = &twitch_save,
+	.on_quit  = &twitch_quit,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY] = CONTROL_CHAR "fnotify",
 		[UPTIME]        = CONTROL_CHAR "uptime " CONTROL_CHAR_2 "uptime",
@@ -154,6 +156,7 @@ static void twitch_print_vod(size_t index, const char* name){
 
 	CURL* curl = inso_curl_init(url, &data);
 	curl_easy_perform(curl);
+	curl_easy_cleanup(curl);
 
 	free(url);
 	sb_push(data, 0);
@@ -290,6 +293,7 @@ static void twitch_check_followers(void){
 
 		curl_easy_setopt(curl, CURLOPT_URL, url);
 		CURLcode ret = curl_easy_perform(curl);
+		curl_easy_cleanup(curl);
 
 		free(url);
 
@@ -391,4 +395,15 @@ static bool twitch_save(FILE* f){
 		}
 	}
 	return true;
+}
+
+static void twitch_quit(void){
+	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
+		free(twitch_keys[i]);
+		if(twitch_vals[i].vod_url){
+			free(twitch_vals[i].vod_url);
+		}
+	}
+	sb_free(twitch_keys);
+	sb_free(twitch_vals);
 }

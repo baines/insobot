@@ -10,6 +10,7 @@ static void chans_cmd     (const char*, const char*, const char*, int);
 static void chans_join    (const char*, const char*);
 static bool chans_save    (FILE*);
 static void chans_connect (const char*);
+static void chans_quit    (void);
 
 enum { CHAN_JOIN, CHAN_LEAVE };
 
@@ -22,6 +23,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_join    = &chans_join,
 	.on_save    = &chans_save,
 	.on_connect = &chans_connect,
+	.on_quit    = &chans_quit,
 	.commands   = DEFINE_CMDS (
 		[CHAN_JOIN]  = CONTROL_CHAR "join",
 		[CHAN_LEAVE] = CONTROL_CHAR "leave " CONTROL_CHAR "part"
@@ -40,6 +42,13 @@ static inline const char* env_else(const char* env, const char* def){
 static bool chans_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return true;
+}
+
+static void chans_quit(void){
+	for(size_t i = 0; i < sb_count(join_list); ++i){
+		free(join_list[i]);
+	}
+	sb_free(join_list);
 }
 
 static void chans_cmd(const char* chan, const char* name, const char* arg, int cmd){

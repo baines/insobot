@@ -20,6 +20,7 @@
 #include <pthread.h>
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
+#include <curl/curl.h>
 #include "config.h"
 #include "module.h"
 #include "stb_sb.h"
@@ -587,10 +588,11 @@ IRC_NUM_CALLBACK(on_numeric) {
 		
 		free(names);
 	} else {
-		printf(". . . Numeric [%u]\n", event);
+		printf(":: [%u]", event);
 		for(int i = 0; i < count; ++i){
-			printf(". . %s\n", params[i]);
+			printf(" :: %s", params[i]);
 		}
+		puts("");
 	}
 }
 
@@ -747,18 +749,21 @@ int main(int argc, char** argv){
 	srand(time(0));
 	signal(SIGINT, &util_handle_sig);
 
-	int fds[3] = { dup(STDOUT_FILENO) };
-
-	pipe(fds + 1);
-	dup2(fds[2], STDOUT_FILENO);
-	dup2(fds[2], STDERR_FILENO);
-
-	setlinebuf(stdout);
-	setlinebuf(stderr);
-
 	pthread_t log_thread;
-	pthread_create(&log_thread, NULL, &util_log_thread_main, fds);
 	
+	if(!getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
+		int fds[3] = { dup(STDOUT_FILENO) };
+
+		pipe(fds + 1);
+		dup2(fds[2], STDOUT_FILENO);
+		dup2(fds[2], STDERR_FILENO);
+
+		setlinebuf(stdout);
+		setlinebuf(stderr);
+
+		pthread_create(&log_thread, NULL, &util_log_thread_main, fds);
+	}
+
 	user = util_env_else("IRC_USER", DEFAULT_BOT_NAME);
 	pass = util_env_else("IRC_PASS", NULL);
 	serv = util_env_else("IRC_SERV", "irc.nonexistent.domain");
@@ -832,6 +837,8 @@ int main(int argc, char** argv){
 			case GLOB_NOMATCH: errx(1, "No modules found!");   break;
 		}
 	}
+
+	curl_global_init(CURL_GLOBAL_ALL);
 
 	const IRCCoreCtx core_ctx = {
 		.get_username = &core_get_username,
@@ -909,6 +916,7 @@ int main(int argc, char** argv){
 		.event_numeric = irc_on_numeric,
 		.event_unknown = irc_on_unknown,
 	};
+
 
 	do {
 		irc_ctx = irc_create_session(&callbacks);
@@ -1020,9 +1028,41 @@ int main(int argc, char** argv){
 		}
 	} while(running);
 
+	// clean stuff up so real leaks are more obvious in valgrind
+
+	curl_global_cleanup();
+
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		util_module_save(m);
+		IRC_MOD_CALL(m, on_quit, ());
+		free(m->lib_path);
+		dlclose(m->lib_handle);
 	}
-	
+	sb_free(irc_modules);
+	sb_free(chan_mod_list);
+	sb_free(global_mod_list);
+	sb_free(mod_call_stack);
+	sb_free(cmd_queue);
+
+	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
+		free(channels[i]);
+		for(size_t j = 0; j < sb_count(chan_nicks[i]); ++j){
+			free(chan_nicks[i][j]);
+		}
+		sb_free(chan_nicks[i]);
+	}
+	sb_free(channels);
+	sb_free(chan_nicks);
+
+	free(bot_nick);
+
+	free(inotify_info.module_path);
+	free(inotify_info.data_path);
+
+	if(!getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
+		pthread_cancel(log_thread);
+		pthread_join(log_thread, NULL);
+	}
+
 	return 0;
 }

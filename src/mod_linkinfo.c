@@ -10,6 +10,7 @@
 
 static void linkinfo_msg  (const char*, const char*, const char*);
 static bool linkinfo_init (const IRCCoreCtx*);
+static void linkinfo_quit (void);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "linkinfo",
@@ -17,6 +18,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.flags    = IRC_MOD_DEFAULT,
 	.on_msg   = &linkinfo_msg,
 	.on_init  = &linkinfo_init,
+	.on_quit  = &linkinfo_quit
 };
 
 static const IRCCoreCtx* ctx;
@@ -94,6 +96,17 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	}
 
 	return ret;
+}
+
+static void linkinfo_quit(void){
+	regfree(&yt_url_regex);
+	regfree(&yt_title_regex);
+	regfree(&yt_length_regex);
+	regfree(&msdn_url_regex);
+	regfree(&generic_title_regex);
+	regfree(&twitter_url_regex);
+	regfree(&steam_url_regex);
+	regfree(&vimeo_url_regex);
 }
 
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){

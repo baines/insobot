@@ -9,6 +9,7 @@ static void alias_cmd      (const char*, const char*, const char*, int);
 static bool alias_save     (FILE*);
 static bool alias_init     (const IRCCoreCtx*);
 static void alias_modified (void);
+static void alias_quit     (void);
 
 enum { ALIAS_ADD, ALIAS_ADD_GLOBAL, ALIAS_DEL, ALIAS_DEL_GLOBAL, ALIAS_LIST, ALIAS_SET_PERM };
 
@@ -21,6 +22,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_msg      = &alias_msg,
 	.on_cmd      = &alias_cmd,
 	.on_init     = &alias_init,
+	.on_quit     = &alias_quit,
 	.commands    = DEFINE_CMDS (
 		[ALIAS_ADD]        = CONTROL_CHAR "alias",
 		[ALIAS_ADD_GLOBAL] = CONTROL_CHAR "galias",
@@ -134,7 +136,7 @@ static bool alias_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void alias_modified(void){
+static void alias_quit(void){
 	for(int i = 0; i < sb_count(alias_keys); ++i){
 		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
 			free(alias_keys[i][j]);
@@ -144,7 +146,10 @@ static void alias_modified(void){
 	}
 	sb_free(alias_keys);
 	sb_free(alias_vals);
+}
 
+static void alias_modified(void){
+	alias_quit();
 	alias_load();
 }
 

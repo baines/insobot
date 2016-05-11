@@ -13,6 +13,7 @@ static void quotes_modified (void);
 static void quotes_join     (const char*, const char*);
 static void quotes_cmd      (const char*, const char*, const char*, int);
 static bool quotes_save     (FILE*);
+static void quotes_quit     (void);
 
 enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES, GET_RANDOM };
 
@@ -24,6 +25,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd      = &quotes_cmd,
 	.on_join     = &quotes_join,
 	.on_save     = &quotes_save,
+	.on_quit     = &quotes_quit,
 	.commands    = DEFINE_CMDS (
 		[GET_QUOTE]     = CONTROL_CHAR "q "    CONTROL_CHAR "quote",
 		[ADD_QUOTE]     = CONTROL_CHAR "qadd " CONTROL_CHAR "q+",
@@ -152,8 +154,7 @@ static void load_csv(const char* content, Quote** qlist){
 
 }
 
-static bool quotes_reload(void){
-
+static void quotes_free(void){
 	for(int i = 0; i < sb_count(channels); ++i){
 		free(channels[i]);
 		for(int j = 0; j < sb_count(chan_quotes[i]); ++j){
@@ -163,13 +164,25 @@ static bool quotes_reload(void){
 	}
 	sb_free(channels);
 	sb_free(chan_quotes);
+}
+
+static void quotes_quit(void){
+	quotes_free();
+
+	free(gist_auth);
+	free(gist_api_url);
+	free(gist_pub_url);
+}
+
+static bool quotes_reload(void){
+
+	quotes_free();
 
 	char* data = NULL;
 	
 	CURL* curl = inso_curl_init(gist_api_url, &data);
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
 	CURLcode ret = curl_easy_perform(curl);
-	
 	curl_easy_cleanup(curl);
 
 	if(ret != 0){
@@ -188,9 +201,12 @@ static bool quotes_reload(void){
 		return false;
 	}
 
+	sb_free(data);
+
 	yajl_val files = yajl_tree_get(root, files_path, yajl_t_object);
 	if(!files){
 		fprintf(stderr, "mod_quotes: error getting files object\n");
+		yajl_tree_free(root);
 		return false;
 	}
 

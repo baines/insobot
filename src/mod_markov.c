@@ -405,14 +405,14 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 	switch(cmd){
 
 		case MARKOV_SAY: {
-			if(now - last_say >= say_cooldown){
+			if(admin || now - last_say >= say_cooldown){
 				markov_send(chan);
 				last_say = now;
 			}
 		} break;
 
 		case MARKOV_ASK: {
-			if(now - last_say >= say_cooldown){
+			if(admin || now - last_say >= say_cooldown){
 				markov_ask(chan);
 				last_say = now;
 			}
@@ -676,4 +676,6 @@ static void markov_quit(void){
 		free(markov_nicks[i]);
 	}
 	sb_free(markov_nicks);
+
+	regfree(&url_regex);
 }

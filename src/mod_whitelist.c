@@ -8,6 +8,7 @@ static bool whitelist_init    (const IRCCoreCtx*);
 static void whitelist_cmd     (const char*, const char*, const char*, int);
 static bool whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
+static void whitelist_quit    (void);
 
 enum { WL_CHECK_SELF, WL_CHECK_OTHER, WL_ADD, WL_DEL };
 
@@ -19,6 +20,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd     = &whitelist_cmd,
 	.on_mod_msg = &whitelist_mod_msg,
 	.on_save    = &whitelist_save,
+	.on_quit    = &whitelist_quit,
 	.commands   = DEFINE_CMDS (
 		[WL_CHECK_SELF]  = CONTROL_CHAR"wl    "CONTROL_CHAR"wlcheckme "CONTROL_CHAR"amiwhitelisted",
 		[WL_CHECK_OTHER] = CONTROL_CHAR"iswl  "CONTROL_CHAR"wlcheck",
@@ -86,6 +88,13 @@ static bool whitelist_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	whitelist_load();
 	return true;
+}
+
+static void whitelist_quit(void){
+	for(size_t i = 0; i < sb_count(wlist); ++i){
+		free(wlist[i].name);
+	}
+	sb_free(wlist);
 }
 
 static void whitelist_cmd(const char* chan, const char* name, const char* arg, int cmd){

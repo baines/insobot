@@ -17,6 +17,7 @@ static bool meta_save  (FILE*);
 static bool meta_check (const char*, const char*, int);
 static bool meta_init  (const IRCCoreCtx*);
 static void meta_join  (const char*, const char*);
+static void meta_quit  (void);
 
 enum { CMD_MODULES, CMD_MOD_ON, CMD_MOD_OFF, CMD_MOD_INFO };
 
@@ -30,6 +31,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_meta  = &meta_check,
 	.on_init  = &meta_init,
 	.on_join  = &meta_join,
+	.on_quit  = &meta_quit,
 	.commands = DEFINE_CMDS (
 		[CMD_MODULES]  = CONTROL_CHAR"m "     CONTROL_CHAR"modules",
 		[CMD_MOD_ON]   = CONTROL_CHAR"mon "   CONTROL_CHAR"modon",
@@ -56,6 +58,17 @@ static void free_all_strs(char** strs){
 	}
 }
 
+static void meta_quit(void){
+	free_all_strs(channels);
+	sb_free(channels);
+
+	for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
+		free_all_strs(enabled_mods_for_chan[i]);
+		sb_free(enabled_mods_for_chan[i]);
+	}
+	sb_free(enabled_mods_for_chan);
+}
+
 static bool reload_file(void){
 	assert(ctx);
 
@@ -78,20 +91,7 @@ static bool reload_file(void){
 
 	int chan_index = 0;
 
-	if(channels){
-		free_all_strs(channels);
-		sb_free(channels);
-		channels = NULL;
-	}
-
-	if(enabled_mods_for_chan){
-		for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
-			free_all_strs(enabled_mods_for_chan[i]);
-			sb_free(enabled_mods_for_chan[i]);
-		}
-		sb_free(enabled_mods_for_chan);
-		enabled_mods_for_chan = NULL;
-	}
+	meta_quit();
 
 	while(line){
 		char* line_state = NULL;
