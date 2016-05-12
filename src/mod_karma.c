@@ -202,7 +202,7 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 				int tmp = snprintf(
 					msg_ptr,
 					sz,
-					" [%s: %d]",
+					" |%s: %d|",
 					klist[i].names[klist[i].active_idx],
 					klist[i].up - klist[i].down
 				);
