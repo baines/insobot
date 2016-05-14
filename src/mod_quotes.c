@@ -189,6 +189,7 @@ static size_t curl_header_cb(char* buffer, size_t size, size_t nelem, void* arg)
 	char* etag;
 	if(buffer && sscanf(buffer, "ETag:%*[^\"]%m[^\r\n]", &etag) == 1){
 		if(gist_etag) free(gist_etag);
+		printf("mod_quotes: ETag: %s\n", etag);
 		gist_etag = etag;
 	}
 	return size * nelem;
@@ -405,7 +406,17 @@ static const char* get_chan(const char* chan, const char** arg, Quote*** qlist){
 		}
 	}
 
-	return NULL;
+	char* new_chan = strndup(*arg, end - *arg);
+	for(char* c = new_chan; *c; ++c) *c = tolower(*c);
+
+	*arg = *end ? end + 1 : end;
+
+	sb_push(channels, new_chan);
+	sb_push(chan_quotes, 0);
+
+	*qlist = chan_quotes + (sb_count(channels) - 1);
+
+	return new_chan;
 }
 
 static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
@@ -792,7 +803,7 @@ static bool quotes_save(FILE* file){
 	const unsigned char* payload = NULL;
 
 	yajl_gen_get_buf(json, &payload, &len);
-	printf("Payload: [%zu] [%s]\n", len, payload);
+	//printf("Payload: [%zu] [%s]\n", len, payload);
 
 	char* data = NULL;
 
@@ -804,8 +815,7 @@ static bool quotes_save(FILE* file){
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-	curl_easy_setopt(curl, CURLOPT_WRITEHEADER, stderr);
-	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &fwrite);
+	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &curl_header_cb);
 
 	CURLcode ret = curl_easy_perform(curl);
 
@@ -817,6 +827,7 @@ static bool quotes_save(FILE* file){
 			printf("RESPONSE: [%s]\n", data);
 		}
 	} else {
+		puts("mod_quotes: gist updated successfully");
 		quotes_dirty = false;
 	}
 
