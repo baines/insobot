@@ -725,15 +725,17 @@ static void core_self_save(void){
 }
 
 static void core_log(const char* fmt, ...){
-/*
-	char time_buf[64];
-	time_t now = time(0);
-	struct tm* now_tm = localtime(&now);
-	strftime(time_buf, sizeof(time_buf), "[%F][%T]", now_tm);
 
-	const char* mod_name = sb_count(mod_call_stack) ? sb_last(mod_call_stack)->ctx->name : "CORE";
-	fprintf(stderr, "%s %s: ", time_buf, mod_name);
-*/
+	if(getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
+		char time_buf[64];
+		time_t now = time(0);
+		struct tm* now_tm = localtime(&now);
+		strftime(time_buf, sizeof(time_buf), "[%F][%T]", now_tm);
+
+		const char* mod_name = sb_count(mod_call_stack) ? sb_last(mod_call_stack)->ctx->name : "CORE";
+		fprintf(stderr, "%s %s: ", time_buf, mod_name);
+	}
+
 	va_list v;
 	va_start(v, fmt);
 	vfprintf(stderr, fmt, v);
@@ -770,8 +772,7 @@ int main(int argc, char** argv){
 	port = util_env_else("IRC_PORT", "6667");
 	bot_nick = strdup(user);
 
-	char our_path[PATH_MAX];
-	memset(our_path, 0, sizeof(our_path));
+	char our_path[PATH_MAX] = {};
 
 	ssize_t sz = readlink("/proc/self/exe", our_path, sizeof(our_path));
 	if(sz < 0){

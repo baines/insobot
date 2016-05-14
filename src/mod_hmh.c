@@ -21,7 +21,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &hmh_mod_msg,
 	.commands = DEFINE_CMDS (
 		[CMD_SCHEDULE] = CONTROL_CHAR "sched " CONTROL_CHAR "schedule",
-		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time"
+		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time "     CONTROL_CHAR "when " CONTROL_CHAR "next"
 	)
 };
 

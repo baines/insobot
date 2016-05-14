@@ -6,6 +6,10 @@
 #include <yajl/yajl_tree.h>
 #include <yajl/yajl_gen.h>
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <errno.h>
 #include "utils.h"
 
 static bool quotes_init     (const IRCCoreCtx*);
@@ -43,6 +47,11 @@ static const IRCCoreCtx* ctx;
 static char* gist_auth;
 static char* gist_api_url;
 static char* gist_pub_url;
+static char* gist_etag;
+
+static int quotes_sem;
+static struct sembuf quotes_lock   = { .sem_op = -1, .sem_flg = SEM_UNDO };
+static struct sembuf quotes_unlock = { .sem_op = 1 , .sem_flg = SEM_UNDO };
 
 static char** channels;
 
@@ -55,6 +64,9 @@ typedef struct Quote_ {
 static Quote** chan_quotes;
 
 static bool quotes_dirty;
+
+// XXX: this is a bit of a hack
+static Quote* delete_chan_ptr;
 
 static char* gen_escaped_csv(Quote* quotes){
 	char* csv = NULL;
@@ -151,7 +163,6 @@ static void load_csv(const char* content, Quote** qlist){
 	}
 
 	free(buffer);
-
 }
 
 static void quotes_free(void){
@@ -174,15 +185,43 @@ static void quotes_quit(void){
 	free(gist_pub_url);
 }
 
-static bool quotes_reload(void){
+static size_t curl_header_cb(char* buffer, size_t size, size_t nelem, void* arg){
+	char* etag;
+	if(buffer && sscanf(buffer, "ETag:%*[^\"]%m[^\r\n]", &etag) == 1){
+		if(gist_etag) free(gist_etag);
+		gist_etag = etag;
+	}
+	return size * nelem;
+}
 
-	quotes_free();
+static bool quotes_reload(void){
 
 	char* data = NULL;
 	
 	CURL* curl = inso_curl_init(gist_api_url, &data);
 	curl_easy_setopt(curl, CURLOPT_USERPWD, gist_auth);
+	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &curl_header_cb);
+
+	struct curl_slist* slist = NULL;
+	if(gist_etag){
+		char* h;
+		asprintf(&h, "If-None-Match: %s", gist_etag);
+		slist = curl_slist_append(NULL, h);
+
+		free(h);
+
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+	}
+
 	CURLcode ret = curl_easy_perform(curl);
+
+	if(slist){
+		curl_slist_free_all(slist);
+	}
+
+	long http_code = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
 	curl_easy_cleanup(curl);
 
 	if(ret != 0){
@@ -190,18 +229,30 @@ static bool quotes_reload(void){
 		return false;
 	}
 
-	sb_push(data, 0);
+	if(http_code == 304){
+		sb_free(data);
+		return true;
+	}
+
+	if(http_code != 200){
+		printf("mod_quotes: bad response [%ld]\n", http_code);
+		sb_free(data);
+		return false;
+	}
+
+	puts("mod_quotes: doing full reload");
 
 	const char* files_path[]   = { "files",   NULL };
 	const char* content_path[] = { "content", NULL };
 
+	sb_push(data, 0);
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	sb_free(data);
+
 	if(!YAJL_IS_OBJECT(root)){
 		fprintf(stderr, "mod_quotes: error getting root object\n");
 		return false;
 	}
-
-	sb_free(data);
 
 	yajl_val files = yajl_tree_get(root, files_path, yajl_t_object);
 	if(!files){
@@ -209,6 +260,8 @@ static bool quotes_reload(void){
 		yajl_tree_free(root);
 		return false;
 	}
+
+	quotes_free();
 
 	for(size_t i = 0; i < files->u.object.len; ++i){
 		const char* filename = files->u.object.keys[i];
@@ -232,7 +285,8 @@ static bool quotes_reload(void){
 
 		load_csv(content->u.string, &sb_last(chan_quotes));
 	}
-	
+
+/*
 	for(size_t i = 0; i < sb_count(channels); ++i){
 		Quote* q = chan_quotes[i];
 
@@ -242,7 +296,7 @@ static bool quotes_reload(void){
 			printf("\t%d, %lu, %s\n", q[j].id, q[j].timestamp, q[j].text);
 		}
 	}
-
+*/
 	yajl_tree_free(root);
 
 	return true;
@@ -272,6 +326,28 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
 	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
 	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
+
+	char keybuf[9] = {};
+	memcpy(keybuf, gist_id, 8);
+	key_t key = strtoul(keybuf, NULL, 16);
+
+	int setup_sem = 1;
+	int sem_flags = IPC_CREAT | IPC_EXCL | 0666;
+	while((quotes_sem = semget(key, 1, sem_flags)) == -1){
+		if(errno == EEXIST){
+			sem_flags &= ~IPC_EXCL;
+			setup_sem = 0;
+		} else {
+			perror("semget");
+			break;
+		}
+	}
+
+	if(setup_sem){
+		if((semctl(quotes_sem, 0, SETVAL, 1) == -1)){
+			perror("semctl");
+		}
+	}
 
 	return quotes_reload();
 }
@@ -309,10 +385,10 @@ static Quote* get_quote(const char* chan, int id){
 	return NULL;
 }
 
-static const char* get_chan(const char* chan, const char** arg, Quote** qlist){
+static const char* get_chan(const char* chan, const char** arg, Quote*** qlist){
 	if(**arg != '#'){
 		if(qlist){
-			*qlist = *get_quotes(chan);
+			*qlist = get_quotes(chan);
 		}
 		return chan;
 	}
@@ -323,7 +399,7 @@ static const char* get_chan(const char* chan, const char** arg, Quote** qlist){
 		if(strncasecmp(*arg, *c, end - *arg) == 0 && (*c)[end - *arg] == 0){
 			*arg = *end ? end + 1 : end;
 			if(qlist){
-				*qlist = chan_quotes[c - channels];
+				*qlist = chan_quotes + (c - channels);
 			}
 			return *c;
 		}
@@ -336,11 +412,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || inso_is_admin(ctx, name);
 
-	Quote** quotes = get_quotes(chan);
-	if(!quotes){
-		fprintf(stderr, "mod_quotes: BUG, got message from channel we don't know about?\n");
-		return;
-	}
+	semop(quotes_sem, &quotes_lock, 1);
 
 	switch(cmd){
 		case GET_QUOTE: {
@@ -349,6 +421,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
+			quotes_reload();
 			const char* quote_chan = get_chan(chan, &arg, NULL);
 			if(!quote_chan){
 				ctx->send_msg(chan, "%s: Unknown channel.", name);
@@ -379,6 +452,16 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				ctx->send_msg(chan, "%s: Usage: \\qadd <text>", name);
 				break;
 			}
+
+			quotes_reload();
+
+			Quote** quotes = NULL;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
+			if(!quote_chan){
+				ctx->send_msg(chan, "%s: Unknown channel.", name);
+				break;
+			}
+
 			int id = 0;
 			if(sb_count(*quotes) > 0){
 				id = sb_last(*quotes).id + 1;
@@ -396,22 +479,36 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 		case DEL_QUOTE: {
 			if(!has_cmd_perms) break;
-			if(!*arg){
+			if(!*arg++){
 				ctx->send_msg(chan, "%s: Usage: \\qdel <id>", name);
 				break;
 			}
+
+			quotes_reload();
+
+			Quote** quotes = NULL;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
+			if(!quote_chan){
+				ctx->send_msg(chan, "%s: Unknown channel.", name);
+				break;
+			}
+
 			char* end;
 			int id = strtol(arg, &end, 0);
 			if(!end || end == arg || *end || id < 0){
 				ctx->send_msg(chan, "%s: That id doesn't look valid.", name);
 				break;
 			}
-			Quote* q = get_quote(chan, id);
+
+			Quote* q = get_quote(quote_chan, id);
 			if(q){
 				int off = q - *quotes;
 				sb_erase(*quotes, off);
 				ctx->send_msg(chan, "%s: Deleted quote %d\n", name, id);
 				quotes_dirty = true;
+				if(sb_count(*quotes) == 0){
+					delete_chan_ptr = *quotes;
+				}
 				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
@@ -424,6 +521,16 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
 				break;
 			}
+
+			quotes_reload();
+
+			Quote** quotes = NULL;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
+			if(!quote_chan){
+				ctx->send_msg(chan, "%s: Unknown channel.", name);
+				break;
+			}
+
 			char* arg2;
 			int id = strtol(arg, &arg2, 0);
 			
@@ -436,7 +543,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
-			Quote* q = get_quote(chan, id);
+			Quote* q = get_quote(quote_chan, id);
 			if(q){
 				free(q->text);
 				q->text = strdup(arg2 + 1);
@@ -455,6 +562,15 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
+			quotes_reload();
+
+			Quote** quotes = NULL;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
+			if(!quote_chan){
+				ctx->send_msg(chan, "%s: Unknown channel.", name);
+				break;
+			}
+
 			char* arg2;
 			int id = strtol(arg, &arg2, 0);
 			if(!arg2 || arg2 == arg || id < 0){
@@ -466,7 +582,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
-			Quote* q = get_quote(chan, id);
+			Quote* q = get_quote(quote_chan, id);
 			if(!q){
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 				break;
@@ -495,8 +611,10 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
-			Quote* qlist;
-			const char* quote_chan = get_chan(chan, &arg, &qlist);
+			quotes_reload();
+
+			Quote** quotes;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
 			if(!quote_chan){
 				ctx->send_msg(chan, "%s: Unknown channel.", name);
 				break;
@@ -514,7 +632,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
-			if(sb_count(qlist) == 0){
+			if(sb_count(*quotes) == 0){
 				ctx->send_msg(chan, "%s: There aren't any quotes here to search.", name);
 				break;
 			}
@@ -527,7 +645,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			char* buf_ptr = msg_buf;
 			ssize_t buf_len = sizeof(msg_buf);
 
-			for(Quote* q = qlist; q < sb_end(qlist); ++q){
+			for(Quote* q = *quotes; q < sb_end(*quotes); ++q){
 				if(strcasestr(q->text, arg) != NULL){
 					++found_count;
 					last_found_q = q;
@@ -565,23 +683,23 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 		case GET_RANDOM: {
 
-			Quote* qlist = *quotes;
-			const char* quote_chan = chan;
+			if(*arg) arg++;
 
-			if(*arg++){
-				quote_chan = get_chan(chan, &arg, &qlist);
-				if(!quote_chan){
-					ctx->send_msg(chan, "%s: Unknown channel.", name);
-					break;
-				}
+			quotes_reload();
+
+			Quote** quotes = NULL;
+			const char* quote_chan = get_chan(chan, &arg, &quotes);
+			if(!quote_chan){
+				ctx->send_msg(chan, "%s: Unknown channel.", name);
+				break;
 			}
 
-			if(!sb_count(qlist)){
+			if(!sb_count(*quotes)){
 				ctx->send_msg(chan, "%s: No quotes found.", name);
 				break;
 			}
 
-			int id = rand() % sb_count(qlist);
+			int id = rand() % sb_count(*quotes);
 
 			Quote* q = get_quote(quote_chan, id);
 			if(q){
@@ -594,6 +712,8 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 		}
 	}
+
+	semop(quotes_sem, &quotes_unlock, 1);
 }
 
 static void quotes_join(const char* chan, const char* user){
@@ -631,30 +751,38 @@ static bool quotes_save(FILE* file){
 
 	yajl_gen_string(json, desc_key, sizeof(desc_key) - 1);
 	yajl_gen_string(json, desc_val, sizeof(desc_val) - 1);
-
 	yajl_gen_string(json, files_key, sizeof(files_key) - 1);
+
 	yajl_gen_map_open(json);
 
 	yajl_gen_string(json, readme_key, sizeof(readme_key) - 1);
+
 	yajl_gen_map_open(json);
 	yajl_gen_string(json, content_key, sizeof(content_key) - 1);
 	yajl_gen_string(json, readme_val, sizeof(readme_val) - 1);
 	yajl_gen_map_close(json);
 
 	for(int i = 0; i < sb_count(channels); ++i){
+		if(sb_count(chan_quotes[i]) == 0){
+			if(chan_quotes[i] && chan_quotes[i] == delete_chan_ptr){
+				puts("DELETING");
+				yajl_gen_string(json, channels[i], strlen(channels[i]));
+				yajl_gen_null(json);
+				delete_chan_ptr = NULL;
+			}
+		} else {
+			yajl_gen_string(json, channels[i], strlen(channels[i]));
 
-		if(sb_count(chan_quotes[i]) == 0) continue;
+			yajl_gen_map_open(json);
 
-		yajl_gen_string(json, channels[i], strlen(channels[i]));
-		yajl_gen_map_open(json);
+			yajl_gen_string(json, content_key, sizeof(content_key) - 1);
 
-		yajl_gen_string(json, content_key, sizeof(content_key) - 1);
+			char* csv = gen_escaped_csv(chan_quotes[i]);
+			yajl_gen_string(json, csv, strlen(csv));
+			sb_free(csv);
 
-		char* csv = gen_escaped_csv(chan_quotes[i]);
-		yajl_gen_string(json, csv, strlen(csv));
-		sb_free(csv);
-
-		yajl_gen_map_close(json);
+			yajl_gen_map_close(json);
+		}
 	}
 
 	yajl_gen_map_close(json);
