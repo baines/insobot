@@ -221,8 +221,8 @@ static const char* markov_get_punct(){
 
 	size_t val = markov_rand(100);
 	
-	if(val < 60) return ".";
-	if(val < 75) return "?";
+	if(val < 67) return ".";
+	if(val < 72) return "?";
 	if(val < 85) return "!";
 	if(val < 97) return "...";
 	if(val < 98) return "‽";
