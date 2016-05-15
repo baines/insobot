@@ -183,6 +183,7 @@ static void quotes_quit(void){
 	free(gist_auth);
 	free(gist_api_url);
 	free(gist_pub_url);
+	free(gist_etag);
 }
 
 static size_t curl_header_cb(char* buffer, size_t size, size_t nelem, void* arg){
@@ -421,7 +422,7 @@ static const char* get_chan(const char* chan, const char** arg, Quote*** qlist){
 
 static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || inso_is_admin(ctx, name);
+	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || inso_is_wlist(ctx, name);
 
 	semop(quotes_sem, &quotes_lock, 1);
 
