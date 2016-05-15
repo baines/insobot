@@ -632,9 +632,12 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 
 			for(char** c = markov_nicks; c < sb_end(markov_nicks); ++c){
 				if(strcasecmp(word, *c) == 0){
-					continue;
+					skip = true;
+					break;
 				}
 			}
+
+			if(skip) continue;
 
 			idx = find_or_add_word(word, len);
 		}
