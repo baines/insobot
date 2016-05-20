@@ -265,6 +265,10 @@ static bool is_during_stream(void){
 	return live;
 }
 
+static void note_callback(intptr_t result, intptr_t arg){
+	if(result) *(time_t*)arg = result;
+}
+
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
@@ -272,80 +276,80 @@ static void print_time(const char* chan, const char* name){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
-	bool found = false;
-	enum { SEC_IN_MIN = 60, SEC_IN_HOUR = 60*60, SEC_IN_DAY = 24*60*60 };
-
+	int index = -1;
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		
-		int live_test = now - schedule[i];
-		if(live_test > 0 && live_test < SEC_IN_HOUR){
-			found = true;
-
-			int m = live_test / SEC_IN_MIN;
-			ctx->send_msg(
-				chan,
-				"%d minute%s into the stream, %d until Q&A. (if Casey is on schedule)",
-				m,
-				m != 1 ? "s" : "",
-				60 - m
-			);
-			break;
-		}
-
-		if(live_test >= SEC_IN_HOUR && live_test < (SEC_IN_HOUR*1.5)){
-			found = true;
-
-			int m = (live_test - SEC_IN_HOUR) / SEC_IN_MIN;
-			ctx->send_msg(
-				chan,
-				"%d minute%s into the Q&A, %d until end. (if Casey is on schedule)",
-				m,
-				m != 1 ? "s" : "",
-				30 - m
-			);
-			break;
-		}
-
-		if(schedule[i] > now){
-			found = true;
-
-			int diff = schedule[i] - now;
-
-			if(diff < SEC_IN_MIN){
-				ctx->send_msg(chan, "Next stream in %d second%s.", diff, diff > 1 ? "s" : "");
-				break;
-			}
-
-			if(diff < SEC_IN_HOUR){
-				diff /= SEC_IN_MIN;
-				ctx->send_msg(chan, "Next stream in %d minute%s.", diff, diff > 1 ? "s" : "");
-				break;
-			}
-
-			if(diff < SEC_IN_DAY){
-				int h = diff / SEC_IN_HOUR;
-				int m = (diff % SEC_IN_HOUR) / SEC_IN_MIN;
-				ctx->send_msg(
-					chan,
-					"Next stream in %d hour%s, %d minute%s.",
-					h,
-					h != 1 ? "s" : "",
-					m,
-					m != 1 ? "s" : ""
-				);
-				break;
-			}
-
-			int d = diff / SEC_IN_DAY;
-			ctx->send_msg(chan, "Next stream in %d day%s.", d, d != 1 ? "s" : "");
+		if(schedule[i] == 0 || schedule[i] == -1) continue;
+		if(schedule[i] > (now - (90*60))){
+			index = i;
 			break;
 		}
 	}
 
-	if(!found){
+	time_t note_time = 0;
+	MOD_MSG(ctx, "note_get_stream_start", "#handmade_hero #hero", &note_callback, &note_time);
+
+	int diff = now - note_time;
+	if(diff < (75*60)){
+		// add 15 mins since the note marks the end of the prestream.
+		diff += (15*60);
+	} else if(index == -1){
 		ctx->send_msg(chan, "No more streams scheduled, try checking handmadehero.org or @handmade_hero on twitter");
+		return;
+	} else {
+		note_time = 0;
+		diff = now - schedule[index];
 	}
 
+	if(diff < 0){
+		int until = -diff;
+
+		if(until / (60*60*24) == 1){
+			ctx->send_msg(chan, "Next stream tomorrow.");
+		} else if(until / (60*60*24) > 1){
+			ctx->send_msg(chan, "Next stream in %d days.", until / (60*60*24));
+		} else {
+			char  time_buf[256];
+			char* time_ptr = time_buf;
+			size_t time_sz = sizeof(time_buf);
+
+			if(until >= (60*60)){
+				int hours = until / (60*60);
+				snprintf_chain(&time_ptr, &time_sz, "%d hour%s, ", hours, hours == 1 ? "" : "s");
+				until %= (60*60);
+			}
+
+			if(time_ptr != time_buf || until >= 60){
+				int mins = until / 60;
+				snprintf_chain(&time_ptr, &time_sz, "%d minute%s", mins, mins == 1 ? "" : "s");
+				until %= (60*60*24);
+			}
+
+			if(time_ptr == time_buf){
+				sprintf(time_buf, "%d second%s", until, until == 1 ? "" : "s");
+			}
+
+			ctx->send_msg(chan, "Next stream in %s.", time_buf);
+		}
+	} else {
+		char* format;
+		int into = diff / 60;
+		int duration = 15;
+
+		if(into < 15){
+			format = "%d %s into the pre-stream Q&A. %d until start. %s";
+		} else if(into < 75){
+			into -= 15;
+			duration = 60;
+			format = "%d %s into the main stream. %d until Q&A. %s";
+		} else {
+			into -= 75;
+			format = "%d %s into the Q&A, %d until end. %s";
+		}
+
+		const char* suffix = note_time ? "(based on NOTE)" : "(based on schedule)";
+		const char* time_unit = into == 1 ? "minute" : "minutes";
+		ctx->send_msg(chan, format, into, time_unit, duration - into, suffix);
+	}
 }
 
 static void hmh_cmd(const char* chan, const char* name, const char* msg, int cmd){

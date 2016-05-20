@@ -237,6 +237,7 @@ static void util_process_pending_cmds(void){
 
 			case IRC_CMD_MSG: {
 				irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
+				IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
 			} break;
 
 			case IRC_CMD_RAW: {

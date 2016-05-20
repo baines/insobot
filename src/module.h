@@ -47,6 +47,9 @@ typedef struct IRCModuleCtx_ {
 
 	// called if something was written to stdin
 	void (*on_stdin)   (const char* text);
+
+	// called when a message is sent
+	void (*on_msg_out) (const char* chan, const char* msg);
 } IRCModuleCtx;
 
 // passed to modules to provide functions for them to use.
