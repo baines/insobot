@@ -265,18 +265,45 @@ static void dodgy_html_unescape(char* msg, size_t len){
 
 }
 
-static int twitter_add_url_replacements(Replacement** out, yajl_val urls, const char** exp_url_path){
-	int size = 0;
-	const char* tco_url_path[] = { "url", NULL };
+static const char* url_path[]        = { "url", NULL };
+static const char* exp_url_path[]    = { "expanded_url", NULL };
+static const char* media_url_path[]  = { "media_url_https", NULL };
+static const char* video_info_path[] = { "video_info", "variants", NULL };
+static const char* bitrate_path[]    = { "bitrate", NULL };
 
-	for(int i = 0; i < urls->u.array.len; ++i){
-		yajl_val tco_url = yajl_tree_get(urls->u.array.values[i], tco_url_path, yajl_t_string);
-		yajl_val exp_url = yajl_tree_get(urls->u.array.values[i], exp_url_path, yajl_t_string);
+static int twitter_parse_entities(Replacement** out, yajl_val entity, bool is_media){
+	int size = 0;
+	bool is_video = false;
+
+	for(int i = 0; i < entity->u.array.len; ++i){
+		yajl_val exp_url;
+
+		if(is_media && (exp_url = yajl_tree_get(entity->u.array.values[i], video_info_path, yajl_t_array))){
+			int best_bitrate = 0;
+			int best_index = 0;
+
+			for(int j = 0; j < exp_url->u.array.len; ++j){
+				yajl_val bitrate = yajl_tree_get(exp_url->u.array.values[j], bitrate_path, yajl_t_number);
+				if(bitrate && bitrate->u.number.i >= best_bitrate){
+					best_bitrate = bitrate->u.number.i;
+					best_index = j;
+				}
+			}
+
+			is_video = true;
+			exp_url = yajl_tree_get(exp_url->u.array.values[best_index], url_path, yajl_t_string);
+
+		} else {
+			const char** exp_path = is_media ? media_url_path : exp_url_path;
+			exp_url = yajl_tree_get(entity->u.array.values[i], exp_path, yajl_t_string);
+		}
+
+		yajl_val tco_url = yajl_tree_get(entity->u.array.values[i], url_path, yajl_t_string);
 
 		if(!tco_url || !exp_url) continue;
 
 		//XXX: better image url hack
-		if(strcmp(*exp_url_path, "media_url_https") == 0){
+		if(is_media && !is_video){
 			char* better_url;
 			asprintf(&better_url, "%s:orig", exp_url->u.string);
 			free(exp_url->u.string);
@@ -334,7 +361,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	const char* text_path[] = { "text", NULL };
 	const char* user_path[] = { "user", "name", NULL };
 	const char* urls_path[] = { "entities", "urls", NULL };
-	const char* media_path[] = { "entities", "media", NULL };
+	const char* media_path[] = { "extended_entities", "media", NULL };
 
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
 
@@ -355,15 +382,11 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 
 	Replacement* url_replacements = NULL;
 
-	const char* exp_url_path[] = { "expanded_url", NULL };
-	const char* media_url_path[] = { "media_url_https", NULL };
-
 	size_t text_mem_size = strlen(text->u.string) + 1;
 
 	//XXX: The expanding will break here if a media url comes before a url, can this happen?
-
-	if(urls)  text_mem_size += twitter_add_url_replacements(&url_replacements, urls, exp_url_path);
-	if(media) text_mem_size += twitter_add_url_replacements(&url_replacements, media, media_url_path);
+	if(urls)  text_mem_size += twitter_parse_entities(&url_replacements, urls, false);
+	if(media) text_mem_size += twitter_parse_entities(&url_replacements, media, true);
 
 	char* fixed_text = alloca(text_mem_size);
 
