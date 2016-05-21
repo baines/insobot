@@ -714,17 +714,12 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 
-			int id = rand() % sb_count(*quotes);
+			Quote* q = *quotes + (rand() % sb_count(*quotes));
 
-			Quote* q = get_quote(quote_chan, id);
-			if(q){
-				struct tm* date_tm = gmtime(&q->timestamp);
-				char date[256];
-				strftime(date, sizeof(date), "%F", date_tm);
-				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", id, q->text, quote_chan+1, date);
-			} else {
-				ctx->send_msg(chan, "%s: Can't find that quote.", name);
-			}
+			struct tm* date_tm = gmtime(&q->timestamp);
+			char date[256];
+			strftime(date, sizeof(date), "%F", date_tm);
+			ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, quote_chan+1, date);
 		}
 	}
 
