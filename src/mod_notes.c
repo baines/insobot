@@ -7,6 +7,7 @@ static void notes_msg     (const char*, const char*, const char*);
 static void notes_msg_out (const char*, const char*);
 static bool notes_init    (const IRCCoreCtx*);
 static void notes_mod_msg (const char*, const IRCModMsg*);
+static void notes_ipc     (int, const uint8_t*, size_t);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "notes",
@@ -15,7 +16,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_msg     = &notes_msg,
 	.on_msg_out = &notes_msg_out,
 	.on_init    = &notes_init,
-	.on_mod_msg = &notes_mod_msg
+	.on_mod_msg = &notes_mod_msg,
+	.on_ipc     = &notes_ipc
 };
 
 enum { NOTE_NONE, NOTE_STREAM_START, NOTE_GENERIC };
@@ -68,6 +70,10 @@ static void notes_msg(const char* chan, const char* name, const char* msg){
 
 		note_push(&n);
 	}
+}
+
+static void notes_ipc(int target, const uint8_t* data, size_t data_len){
+	//TODO
 }
 
 static void notes_msg_out(const char* chan, const char* msg){

@@ -50,6 +50,9 @@ typedef struct IRCModuleCtx_ {
 
 	// called when a message is sent
 	void (*on_msg_out) (const char* chan, const char* msg);
+
+	// called on reciept of an inter-process message
+	void (*on_ipc)     (int sender_id, const uint8_t* data, size_t data_len);
 } IRCModuleCtx;
 
 // passed to modules to provide functions for them to use.
@@ -63,6 +66,7 @@ struct IRCCoreCtx_ {
 	void           (*part)         (const char* chan);
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));
 	void           (*send_raw)     (const char* raw);
+	void           (*send_ipc)     (int target, const void* data, size_t data_len); // target 0 == broadcast
 	void           (*send_mod_msg) (IRCModMsg* msg);
 	void           (*save_me)      (void);
 	void           (*log)          (const char* fmt, ...) __attribute__ ((format (printf, 1, 2)));
