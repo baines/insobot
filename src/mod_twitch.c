@@ -130,7 +130,7 @@ static void twitch_check_uptime(size_t index){
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	long ret = (twitch_curl(&data, info->last_uptime_check, "https://api.twitch.tv/kraken/streams/%s", chan + 1) == 304);
+	long ret = twitch_curl(&data, info->last_uptime_check, "https://api.twitch.tv/kraken/streams/%s", chan + 1);
 	if(ret == 304){
 		return;
 	}
@@ -186,13 +186,11 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 	const char url_fmt[] = "https://api.twitch.tv/kraken/channels/%s/videos?broadcasts=true&limit=1";
 
 	long ret = twitch_curl(&data, t->last_vod_check, url_fmt, chan + 1);
-	if(ret == 304){
+	if(ret == 304 || ret == -1){
 		if(t->last_vod_msg){
 			ctx->send_msg(send_chan, "%s: %s", name, t->last_vod_msg);
 		}
 		return;
-	} else if(ret == -1){
-		goto out;
 	}
 
 	sb_push(data, 0);
@@ -415,8 +413,6 @@ static void twitch_check_followers(void){
 out:
 	if(data) sb_free(data);
 	if(root) yajl_tree_free(root);
-
-	curl_easy_cleanup(curl);
 }
 
 static void twitch_tick(void){
