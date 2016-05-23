@@ -18,7 +18,7 @@ typedef struct IRCModuleCtx_ {
 	unsigned int       flags;
 	
 	bool (*on_init)    (const IRCCoreCtx* ctx);
-	void (*on_quit)    (void); //TODO
+	void (*on_quit)    (void);
 
 	// IRC event callbacks
 	void (*on_connect) (const char* serv);

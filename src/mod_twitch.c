@@ -36,12 +36,17 @@ static const size_t follower_check_interval = 60;
 
 static time_t last_follower_check;
 
+static CURL* curl;
+
 typedef struct {
 	bool do_follower_notify;
+	time_t last_follower_time;
+
 	time_t stream_start;
 	time_t last_uptime_check;
-	time_t last_follower_time;
-	char* vod_url;
+
+	time_t last_vod_check;
+	char*  last_vod_msg;
 } TwitchInfo;
 
 char**      twitch_keys;
@@ -77,7 +82,44 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	}
 	fclose(f);
 
+	curl = curl_easy_init();
+
 	return true;
+}
+
+static long twitch_curl(char**, long, const char*, ...) __attribute__((format(printf, 3, 4)));
+
+static long twitch_curl(char** data, long last_time, const char* fmt, ...){
+	va_list v;
+	va_start(v, fmt);
+
+	char* url;
+	vasprintf(&url, fmt, v);
+
+	va_end(v);
+
+	*data = NULL;
+	inso_curl_reset(curl, url, data);
+	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, last_time);
+
+	CURLcode ret = curl_easy_perform(curl);
+	free(url);
+
+	if(ret != 0){
+		fprintf(stderr, "twitch_curl: error: %s\n", curl_easy_strerror(ret));
+		sb_free(*data);
+		return -1;
+	}
+
+	long http_code = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+	if(http_code == 304){
+		sb_free(*data);
+	}
+
+	return http_code;
 }
 
 static void twitch_check_uptime(size_t index){
@@ -88,16 +130,16 @@ static void twitch_check_uptime(size_t index){
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	char* url;
-	asprintf(&url, "https://api.twitch.tv/kraken/streams/%s", chan + 1);
+	long ret = (twitch_curl(&data, info->last_uptime_check, "https://api.twitch.tv/kraken/streams/%s", chan + 1) == 304);
+	if(ret == 304){
+		return;
+	}
 
-	CURL* curl = inso_curl_init(url, &data);
-	CURLcode ret = curl_easy_perform(curl);
 	sb_push(data, 0);
 
 	const char* created_path[] = { "stream", "created_at", NULL };
 
-	if(ret == 0 && (root = yajl_tree_parse(data, NULL, 0))){
+	if(ret != -1 && (root = yajl_tree_parse(data, NULL, 0))){
 
 		yajl_val start = yajl_tree_get(root, created_path, yajl_t_string);
 
@@ -108,17 +150,9 @@ static void twitch_check_uptime(size_t index){
 				info->stream_start = timegm(&created_tm);
 			} else {
 				info->stream_start = 0;
-				if(info->vod_url){
-					free(info->vod_url);
-					info->vod_url = NULL;
-				}
 			}
 		} else {
 			info->stream_start = 0;
-			if(info->vod_url){
-				free(info->vod_url);
-				info->vod_url = NULL;
-			}
 		}
 
 		yajl_tree_free(root);
@@ -127,8 +161,6 @@ static void twitch_check_uptime(size_t index){
 		fprintf(stderr, "mod_twitch: error getting uptime.\n");
 	}
 
-	curl_easy_cleanup(curl);
-	free(url);
 	sb_free(data);
 }
 
@@ -145,20 +177,24 @@ static bool twitch_check_live(size_t index){
 	return t->stream_start != 0;
 }
 
-static void twitch_print_vod(size_t index, const char* name){
+static void twitch_print_vod(size_t index, const char* send_chan, const char* name){
 
 	char* chan    = twitch_keys[index];
 	TwitchInfo* t = twitch_vals + index;
 
-	char* url;
 	char* data = NULL;
-	asprintf(&url, "https://api.twitch.tv/kraken/channels/%s/videos?broadcasts=true&limit=1", chan + 1);
+	const char url_fmt[] = "https://api.twitch.tv/kraken/channels/%s/videos?broadcasts=true&limit=1";
 
-	CURL* curl = inso_curl_init(url, &data);
-	curl_easy_perform(curl);
-	curl_easy_cleanup(curl);
+	long ret = twitch_curl(&data, t->last_vod_check, url_fmt, chan + 1);
+	if(ret == 304){
+		if(t->last_vod_msg){
+			ctx->send_msg(send_chan, "%s: %s", name, t->last_vod_msg);
+		}
+		return;
+	} else if(ret == -1){
+		goto out;
+	}
 
-	free(url);
 	sb_push(data, 0);
 
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
@@ -167,31 +203,41 @@ static void twitch_print_vod(size_t index, const char* name){
 		goto out;
 	}
 
-	const char* videos_path[]  = { "videos", NULL };
-	const char* status_path[]  = { "status", NULL };
-	const char* vod_url_path[] = { "url", NULL };
+	const char* videos_path[]      = { "videos", NULL };
+	const char* vod_url_path[]     = { "url", NULL };
+	const char* vod_title_path[]   = { "title", NULL };
+//	const char* vod_created_path[] = { "created_at", NULL };
 
 	yajl_val videos = yajl_tree_get(root, videos_path, yajl_t_array);
-	if(!videos){
+	if(!videos || !YAJL_IS_ARRAY(videos)){
 		fprintf(stderr, "twitch_print_vod: videos null\n");
 		goto out;
 	}
 
-	for(size_t i = 0; i < videos->u.array.len; ++i){
-		yajl_val status  = yajl_tree_get(videos->u.array.values[i], status_path , yajl_t_string);
-		yajl_val vod_url = yajl_tree_get(videos->u.array.values[i], vod_url_path, yajl_t_string);
-
-		if(!status || !vod_url){
-			fprintf(stderr, "twitch_print_vod: status or url null\n");
-			goto out;
-		}
-
-		if(strcmp(status->u.string, "recording") == 0){
-			t->vod_url = strdup(vod_url->u.string);
-			ctx->send_msg(chan, "%s: %s\n", name, vod_url->u.string);
-			break;
-		}
+	if(videos->u.array.len < 1){
+		fprintf(stderr, "twitch_print_vod: videos empty");
+		goto out;
 	}
+
+	yajl_val vods = videos->u.array.values[0];
+
+	yajl_val vod_url   = yajl_tree_get(vods, vod_url_path, yajl_t_string);
+	yajl_val vod_title = yajl_tree_get(vods, vod_title_path, yajl_t_string);
+//	yajl_val vod_date  = yajl_tree_get(vods, vod_created_path, yajl_t_string);
+
+	if(!vod_url){
+		fprintf(stderr, "twitch_print_vod: url/date null\n");
+		goto out;
+	}
+
+	if(t->last_vod_msg){
+		free(t->last_vod_msg);
+	}
+
+	const char* title = vod_title->u.string ?: "untitled";
+
+	asprintf(&t->last_vod_msg, "%s's last VoD: %s [%s]", chan + 1, vod_url->u.string, title);
+	ctx->send_msg(send_chan, "%s: %s", name, t->last_vod_msg);
 
 out:
 	if(data) sb_free(data);
@@ -200,6 +246,7 @@ out:
 
 static void twitch_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	bool is_admin = strcasecmp(chan + 1, name) == 0 || inso_is_admin(ctx, name);
+	bool is_wlist = is_admin || inso_is_wlist(ctx, name);
 
 	switch(cmd){
 		case FOLLOW_NOTIFY: {
@@ -250,19 +297,23 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case TWITCH_VOD: {
+			TwitchInfo* t;
 
-			TwitchInfo* t = twitch_get_or_add(chan);
+			if(*arg++){
+				if(!is_wlist) break;
+				size_t len = strlen(arg);
+				char* chan_arg = alloca(len + 2);
+				*chan_arg = '#';
+				memcpy(chan_arg + 1, arg, len + 1);
 
-			if(twitch_check_live(t - twitch_vals)){
-				if(t->vod_url){
-					ctx->send_msg(chan, "%s: %s", name, t->vod_url);
-				} else {
-					twitch_print_vod(t - twitch_vals, name);
-				}
-			} else if(t->vod_url){
-				free(t->vod_url);
-				t->vod_url = NULL;
+				if(*arg == '#') chan_arg++;
+
+				t = twitch_get_or_add(chan_arg);
+			} else {
+				t = twitch_get_or_add(chan);
 			}
+
+			twitch_print_vod(t - twitch_vals, chan, name);
 		} break;
 	}
 }
@@ -277,8 +328,6 @@ static void twitch_check_followers(void){
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	CURL* curl = inso_curl_init(NULL, &data);
-
 	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 
 		char* chan    = twitch_keys[i];
@@ -288,21 +337,14 @@ static void twitch_check_followers(void){
 			continue;
 		}
 
-		char* url;
-		asprintf(&url, twitch_api_template, chan + 1);
-
-		curl_easy_setopt(curl, CURLOPT_URL, url);
-		CURLcode ret = curl_easy_perform(curl);
-
-		free(url);
-
-		sb_push(data, 0);
-		
-		if(ret != 0){
-			fprintf(stderr, "mod_twitch: curl error %s\n", curl_easy_strerror(ret));
+		long ret = twitch_curl(&data, last_follower_check, twitch_api_template, chan + 1);
+		if(ret == 304){
+			continue;
+		} else if(ret == -1){
 			goto out;
 		}
 
+		sb_push(data, 0);
 		root = yajl_tree_parse(data, NULL, 0);
 
 		if(!YAJL_IS_OBJECT(root)){
@@ -399,10 +441,12 @@ static bool twitch_save(FILE* f){
 static void twitch_quit(void){
 	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 		free(twitch_keys[i]);
-		if(twitch_vals[i].vod_url){
-			free(twitch_vals[i].vod_url);
+		if(twitch_vals[i].last_vod_msg){
+			free(twitch_vals[i].last_vod_msg);
 		}
 	}
 	sb_free(twitch_keys);
 	sb_free(twitch_vals);
+
+	curl_easy_cleanup(curl);
 }
