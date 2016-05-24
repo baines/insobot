@@ -18,6 +18,7 @@ static void markov_quit (void);
 static void markov_join (const char*, const char*);
 static void markov_cmd  (const char*, const char*, const char*, int);
 static void markov_msg  (const char*, const char*, const char*);
+static void markov_mod_msg(const char* sender, const IRCModMsg* msg);
 static bool markov_save (FILE*);
 
 enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_STATUS };
@@ -31,6 +32,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_msg   = &markov_msg,
 	.on_join  = &markov_join,
 	.on_save  = &markov_save,
+	.on_mod_msg = &markov_mod_msg,
 	.commands = DEFINE_CMDS (
 		[MARKOV_SAY]      = CONTROL_CHAR "say",
 		[MARKOV_ASK]      = CONTROL_CHAR "ask",
@@ -668,6 +670,19 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 	}
 
 	sb_free(msg);
+}
+
+static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "markov_gen") == 0){
+
+		char* buffer = malloc(256);
+		if(!markov_gen(buffer, 256)){
+			free(buffer);
+			return;
+		}
+
+		msg->callback((intptr_t)buffer, msg->cb_arg);
+	}
 }
 
 static void markov_quit(void){
