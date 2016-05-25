@@ -8,7 +8,8 @@
 static void haiku_cmd (const char*, const char*, const char*, int);
 static bool haiku_init(const IRCCoreCtx*);
 
-enum { HAIKU };
+enum { HAIKU, SYLLABLE_COUNT };
+
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "haiku",
@@ -16,7 +17,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd     = &haiku_cmd,
 	.on_init    = &haiku_init,
 	.commands = DEFINE_CMDS (
-		[HAIKU] = CONTROL_CHAR "haiku " CONTROL_CHAR_2 "haiku"
+		[HAIKU] = CONTROL_CHAR "haiku " CONTROL_CHAR_2 "haiku",
+		[SYLLABLE_COUNT] = CONTROL_CHAR "scount " CONTROL_CHAR_2 "scount"
 	)
 };
 
@@ -99,7 +101,15 @@ static void haiku_markov_cb(intptr_t result, intptr_t arg){
 }
 
 static void haiku_cmd (const char* chan, const char* name, const char* arg, int cmd){
-	if(cmd != HAIKU || !inso_is_wlist(ctx, name)) return;
+	if(!inso_is_wlist(ctx, name)) return;
+
+	if(cmd == SYLLABLE_COUNT && *arg++){
+		char* word = strndupa(arg, strchrnul(arg, ' ') - arg);
+		ctx->send_msg(chan, "%s: I think [%s] has %d syllables.", name, word, syllable_estimate(word));
+		return;
+	}
+
+	if(cmd != HAIKU) return;
 
 	int syl_required[] = { 5, 7, 5 };
 	char output[256] = {};

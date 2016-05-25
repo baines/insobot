@@ -329,7 +329,6 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 	for(; (p - buff) < sz; p += (sizeof(*ev) + ev->len)){
 		ev = (struct inotify_event*)p;
 
-
 		if(ev->wd == inotify.module.wd){
 			if(!(ev->mask & (IN_CLOSE_WRITE | IN_MOVED_TO))) continue;
 
