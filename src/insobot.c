@@ -194,13 +194,8 @@ static inline const char* util_env_else(const char* env, const char* def){
 static bool util_check_perms(const char* mod, const char* chan, int id){
 	bool ret = true;
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-		if(m->ctx->on_meta){
-			sb_push(mod_call_stack, m);
-			bool r = m->ctx->on_meta(mod, chan, id);
-			ret = ret & r;
-			//printf("checking %s:%s:%d --> %d\n", mod, chan, id, ret);
-			sb_pop(mod_call_stack);
-		}
+		if(!m->ctx->on_meta) continue;
+		ret &= IRC_MOD_CALL(m, on_meta, (mod, chan, id));
 	}
 	return ret;
 }
@@ -216,10 +211,7 @@ static void util_dispatch_cmds(Module* m, const char* chan, const char* name, co
 			const size_t sz = cmd_end - cmd;
 
 			if(strncasecmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
-				sb_push(mod_call_stack, m);
-				m->ctx->on_cmd(chan, name, msg + sz, cmd_list - m->ctx->commands);
-				sb_pop(mod_call_stack);
-				return;
+				IRC_MOD_CALL(m, on_cmd, (chan, name, msg + sz, cmd_list - m->ctx->commands));
 			}
 
 			while(*cmd_end == ' ') ++cmd_end;
@@ -307,7 +299,7 @@ static void util_module_save(Module* m){
 	inotify.data.wd = inotify_add_watch(inotify.fd, inotify.data.path, IN_DELETE_SELF);
 
 	sb_push(mod_call_stack, m);
-	
+
 	const char*  save_fname = core_get_datafile();
 	const size_t save_fsz   = strlen(save_fname);
 	const char   tmp_end[]  = ".XXXXXX";
@@ -412,7 +404,7 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 				irc_on_join(irc_ctx, "join", chan_nicks[i][j], c, 1);
 			}
 		}
-		printf("%s: Init successful.\n", mod_name);
+		puts("... Init successful.");
 	}
 
 	qsort(irc_modules, sb_count(irc_modules), sizeof(*irc_modules), &util_mod_sort);
@@ -746,10 +738,11 @@ IRC_STR_CALLBACK(on_unknown) {
 		timerclear(&idle_time);
 		ping_sent = 0;
 	} else {
-		printf("Unknown event: %s.\n", event);
+		printf("Unknown event:\n:: %s :: %s", event, origin);
 		for(int i = 0; i < count; ++i){
-			printf(". . %s\n", params[i]);
+			printf(" :: %s", params[i]);
 		}
+		puts("");
 	}
 }
 
@@ -770,7 +763,7 @@ IRC_NUM_CALLBACK(on_numeric) {
 		
 		free(names);
 	} else {
-		printf(":: [%u]", event);
+		printf(":: [%03u] :: %s", event, origin);
 		for(int i = 0; i < count; ++i){
 			printf(" :: %s", params[i]);
 		}
@@ -1010,6 +1003,12 @@ int main(int argc, char** argv){
 	memcpy(path_end, in_dat_suffix, sizeof(in_dat_suffix));
 	util_inotify_add(&inotify.data, our_path, IN_CLOSE_WRITE | IN_MOVED_TO);
 
+	// ipc & curl init
+
+	util_ipc_init();
+
+	curl_global_init(CURL_GLOBAL_ALL);
+
 	// find modules
 
 	memcpy(path_end, glob_suffix, sizeof(glob_suffix));
@@ -1032,12 +1031,6 @@ int main(int argc, char** argv){
 	}
 
 	globfree(&glob_data);
-
-	// ipc & curl init
-
-	util_ipc_init();
-
-	curl_global_init(CURL_GLOBAL_ALL);
 
 	// modules init
 
