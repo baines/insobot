@@ -32,6 +32,11 @@
 	#define LIBIRC_OPTION_SSL_NO_VERIFY (1 << 3)
 #endif
 
+// XXX: hack for older gcc
+#if !defined(__GNUC__) || __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 9)
+	#define __auto_type intptr_t
+#endif
+
 /******************************
  * Types, global vars, macros *
  * ****************************/
