@@ -305,7 +305,7 @@ static int twitter_parse_entities(Replacement** out, yajl_val entity, bool is_me
 		//XXX: better image url hack
 		if(is_media && !is_video){
 			char* better_url;
-			asprintf(&better_url, "%s:orig", exp_url->u.string);
+			asprintf_check(&better_url, "%s:orig", exp_url->u.string);
 			free(exp_url->u.string);
 			exp_url->u.string = better_url;
 		}
@@ -338,8 +338,8 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	char* data = NULL;
 	char* url = NULL;
 
-	asprintf(&auth_token, "Authorization: Bearer %s", twitter_token);
-	asprintf(&url, "https://api.twitter.com/1.1/statuses/show/%s.json", tweet_id);
+	asprintf_check(&auth_token, "Authorization: Bearer %s", twitter_token);
+	asprintf_check(&url, "https://api.twitter.com/1.1/statuses/show/%s.json", tweet_id);
 
 	CURL* curl = inso_curl_init(url, &data);
 
@@ -427,7 +427,7 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 	const char* appid = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
 
 	char* url;
-	asprintf(&url, "http://store.steampowered.com/api/appdetails?appids=%s&cc=US", appid);
+	asprintf_check(&url, "http://store.steampowered.com/api/appdetails?appids=%s&cc=US", appid);
 
 	char* data = NULL;
 	yajl_val root = NULL;
@@ -496,7 +496,7 @@ static void do_vimeo_info(const char* chan, const char* msg, regmatch_t* matches
 
 	char* id = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
 	char* url;
-	asprintf(&url, "https://vimeo.com/api/oembed.json?url=https%%3A%%2F%%2Fvimeo.com%%2F%s", id); 
+	asprintf_check(&url, "https://vimeo.com/api/oembed.json?url=https%%3A%%2F%%2Fvimeo.com%%2F%s", id); 
 
 	CURL* curl = inso_curl_init(url, &data);
 	int ret = curl_easy_perform(curl);

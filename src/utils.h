@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <assert.h>
 #include <time.h>
 #include <curl/curl.h>
 #include "stb_sb.h"
@@ -25,6 +26,13 @@
 		"!!!! ARRAY_SIZE used on a pointer !!!!"                 \
 	);                                                           \
 	sizeof(x) / sizeof(*x);                                      \
+})
+
+#define asprintf_check(...) ({       \
+	if(asprintf(__VA_ARGS__) == -1){ \
+		perror("asprintf");          \
+		assert(0);                   \
+	}                                \
 })
 
 static inline size_t inso_curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){

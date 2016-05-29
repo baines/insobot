@@ -210,7 +210,7 @@ static bool quotes_reload(void){
 	struct curl_slist* slist = NULL;
 	if(gist_etag){
 		char* h;
-		asprintf(&h, "If-None-Match: %s", gist_etag);
+		asprintf_check(&h, "If-None-Match: %s", gist_etag);
 		slist = curl_slist_append(NULL, h);
 
 		free(h);
@@ -326,9 +326,9 @@ static bool quotes_init(const IRCCoreCtx* _ctx){
 		return false;
 	}
 
-	asprintf(&gist_auth, "%s:%s", gist_user, gist_token);
-	asprintf(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
-	asprintf(&gist_pub_url, "https://gist.github.com/%s", gist_id);
+	asprintf_check(&gist_auth, "%s:%s", gist_user, gist_token);
+	asprintf_check(&gist_api_url, "https://api.github.com/gists/%s", gist_id);
+	asprintf_check(&gist_pub_url, "https://gist.github.com/%s", gist_id);
 
 	char keybuf[9] = {};
 	memcpy(keybuf, gist_id, 8);

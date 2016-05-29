@@ -339,7 +339,9 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 
 	int fd = open("/dev/urandom", O_RDONLY);
 	if(fd != -1){
-		read(fd, &seed, sizeof(seed));
+		if(read(fd, &seed, sizeof(seed)) == -1){
+			perror("markov_init: read");
+		}
 		close(fd);
 	}
 
@@ -604,7 +606,7 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 
 	word_idx_t words[] = { start_sym_idx, start_sym_idx, 0 };
 
-	char* state;
+	char* state = NULL;
 	char* word = strtok_r(msg, " ", &state);
 
 	printf("Adding:");

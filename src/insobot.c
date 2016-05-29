@@ -169,11 +169,15 @@ static void* util_log_thread_main(void* _arg){
 			if(do_time){
 				time_t now = time(0);
 				size_t time_size = strftime(time_buf, sizeof(time_buf), "[%F %T] ", localtime(&now));
-				write(orig_stdout, time_buf, time_size);
+				if(write(orig_stdout, time_buf, time_size) == -1){
+					perror("log_thread write");
+				}
 				do_time = false;
 			}
 
-			write(orig_stdout, &c, 1);
+			if(write(orig_stdout, &c, 1) == -1){
+				perror("log_thread write");
+			}
 		} while(c != '\n');
 
 		do_time = true;
@@ -961,7 +965,11 @@ int main(int argc, char** argv){
 	if(!getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
 		int fds[3] = { dup(STDOUT_FILENO) };
 
-		pipe(fds + 1);
+		if(pipe(fds + 1) == -1){
+			perror("pipe");
+			abort();
+		}
+
 		dup2(fds[2], STDOUT_FILENO);
 		dup2(fds[2], STDERR_FILENO);
 
@@ -1089,7 +1097,7 @@ int main(int argc, char** argv){
 		char* libirc_serv;
 		if(getenv("IRC_ENABLE_SSL")){
 			puts("Using ssl connection...");
-			asprintf(&libirc_serv, "#%s", serv);
+			asprintf_check(&libirc_serv, "#%s", serv);
 
 			//XXX: you might not want this!
 			irc_option_set(irc_ctx, LIBIRC_OPTION_SSL_NO_VERIFY);

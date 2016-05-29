@@ -69,11 +69,28 @@ static void notes_msg(const char* chan, const char* name, const char* msg){
 		};
 
 		note_push(&n);
+
+		char* ipc_msg;
+		int len = asprintf(&ipc_msg, "%d %ld %s %s %s\n", n.type, n.time, n.channel, n.author, n.content);
+		if(len != -1){
+			ctx->send_ipc(0, ipc_msg, len + 1);
+			free(ipc_msg);
+		}
 	}
 }
 
 static void notes_ipc(int target, const uint8_t* data, size_t data_len){
-	//TODO
+	if(!memchr(data, 0, data_len)) return;
+	Note n = {};
+
+	if(sscanf(data, "%d %ld %ms %ms %m[^\n]", &n.type, &n.time, &n.channel, &n.author, &n.content) == 5){
+		puts("got note via ipc");
+		note_push(&n);
+	} else {
+		free(n.channel);
+		free(n.author);
+		free(n.content);
+	}
 }
 
 static void notes_msg_out(const char* chan, const char* msg){

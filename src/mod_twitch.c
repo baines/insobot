@@ -94,7 +94,10 @@ static long twitch_curl(char** data, long last_time, const char* fmt, ...){
 	va_start(v, fmt);
 
 	char* url;
-	vasprintf(&url, fmt, v);
+	if(vasprintf(&url, fmt, v) == -1){
+		perror("vasprintf");
+		abort();
+	}
 
 	va_end(v);
 
@@ -234,7 +237,7 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 
 	const char* title = vod_title->u.string ?: "untitled";
 
-	asprintf(&t->last_vod_msg, "%s's last VoD: %s [%s]", chan + 1, vod_url->u.string, title);
+	asprintf_check(&t->last_vod_msg, "%s's last VoD: %s [%s]", chan + 1, vod_url->u.string, title);
 	ctx->send_msg(send_chan, "%s: %s", name, t->last_vod_msg);
 
 out:
