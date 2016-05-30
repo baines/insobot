@@ -51,7 +51,7 @@ typedef struct IRCModuleCtx_ {
 	// called when a message is sent
 	void (*on_msg_out) (const char* chan, const char* msg);
 
-	// called on reciept of an inter-process message
+	// called on receipt of an inter-process message
 	void (*on_ipc)     (int sender_id, const uint8_t* data, size_t data_len);
 } IRCModuleCtx;
 
@@ -80,7 +80,7 @@ enum  {
 	IRC_CB_PART,
 };
 
-// used for flags field of IRCModuleCtx
+// used for the flags field of IRCModuleCtx
 enum {
 	IRC_MOD_GLOBAL  = 1, // not a module that can be enabled / disabled per channel
 	IRC_MOD_DEFAULT = 2, // enabled by default when joining new channels

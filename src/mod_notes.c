@@ -6,6 +6,7 @@
 static void notes_msg     (const char*, const char*, const char*);
 static void notes_msg_out (const char*, const char*);
 static bool notes_init    (const IRCCoreCtx*);
+static void notes_quit    (void);
 static void notes_mod_msg (const char*, const IRCModMsg*);
 static void notes_ipc     (int, const uint8_t*, size_t);
 
@@ -16,6 +17,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_msg     = &notes_msg,
 	.on_msg_out = &notes_msg_out,
 	.on_init    = &notes_init,
+	.on_quit    = &notes_quit,
 	.on_mod_msg = &notes_mod_msg,
 	.on_ipc     = &notes_ipc
 };
@@ -52,6 +54,14 @@ static const IRCCoreCtx* ctx;
 static bool notes_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return true;
+}
+
+static void notes_quit(void){
+	for(int i = 0; i < ARRAY_SIZE(notes); ++i){
+		free(notes[i].channel);
+		free(notes[i].author);
+		free(notes[i].content);
+	}
 }
 
 static void notes_msg(const char* chan, const char* name, const char* msg){
