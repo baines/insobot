@@ -395,7 +395,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 
 	for(int i = 0; i < sb_count(url_replacements); ++i){
 		const char* p = strstr(read_ptr, url_replacements[i].from);
-		assert(p);
+		if(!p) continue;
 
 		size_t sz = p - read_ptr;
 		memcpy(write_ptr, read_ptr, sz);
