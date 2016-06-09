@@ -455,7 +455,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				struct tm* date_tm = gmtime(&q->timestamp);
 				char date[256];
 				strftime(date, sizeof(date), "%F", date_tm);
-				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", id, q->text, quote_chan+1, date);
+				ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", id, q->text, quote_chan+1, date);
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
@@ -681,7 +681,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				struct tm* date_tm = gmtime(&q->timestamp);
 				char date[32];
 				strftime(date, sizeof(date), "%F", date_tm);
-				ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, quote_chan+1, date);
+				ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", q->id, q->text, quote_chan+1, date);
 			} else if(found_count > 1){
 				if(more_flag){
 					ctx->send_msg(chan, "%s: Matching quotes: %s and more.", name, msg_buf);
@@ -719,7 +719,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			struct tm* date_tm = gmtime(&q->timestamp);
 			char date[256];
 			strftime(date, sizeof(date), "%F", date_tm);
-			ctx->send_msg(chan, "Quote %d: \"%s\" --%s %s", q->id, q->text, quote_chan+1, date);
+			ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", q->id, q->text, quote_chan+1, date);
 		}
 	}
 

@@ -142,12 +142,12 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 		}
 
 		// hexagrams
-		if(codepoint >= 0x4DC0 && codepoint < 0x4DFF){
+		if(codepoint >= 0x4DC0 && codepoint < 0x4E00){
 			bad_char_score += 5;
 		}
 		
 		// private use
-		if(codepoint >= 0xE000 && codepoint < 0xF8FF){
+		if(codepoint >= 0xE000 && codepoint < 0xF900){
 			bad_char_score += 2;
 		}
 
@@ -420,6 +420,7 @@ static void automod_discipline(Suspect* s, const char* chan, const char* reason)
 	if(is_twitch){
 		int timeout = 10 + (s->num_offences * s->num_offences * 60);
 		ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
+		ctx->send_msg(chan, "Timed out %s (%s)", s->name, reason);
 	} else {
 		char buf[512];
 		snprintf(buf, sizeof(buf), "KICK %s %s :%s", chan, s->name, reason);
@@ -449,15 +450,16 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 		am_score_links
 	};
 
-	const char* names[] = { "caps", "ascii", "flood", "emotes", "links" };
+	const char* rules[] = { "caps", "ascii", "flood", "emotes", "links" };
 
 	size_t len = strlen(msg);
 
 	printf("AM: <%s> ", name);
 
-	for(size_t i = 0; i < ARRAY_SIZE(score_fns); ++i){
+	size_t i;
+	for(i = 0; i < ARRAY_SIZE(score_fns); ++i){
 		score += score_fns[i](susp, msg, len);
-		printf("[%s: %d] ", names[i], score);
+		printf("[%s: %d] ", rules[i], score);
 
 		if(score && susp->score + score >= 100){
 			discipline = true;
@@ -474,11 +476,10 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 
 	printf("[%d]\n", susp->score);
 
-	//TODO: proper reasons
-	const char* reason = "get rekt [insobot]";
+	if(i >= ARRAY_SIZE(rules)) i = ARRAY_SIZE(rules) - 1;
 
 	if(discipline){
-		automod_discipline(susp, chan, reason);
+		automod_discipline(susp, chan, rules[i]);
 	}
 }
 
