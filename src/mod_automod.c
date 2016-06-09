@@ -138,17 +138,17 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 
 		// box drawing glyphs
 		if(codepoint >= 0x2500 && codepoint < 0x2600){
-			bad_char_score += 5;
+			bad_char_score += 10;
 		}
 
 		// hexagrams
 		if(codepoint >= 0x4DC0 && codepoint < 0x4DFF){
-			bad_char_score += 2;
+			bad_char_score += 5;
 		}
 		
 		// private use
 		if(codepoint >= 0xE000 && codepoint < 0xF8FF){
-			bad_char_score += 1;
+			bad_char_score += 2;
 		}
 
 		if(ispunct(codepoint)){
@@ -485,7 +485,13 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 static void automod_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	if(!inso_is_admin(ctx, name)) return;
 
+	//TODO: make commands work with standard IRC kick/ban protocol, not just twitch
+
 	if(cmd == AUTOMOD_TIMEOUT){
+
+		// no manual moderation for this channel
+		if(strcmp(chan, "#handmade_hero") == 0) return;
+
 		char victim[32] = {};
 		int duration = 10;
 		if(sscanf(arg, "%31s %d", victim, &duration) >= 1){
