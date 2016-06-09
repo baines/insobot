@@ -129,6 +129,8 @@ static long twitch_curl(char** data, long last_time, const char* fmt, ...){
 
 	if(http_code == 304){
 		sb_free(*data);
+	} else {
+		sb_push(*data, 0);
 	}
 
 	return http_code;
@@ -146,8 +148,6 @@ static void twitch_check_uptime(size_t index){
 	if(ret == 304){
 		return;
 	}
-
-	sb_push(data, 0);
 
 	const char* created_path[] = { "stream", "created_at", NULL };
 
@@ -204,8 +204,6 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 		}
 		return;
 	}
-
-	sb_push(data, 0);
 
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
 	if(!root){
@@ -354,7 +352,6 @@ static void twitch_check_followers(void){
 			goto out;
 		}
 
-		sb_push(data, 0);
 		root = yajl_tree_parse(data, NULL, 0);
 
 		if(!YAJL_IS_OBJECT(root)){

@@ -51,7 +51,8 @@ static regex_t url_regex;
 static bool automod_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	init_time = time(0);
-	regcomp(&url_regex, "www\\.|https?:\\/\\/|\\.com|\\.[a-zA-Z]\\/", REG_ICASE | REG_EXTENDED);
+	is_twitch = true;
+	regcomp(&url_regex, "https?://[^[:space:]]+", REG_ICASE | REG_EXTENDED);
 	return true;
 }
 
@@ -194,15 +195,18 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 
 	time_t now = time(0);
 
-	if((now - init_time) < 120) return 0;
+	// give twitch some time to give us the joins
+	if(is_twitch && (now - init_time) < 120) return 0;
 
 	// look for short urls as first message
-	if(url_len > 0 && url_len < 25 && !s->last_msg && (!s->join || (now - s->join) < 60)){
+	if(url_len > 0 && url_len < 32 && !s->last_msg){
 
 		// new account?
 		if(is_twitch){
 			time_t user_created_date = 0;
 			MOD_MSG(ctx, "twitch_get_user_date", s->name, &get_user_cb, &user_created_date);
+
+			printf("twitch user time: %zu\n", (now - user_created_date));
 
 			if((now - user_created_date) < (7*24*60*60)){
 				return 100;
@@ -212,11 +216,17 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 		// has been ++'d before?
 		int karma = 0;
 		MOD_MSG(ctx, "karma_get", s->name, &get_karma_cb, &karma);
-		return karma > 0 ? 0 : 100;
+		if(karma > 0){
+			return 0;
+		}
 
-	} else {
-		return 0;
+		// only just joined
+		if(!s->join || (now - s->join) < 60){
+			return 100;
+		}
 	}
+
+	return 0;
 }
 
 static int am_score_flood(const Suspect* s, const char* msg, size_t len){
@@ -411,14 +421,18 @@ static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 
 static void automod_discipline(Suspect* s, const char* chan, const char* reason){
 
-	s->num_offences += (s->score / 100);
+	s->num_offences += INSO_MIN(1, (s->score / 100));
 	s->score = INSO_MIN(s->score / 2, 50);
 
 #if 0
 	ctx->send_msg(chan, "[automod-test] Would've timed out %s.\n", s->name);
 #else
 	if(is_twitch){
-		int timeout = 10 + (s->num_offences * s->num_offences * 60);
+		int timeout = s->num_offences <= 1
+			? 10
+			: (s->num_offences - 1) * (s->num_offences - 1) * 60
+			;
+
 		ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
 		ctx->send_msg(chan, "Timed out %s (%s)", s->name, reason);
 	} else {
