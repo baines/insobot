@@ -23,6 +23,7 @@
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
 #include <curl/curl.h>
+#include <locale.h>
 #include "config.h"
 #include "module.h"
 #include "stb_sb.h"
@@ -413,7 +414,6 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 				irc_on_join(irc_ctx, "join", chan_nicks[i][j], c, 1);
 			}
 		}
-		puts("... Init successful.");
 	}
 
 	qsort(irc_modules, sb_count(irc_modules), sizeof(*irc_modules), &util_mod_sort);
@@ -668,6 +668,23 @@ IRC_STR_CALLBACK(on_chat_msg) {
 			IRC_MOD_CALL(m, on_msg, (_chan, _name, _msg));
 		}
 	}
+}
+
+IRC_STR_CALLBACK(on_action) {
+	if(count < 2 || !params[0] || !params[1]) return;
+	const char *_chan = params[0], *_name = origin;
+
+	char* _msg = strdupa(params[1]);
+	size_t len = strlen(_msg);
+
+	// trim spaces at end of messages
+	if(len > 0){
+		for(char* p = _msg + len - 1; *p == ' '; --p){
+			*p = 0;
+		}
+	}
+
+	IRC_MOD_CALL_ALL_CHECK(on_action, (_chan, _name, _msg), IRC_CB_ACTION);
 }
 
 IRC_STR_CALLBACK(on_join) {
@@ -962,6 +979,7 @@ int main(int argc, char** argv){
 
 	srand(time(0));
 	signal(SIGINT, &util_handle_sig);
+	assert(setlocale(LC_CTYPE, "C.UTF-8"));
 
 	// timestamp thread setup
 
@@ -1079,13 +1097,14 @@ int main(int argc, char** argv){
 	bot_nick = strdup(user);
 
 	irc_callbacks_t callbacks = {
-		.event_connect = irc_on_connect,
-		.event_channel = irc_on_chat_msg,
-		.event_join    = irc_on_join,
-		.event_part    = irc_on_part,
-		.event_nick    = irc_on_nick,
-		.event_numeric = irc_on_numeric,
-		.event_unknown = irc_on_unknown,
+		.event_connect     = irc_on_connect,
+		.event_channel     = irc_on_chat_msg,
+		.event_join        = irc_on_join,
+		.event_part        = irc_on_part,
+		.event_nick        = irc_on_nick,
+		.event_ctcp_action = irc_on_action,
+		.event_numeric     = irc_on_numeric,
+		.event_unknown     = irc_on_unknown,
 	};
 
 	// outer main loop, (re)set irc state

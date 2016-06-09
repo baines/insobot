@@ -23,6 +23,7 @@ typedef struct IRCModuleCtx_ {
 	// IRC event callbacks
 	void (*on_connect) (const char* serv);
 	void (*on_msg)     (const char* chan, const char* name, const char* msg);
+	void (*on_action)  (const char* chan, const char* name, const char* msg);
 	void (*on_join)    (const char* chan, const char* name);
 	void (*on_part)    (const char* chan, const char* name);
 	void (*on_nick)    (const char* prev_nick, const char* new_nick);
@@ -78,6 +79,7 @@ enum  {
 	IRC_CB_CMD,
 	IRC_CB_JOIN,
 	IRC_CB_PART,
+	IRC_CB_ACTION,
 };
 
 // used for the flags field of IRCModuleCtx

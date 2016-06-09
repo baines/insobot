@@ -133,7 +133,7 @@ static bool chans_save(FILE* file){
 
 static void chans_connect(const char* serv){
 
-	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_DO_TWITCH_CAP")){
+	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_IS_TWITCH")){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
 	}
 

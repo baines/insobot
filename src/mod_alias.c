@@ -497,6 +497,10 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 	sb_push(msg_buf, 0);
 
+	if(*msg_buf == '.' || *msg_buf == '!' || *msg_buf == '\\'){
+		*msg_buf = ' ';
+	}
+
 	if(value->me_action){
 		ctx->send_msg(chan, "\001ACTION %s\001", msg_buf);
 	} else {

@@ -6,11 +6,12 @@
 #include <yajl/yajl_tree.h>
 #include "utils.h"
 
-static bool twitch_init (const IRCCoreCtx*);
-static void twitch_cmd  (const char*, const char*, const char*, int);
-static void twitch_tick (void);
-static bool twitch_save (FILE*);
-static void twitch_quit (void);
+static bool twitch_init    (const IRCCoreCtx*);
+static void twitch_cmd     (const char*, const char*, const char*, int);
+static void twitch_tick    (void);
+static bool twitch_save    (FILE*);
+static void twitch_quit    (void);
+static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 
 enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD };
 
@@ -22,6 +23,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_tick  = &twitch_tick,
 	.on_save  = &twitch_save,
 	.on_quit  = &twitch_quit,
+	.on_mod_msg = &twitch_mod_msg,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY] = CONTROL_CHAR "fnotify",
 		[UPTIME]        = CONTROL_CHAR "uptime " CONTROL_CHAR_2 "uptime",
@@ -49,8 +51,15 @@ typedef struct {
 	char*  last_vod_msg;
 } TwitchInfo;
 
-char**      twitch_keys;
-TwitchInfo* twitch_vals;
+static char**      twitch_keys;
+static TwitchInfo* twitch_vals;
+
+typedef struct {
+	char* name;
+	time_t created_at;
+} TwitchUser;
+
+static TwitchUser* twitch_users;
 
 static TwitchInfo* twitch_get_or_add(const char* chan){
 	for(char** c = twitch_keys; c < sb_end(twitch_keys); ++c){
@@ -448,4 +457,45 @@ static void twitch_quit(void){
 	sb_free(twitch_vals);
 
 	curl_easy_cleanup(curl);
+}
+
+static TwitchUser* twitch_get_user(const char* name){
+
+	for(int i = 0; i < sb_count(twitch_users); ++i){
+		if(strcasecmp(name, twitch_users[i].name) == 0){
+			return twitch_users + i;
+		}
+	}
+
+	char* data = NULL;
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/users/%s", name) != 200) return NULL;
+
+	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	if(!root) return NULL;
+
+	const char* created_path[] = { "created_at", NULL };
+	yajl_val created = yajl_tree_get(root, created_path, yajl_t_string);
+	if(!created) return NULL;
+
+	struct tm user_time = {};
+	char* end = strptime(created->u.string, "%Y-%m-%dT%TZ", &user_time);
+	if(!end || *end) return NULL;
+
+	TwitchUser u = {
+		.name = strdup(name),
+		.created_at = timegm(&user_time)
+	};
+
+	sb_push(twitch_users, u);
+
+	return &sb_last(twitch_users);
+}
+
+static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "twitch_get_user_date") == 0){
+		TwitchUser* u = twitch_get_user((char*)msg->arg);
+		if(u){
+			msg->callback(u->created_at, msg->cb_arg);
+		}
+	}
 }

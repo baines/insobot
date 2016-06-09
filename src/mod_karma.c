@@ -14,6 +14,7 @@ static void karma_join     (const char*, const char*);
 static bool karma_save     (FILE*);
 static bool karma_init     (const IRCCoreCtx*);
 static void karma_modified (void);
+static void karma_mod_msg  (const char*, const IRCModMsg*);
 static void karma_quit     (void);
 
 enum { KARMA_SHOW, KARMA_TOP };
@@ -30,6 +31,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit  = &karma_quit,
 	.on_save  = &karma_save,
 	.on_modified = &karma_modified,
+	.on_mod_msg  = &karma_mod_msg,
 	.commands = DEFINE_CMDS (
 		[KARMA_SHOW] = CONTROL_CHAR "karma " CONTROL_CHAR_2 "karma",
 		[KARMA_TOP]  = CONTROL_CHAR "ktop "  CONTROL_CHAR_2 "ktop"
@@ -300,4 +302,14 @@ static void karma_quit(void){
 static void karma_modified(void){
 	karma_quit();
 	karma_load();
+}
+
+static void karma_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "karma_get") == 0){
+		int karma = 0;
+		KEntry* k = karma_find((const char*)msg->arg, false);
+		if(k) karma = k->up - k->down;
+
+		msg->callback(karma, msg->cb_arg);
+	}
 }
