@@ -459,8 +459,8 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 	yajl_val price = yajl_tree_get(root, price_path, yajl_t_number);
 	yajl_val plats = yajl_tree_get(root, plats_path, yajl_t_object);
 
-	if(!title || !price || !plats){
-		fprintf(stderr, "mod_linkinfo: steam title/price/plats null!\n");
+	if(!title || !plats){
+		fprintf(stderr, "mod_linkinfo: steam title/plats null!\n");
 		goto out;
 	}
 
@@ -480,9 +480,12 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 		if(tag)	inso_strcat(plat_str, sizeof(plat_str), tag);
 	}
 
-	int price_hi = price->u.number.i / 100, price_lo = price->u.number.i % 100;
-
-	ctx->send_msg(chan, "↑ Steam: [%s] [%s] [$%d.%02d]", title->u.string, plat_str, price_hi, price_lo);
+	if(price){
+		int price_hi = price->u.number.i / 100, price_lo = price->u.number.i % 100;
+		ctx->send_msg(chan, "↑ Steam: [%s] [%s] [$%d.%02d]", title->u.string, plat_str, price_hi, price_lo);
+	} else {
+		ctx->send_msg(chan, "↑ Steam: [%s] [%s]", title->u.string, plat_str);
+	}
 
 out:
 	if(data) sb_free(data);
