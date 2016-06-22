@@ -276,12 +276,20 @@ static void print_time(const char* chan, const char* name){
 		if(update_schedule()) last_schedule_update = now;
 	}
 
+	enum { SCHED_UNKNOWN = 0, SCHED_OFF = (1 << 0), SCHED_OLD = (1 << 1) };
+
+	uint32_t schedule_flags = 0;
 	int index = -1;
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		if(schedule[i] == 0 || schedule[i] == -1) continue;
-		if(schedule[i] > (now - (90*60))){
+		if(schedule[i] == 0) continue;
+
+		if(schedule[i] == -1){
+			schedule_flags |= SCHED_OFF;
+		} else if(schedule[i] > (now - (90*60))){
 			index = i;
 			break;
+		} else {
+			schedule_flags |= SCHED_OLD;
 		}
 	}
 
@@ -293,7 +301,13 @@ static void print_time(const char* chan, const char* name){
 		// add 15 mins since the note marks the end of the prestream.
 		diff += (15*60);
 	} else if(index == -1){
-		ctx->send_msg(chan, "No more streams scheduled, try checking handmadehero.org or @handmade_hero on twitter");
+		if(schedule_flags & SCHED_OLD){
+			ctx->send_msg(chan, "No more streams this week.");
+		} else if(schedule_flags & SCHED_OFF){
+			ctx->send_msg(chan, "The stream is off this week, see twitter for details.");
+		} else {
+			ctx->send_msg(chan, "The schedule hasn't been updated yet.");
+		}
 		return;
 	} else {
 		note_time = 0;
@@ -304,9 +318,9 @@ static void print_time(const char* chan, const char* name){
 		int until = -diff;
 
 		if(until / (60*60*24) == 1){
-			ctx->send_msg(chan, "Next stream tomorrow.");
+			ctx->send_msg(chan, "No stream today, next one tomorrow.");
 		} else if(until / (60*60*24) > 1){
-			ctx->send_msg(chan, "Next stream in %d days.", until / (60*60*24));
+			ctx->send_msg(chan, "No stream today, next one in %d days.", until / (60*60*24));
 		} else {
 			char  time_buf[256];
 			char* time_ptr = time_buf;
