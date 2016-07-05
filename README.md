@@ -1,6 +1,11 @@
 # insobot
 Module based IRC bot written in C with markov chains and stuff.
 
+See insobot.sh.example and src/config.h for configuration.
+
+This table shows common modules & commands. Refer to the top of each module's
+.c file for a complete listing.
+
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
 | **mod_admin**    | Administrative commands | fjoin      \<channel\>      | Force join a channel              | ADMIN      |
@@ -11,7 +16,7 @@ Module based IRC bot written in C with markov chains and stuff.
 |                  |                         | chaliasmod \<key\> \<perm\> | Sets permission to use the alias  | WLIST      |
 |                  |                         | lsalias                     | Lists current aliases             | WLIST      |
 | **mod_automod**  | Automatic moderation    | b  \<user\> [sec]           | Times out \<user\> (default 10s)  | WLIST      |
-|                  |                         | ub \<user\>                 | Removes timeout on <user>         | WLIST      |
+|                  |                         | ub \<user\>                 | Removes timeout on \<user\>       | WLIST      |
 | **mod_haiku**    | Poorly generates haikus | haiku                       | Let the poetry flow               | WLIST      |
 |                  |                         | scount \<word\>             | Show syllable guesstimate         | WLIST      |
 | **mod_help**     | Lists commands          | help [module]               | Shows commands (for [module])     | NORMAL     |
@@ -31,7 +36,7 @@ Module based IRC bot written in C with markov chains and stuff.
 |                  |                         | minfo \<mod\>               | Show module's description         | WLIST      |
 | **mod_quotes**   | Stores quotes           | q  [\#chan] \<n\>           | Shows quote n                     | NORMAL     |
 |                  |                         | q+ [\#chan] \<text\>        | Adds a new quote                  | WLIST      |
-|                  |                         | q- [\#chan] \<text\>        | Removes a quote                   | WLIST      |
+|                  |                         | q- [\#chan] \<n\>           | Removes a quote                   | WLIST      |
 |                  |                         | qfix [#chan] \<n\> \<text\> | Changes the text of quote n       | WLIST      |
 |                  |                         | qft  [#chan] \<n\> \<time\> | Changes the timestamp of quote n  | WLIST      |
 |                  |                         | ql                          | Shows link to quote gist          | NORMAL     |
