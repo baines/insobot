@@ -40,6 +40,8 @@ static time_t last_follower_check;
 
 static CURL* curl;
 
+static struct curl_slist* twitch_cid_header;
+
 typedef struct {
 	bool do_follower_notify;
 	time_t last_follower_time;
@@ -93,6 +95,13 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 	curl = curl_easy_init();
 
+	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
+	if(client_id){
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
+		twitch_cid_header = curl_slist_append(NULL, buf);
+	}
+
 	return true;
 }
 
@@ -112,6 +121,10 @@ static long twitch_curl(char** data, long last_time, const char* fmt, ...){
 
 	*data = NULL;
 	inso_curl_reset(curl, url, data);
+
+	if(twitch_cid_header){
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_cid_header);
+	}
 	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
 	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, last_time);
 
@@ -452,6 +465,10 @@ static void twitch_quit(void){
 	}
 	sb_free(twitch_keys);
 	sb_free(twitch_vals);
+
+	if(twitch_cid_header){
+		curl_slist_free_all(twitch_cid_header);
+	}
 
 	curl_easy_cleanup(curl);
 }

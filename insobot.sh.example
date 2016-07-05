@@ -16,6 +16,10 @@ export IRC_CHAN="#achannel,#anotherchannel"
 # if your connection is over SSL / TLS, export this (don't use a # in the hostname)
 # export IRC_ENABLE_SSL=1
 
+# mod_twitch needs this from 8th aug 2016
+# https://www.twitch.tv/settings/connections
+# export INSOBOT_TWITCH_CLIENT_ID="something"
+
 # mod_quotes needs these 3 vars
 # export INSOBOT_GIST_USER="github username to store the quote list gist as"
 # export INSOBOT_GIST_TOKEN="access token from https://github.com/settings/tokens with gist scope"
