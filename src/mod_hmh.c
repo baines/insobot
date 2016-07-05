@@ -68,6 +68,13 @@ static bool update_schedule(void){
 
 	if(curl_ret != 0){
 		fprintf(stderr, "Error getting schedule: %s\n", curl_easy_strerror(curl_ret));
+
+		if((time(0) - mktime(&schedule_start)) > (6*24*60*60)){
+			memset(schedule, 0, sizeof(schedule));
+			schedule_start.tm_mday += DAYS_IN_WEEK;
+			mktime(&schedule_start);
+		}
+
 		sb_free(data);
 		return false;
 	}
