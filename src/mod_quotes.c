@@ -14,7 +14,6 @@
 
 static bool quotes_init     (const IRCCoreCtx*);
 static void quotes_modified (void);
-static void quotes_join     (const char*, const char*);
 static void quotes_cmd      (const char*, const char*, const char*, int);
 static bool quotes_save     (FILE*);
 static void quotes_quit     (void);
@@ -27,7 +26,6 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init     = &quotes_init,
 	.on_modified = &quotes_modified,
 	.on_cmd      = &quotes_cmd,
-	.on_join     = &quotes_join,
 	.on_save     = &quotes_save,
 	.on_quit     = &quotes_quit,
 	.commands    = DEFINE_CMDS (
@@ -361,15 +359,6 @@ static void quotes_modified(void){
 	printf("RELOAD: %d\n", quotes_reload());
 }
 
-static Quote** get_quotes(const char* chan){
-	for(int i = 0; i < sb_count(channels); ++i){
-		if(strcmp(chan, channels[i]) == 0){
-			return chan_quotes + i;
-		}
-	}
-	return NULL;
-}
-
 static Quote* get_quote(const char* chan, int id){
 	int index = -1;
 	for(int i = 0; i < sb_count(channels); ++i){
@@ -390,37 +379,40 @@ static Quote* get_quote(const char* chan, int id){
 	return NULL;
 }
 
-static const char* get_chan(const char* chan, const char** arg, Quote*** qlist){
-	if(**arg != '#'){
-		if(qlist){
-			*qlist = get_quotes(chan);
+static const char* get_chan(const char* default_chan, const char** arg, Quote*** qlist){
+
+	const char* chan = default_chan;
+
+	// if the arg starts with a #, parse the channel out of it
+	if(**arg == '#'){
+		const char* end = strchrnul(*arg, ' ');
+
+		char* new_chan = strndupa(*arg, end - *arg);
+		for(char* c = new_chan; *c; ++c){
+			*c = tolower(*c);
 		}
-		return chan;
+
+		*arg = *end ? end + 1 : end;
+		chan = new_chan;
 	}
 
-	const char* end = strchrnul(*arg, ' ');
-
-	for(char** c = channels; c < sb_end(channels); ++c){
-		if(strncasecmp(*arg, *c, end - *arg) == 0 && (*c)[end - *arg] == 0){
-			*arg = *end ? end + 1 : end;
-			if(qlist){
-				*qlist = chan_quotes + (c - channels);
-			}
-			return *c;
+	bool found = false;
+	for(int i = 0; i < sb_count(channels); ++i){
+		if(strcmp(channels[i], chan) == 0){
+			chan = channels[i];
+			if(qlist) *qlist = chan_quotes + i;
+			found = true;
 		}
 	}
 
-	char* new_chan = strndup(*arg, end - *arg);
-	for(char* c = new_chan; *c; ++c) *c = tolower(*c);
+	if(!found){
+		sb_push(channels, strdup(chan));
+		sb_push(chan_quotes, 0);
+		chan = sb_last(channels);
+		if(qlist) *qlist = &sb_last(chan_quotes);
+	}
 
-	*arg = *end ? end + 1 : end;
-
-	sb_push(channels, new_chan);
-	sb_push(chan_quotes, 0);
-
-	*qlist = chan_quotes + (sb_count(channels) - 1);
-
-	return new_chan;
+	return chan;
 }
 
 static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
@@ -724,24 +716,6 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 	}
 
 	semop(quotes_sem, &quotes_unlock, 1);
-}
-
-static void quotes_join(const char* chan, const char* user){
-	if(strcasecmp(user, ctx->get_username()) != 0) return;
-
-	bool found = false;
-	for(char** c = channels; c < sb_end(channels); ++c){
-		if(strcasecmp(chan, *c) == 0){
-			found = true;
-			break;
-		}
-	}
-
-	if(!found){
-		fprintf(stderr, "mod_quotes: adding [%s]\n", chan);
-		sb_push(channels, strdup(chan));
-		sb_push(chan_quotes, 0);
-	}
 }
 
 static const char desc_key[]    = "description";
