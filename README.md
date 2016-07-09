@@ -47,7 +47,7 @@ This table shows common modules & commands. Refer to the top of each module's
 |                  |                         | vod                         | Links to the latest VoD           | NORMAL     |
 |                  |                         | vod \<user\>                | Links to \<user\>'s latest VoD    | WLIST      |
 | **mod_whitelist**| Manages permissions     | wl                          | Shows if you are whitelisted      | NORMAL     |
-|                  |                         | iswl \<user\>               | Shows if \<user\> is whitelisted  | ADMIN      |
+|                  |                         | wl \<user\>                 | Shows if \<user\> is whitelisted  | WLIST      |
 |                  |                         | wl+ \<user\>                | Whitelists \<user\>               | ADMIN      |
 |                  |                         | wl- \<user\>                | Unwhitelists \<user\>             | ADMIN      |
 

@@ -10,7 +10,7 @@ static bool whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
 static void whitelist_quit    (void);
 
-enum { WL_CHECK_SELF, WL_CHECK_OTHER, WL_ADD, WL_DEL };
+enum { WL_CHECK_SELF, WL_CHECK, WL_ADD, WL_DEL };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "whitelist",
@@ -22,10 +22,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save    = &whitelist_save,
 	.on_quit    = &whitelist_quit,
 	.commands   = DEFINE_CMDS (
-		[WL_CHECK_SELF]  = CONTROL_CHAR"wl    "CONTROL_CHAR"wlcheckme "CONTROL_CHAR"amiwhitelisted",
-		[WL_CHECK_OTHER] = CONTROL_CHAR"iswl  "CONTROL_CHAR"wlcheck",
-		[WL_ADD]         = CONTROL_CHAR"wladd "CONTROL_CHAR"wl+",
-		[WL_DEL]         = CONTROL_CHAR"wldel "CONTROL_CHAR"wl-"
+		[WL_CHECK_SELF] = CONTROL_CHAR "amiwhitelisted",
+		[WL_CHECK]      = CONTROL_CHAR "wl "    CONTROL_CHAR "iswl " CONTROL_CHAR "wlcheck",
+		[WL_ADD]        = CONTROL_CHAR "wladd " CONTROL_CHAR "wl+",
+		[WL_DEL]        = CONTROL_CHAR "wldel " CONTROL_CHAR "wl-"
 	)
 };
 
@@ -99,23 +99,24 @@ static void whitelist_quit(void){
 
 static void whitelist_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool is_admin = strcasecmp(chan + 1, name) == 0 || admin_check(name);
-
 	switch(cmd){
+		case WL_CHECK: {
+			if(*arg++){
+				if(!wlist_check(name)){
+					break;
+				} else {
+					ctx->send_msg(chan, "%s: %s %s whitelisted.", name, arg, wlist_check(arg) ? "is" : "is not");
+					break;
+				}
+			}
+		} // fall through
+
 		case WL_CHECK_SELF: {
-			const char* opt = wlist_check(name) ? "are" : "are not";
-			ctx->send_msg(chan, "%s: You %s whitelisted.", name, opt);
-		} break;
-
-		case WL_CHECK_OTHER: {
-			if(!is_admin || !*arg++) break;
-
-			const char* opt = wlist_check(arg) ? "is" : "is not";
-			ctx->send_msg(chan, "%s: %s %s whitelisted.", name, arg, opt);
+			ctx->send_msg(chan, "%s: You %s whitelisted.", name, wlist_check(name) ? "are" : "are not");
 		} break;
 
 		case WL_ADD: {
-			if(!is_admin) break;
+			if(!admin_check(name)) break;
 
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Whitelist who exactly?", name);
@@ -140,7 +141,7 @@ static void whitelist_cmd(const char* chan, const char* name, const char* arg, i
 		} break;
 
 		case WL_DEL: {
-			if(!is_admin) break;
+			if(!admin_check(name)) break;
 
 			if(!*arg++){
 				ctx->send_msg(chan, "%s: Unwhitelist who exactly?", name);
