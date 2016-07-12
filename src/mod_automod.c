@@ -206,7 +206,7 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 			time_t user_created_date = 0;
 			MOD_MSG(ctx, "twitch_get_user_date", s->name, &get_user_cb, &user_created_date);
 
-			printf("twitch user time: %zu\n", (now - user_created_date));
+			printf("twitch user time: %zd\n", (now - user_created_date));
 
 			if((now - user_created_date) < (7*24*60*60)){
 				return 100;
@@ -406,7 +406,7 @@ static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 			p += strlen(*e);
 		}
 
-		if(emote_count >= 5){
+		if(emote_count > 5){
 			break;
 		}
 	}

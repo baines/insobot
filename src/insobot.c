@@ -689,7 +689,7 @@ IRC_STR_CALLBACK(on_action) {
 
 IRC_STR_CALLBACK(on_join) {
 	if(count < 1 || !origin || !params[0]) return;
-	fprintf(stderr, "Join: %s %s\n", params[0], origin);
+	fprintf(stderr, "JOIN: %s %s\n", params[0], origin);
 
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
@@ -716,10 +716,9 @@ IRC_STR_CALLBACK(on_part) {
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
 
-	printf("PART: %s %s %d %d\n", params[0], origin, chan_i, nick_i);
+	printf("PART: %s %s\n", params[0], origin);
 
 	if(chan_i != -1 && strcasecmp(origin, bot_nick) == 0){
-		puts("free all nicks");
 		free(channels[chan_i]);
 		sb_erase(channels, chan_i);
 
@@ -730,7 +729,6 @@ IRC_STR_CALLBACK(on_part) {
 		sb_erase(chan_nicks, chan_i);
 
 	} else if(nick_i != -1){
-		puts("free nick");
 		free(chan_nicks[chan_i][nick_i]);
 		sb_erase(chan_nicks[chan_i], nick_i);
 	}
