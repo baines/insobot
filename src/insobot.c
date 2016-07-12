@@ -92,8 +92,8 @@ static char*** chan_nicks;
 
 static INotifyData inotify;
 
-static struct timeval idle_time = {};
-static int ping_sent;
+static struct timeval idle_tv;
+static bool ping_sent;
 
 static int         ipc_socket;
 static IPCAddress  ipc_self;
@@ -761,15 +761,15 @@ IRC_STR_CALLBACK(on_nick) {
 
 IRC_STR_CALLBACK(on_unknown) {
 	if(strcmp(event, "PONG") == 0){
-		timerclear(&idle_time);
-		ping_sent = 0;
+		printf(":: PONG");
 	} else {
 		printf("Unknown event:\n:: %s :: %s", event, origin);
-		for(int i = 0; i < count; ++i){
-			printf(" :: %s", params[i]);
-		}
-		puts("");
 	}
+
+	for(int i = 0; i < count; ++i){
+		printf(" :: %s", params[i]);
+	}
+	puts("");
 }
 
 IRC_NUM_CALLBACK(on_numeric) {
@@ -1161,11 +1161,14 @@ int main(int argc, char** argv){
 			struct timeval tv = {
 				.tv_sec  = 0,
 				.tv_usec = 250000,
-			};
+			}, orig_tv = tv;
 	
 			int ret = select(max_fd + 1, &in, &out, NULL, &tv);
 				
 			if(ret > 0){
+				timerclear(&idle_tv);
+				ping_sent = 0;
+
 				if(irc_process_select_descriptors(irc_ctx, &in, &out) != 0){
 					fprintf(stderr, "Error processing select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
 				}
@@ -1182,12 +1185,32 @@ int main(int argc, char** argv){
 				if(FD_ISSET(ipc_socket, &in)){
 					util_ipc_recv();
 				}
-			} else if(ret){
+			} else if(ret == 0){
+
+				struct timeval ping_tv    = { .tv_sec = 60 };
+				struct timeval restart_tv = { .tv_sec = 90 };
+
+				timeradd(&orig_tv, &idle_tv, &idle_tv);
+
+				if(!ping_sent && timercmp(&idle_tv, &ping_tv, >)){
+					puts("Reached idle time threshold, sending PING.");
+					irc_send_raw(irc_ctx, "PING %s", serv);
+					ping_sent = 1;
+				}
+
+				if(ping_sent && timercmp(&idle_tv, &restart_tv, >)){
+					puts("Reached 'no PONG' threshold, disconnecting."); 
+					irc_disconnect(irc_ctx);
+				}
+
+			} else {
 				perror("select");
 			}
 		}
 	
 		irc_destroy_session(irc_ctx);
+		timerclear(&idle_tv);
+		ping_sent = 0;
 	
 		if(running){
 			if(getenv("INSOBOT_NO_AUTO_RESTART")){
