@@ -98,6 +98,11 @@ static bool karma_update(KEntry* actor, const char* target, bool upvote){
 	if(!narcissist && (k = karma_find(target, false))){
 		int* i = upvote ? &k->up : &k->down;
 		(*i)++;
+
+		if(!upvote){
+			actor->down++;
+		}
+
 		return true;
 	}
 
