@@ -17,6 +17,7 @@ static void quotes_modified (void);
 static void quotes_cmd      (const char*, const char*, const char*, int);
 static bool quotes_save     (FILE*);
 static void quotes_quit     (void);
+static void quotes_ipc      (int, const uint8_t*, size_t);
 
 enum { GET_QUOTE, ADD_QUOTE, DEL_QUOTE, FIX_QUOTE, FIX_TIME, LIST_QUOTES, SEARCH_QUOTES, GET_RANDOM };
 
@@ -28,6 +29,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd      = &quotes_cmd,
 	.on_save     = &quotes_save,
 	.on_quit     = &quotes_quit,
+	.on_ipc      = &quotes_ipc,
 	.commands    = DEFINE_CMDS (
 		[GET_QUOTE]     = CONTROL_CHAR "q "    CONTROL_CHAR "quote",
 		[ADD_QUOTE]     = CONTROL_CHAR "qadd " CONTROL_CHAR "q+",
@@ -480,6 +482,15 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			};
 			sb_push(*quotes, q);
 			ctx->send_msg(chan, "%s: Added as quote %d.", name, id);
+
+			if(strcmp(chan, quote_chan) != 0){
+				ctx->send_msg(quote_chan, "%s added quote %d: \"%s\".", name, id, q.text);
+			}
+
+			char ipc_buf[256];
+			int ipc_len = snprintf(ipc_buf, sizeof(ipc_buf), "ADD %d %s %s", id, name, quote_chan);
+			ctx->send_ipc(0, ipc_buf, ipc_len + 1);
+
 			quotes_dirty = true;
 			ctx->save_me();
 		} break;
@@ -814,3 +825,25 @@ static bool quotes_save(FILE* file){
 	return true;
 }
 
+static void quotes_ipc(int sender, const uint8_t* data, size_t data_len){
+	if(!memchr(data, 0, data_len)) return;
+
+	puts("Q IPC MAYBE");
+
+	int id;
+	char *name = NULL, *chan = NULL;
+
+	if(sscanf(data, "ADD %d %ms %ms", &id, &name, &chan) == 3){
+
+		printf("GOT Q IPC: %d %s %s\n", id, name, chan);
+
+		quotes_reload();
+		Quote* q = get_quote(chan, id);
+		if(q){
+			ctx->send_msg(chan, "%s added quote %d: \"%s\".", name, q->id, q->text);
+		}
+	}
+
+	free(name);
+	free(chan);
+}

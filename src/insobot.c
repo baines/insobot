@@ -606,6 +606,7 @@ static void util_ipc_recv(void){
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		if(strncmp(buffer, m->ctx->name, num) == 0){
+			printf("Got IPC msg from %d for %s\n", peer->id, m->ctx->name);
 			const size_t off = strlen(m->ctx->name) + 1;
 			IRC_MOD_CALL(m, on_ipc, (peer->id, (uint8_t*)(buffer + off), num - off));
 		}
@@ -918,6 +919,8 @@ static void core_send_ipc(int target, const void* data, size_t data_len){
 
 	for(IPCAddress* p = ipc_peers; p < sb_end(ipc_peers); ++p){
 		if(target != 0 && p->id != target) continue;
+
+		printf("Sending IPC msg to %d for %s\n", p->id, name);
 
 		if(sendto(ipc_socket, buffer, total_len, 0, &p->addr, sizeof(p->addr)) == -1){
 			bool remove = false;
