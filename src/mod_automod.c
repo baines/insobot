@@ -201,18 +201,6 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 	// look for short urls as first message
 	if(url_len > 0 && url_len < 32 && !s->last_msg){
 
-		// new account?
-		if(is_twitch){
-			time_t user_created_date = 0;
-			MOD_MSG(ctx, "twitch_get_user_date", s->name, &get_user_cb, &user_created_date);
-
-			printf("twitch user time: %zd\n", (now - user_created_date));
-
-			if((now - user_created_date) < (7*24*60*60)){
-				return 100;
-			}
-		}
-
 		// has been ++'d before?
 		int karma = 0;
 		MOD_MSG(ctx, "karma_get", s->name, &get_karma_cb, &karma);
@@ -220,9 +208,16 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 			return 0;
 		}
 
-		// only just joined
-		if(!s->join || (now - s->join) < 60){
-			return 100;
+		// new account?
+		if(is_twitch){
+			time_t user_created_date = 0;
+			MOD_MSG(ctx, "twitch_get_user_date", s->name, &get_user_cb, &user_created_date);
+
+			printf("twitch user time: %zd\n", (now - user_created_date));
+
+			if((now - user_created_date) < (24*60*60)){
+				return 500;
+			}
 		}
 	}
 
@@ -459,7 +454,7 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 		am_score_links
 	};
 
-	const char* rules[] = { "caps", "ascii art", "flood", "emotes", "links" };
+	const char* rules[] = { "caps", "ascii art", "flood", "emotes", "spambot?" };
 
 	size_t len = strlen(msg);
 
