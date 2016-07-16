@@ -141,8 +141,8 @@ static bool update_schedule(void){
 
 	// skip to the next week if there are no upcoming streams and it's past friday.
 	struct tm cutoff_tm = schedule_start;
-	cutoff_tm.tm_mday += FRI;
-	cutoff_tm.tm_hour = 17;
+	cutoff_tm.tm_mday += SAT;
+	cutoff_tm.tm_hour = 0;
 	cutoff_tm.tm_min = 0;
 	cutoff_tm.tm_isdst = -1;
 	time_t cutoff = mktime(&cutoff_tm);
