@@ -828,19 +828,25 @@ static bool quotes_save(FILE* file){
 static void quotes_ipc(int sender, const uint8_t* data, size_t data_len){
 	if(!memchr(data, 0, data_len)) return;
 
-	puts("Q IPC MAYBE");
-
 	int id;
 	char *name = NULL, *chan = NULL;
 
 	if(sscanf(data, "ADD %d %ms %ms", &id, &name, &chan) == 3){
 
-		printf("GOT Q IPC: %d %s %s\n", id, name, chan);
+		bool known_channel = false;
+		for(const char** c = ctx->get_channels(); *c; ++c){
+			if(strcasecmp(*c, chan) == 0){
+				known_channel = true;
+				break;
+			}
+		}
 
-		quotes_reload();
-		Quote* q = get_quote(chan, id);
-		if(q){
-			ctx->send_msg(chan, "%s added quote %d: \"%s\".", name, q->id, q->text);
+		if(known_channel){
+			quotes_reload();
+			Quote* q = get_quote(chan, id);
+			if(q){
+				ctx->send_msg(chan, "%s added quote %d: \"%s\".", name, q->id, q->text);
+			}
 		}
 	}
 
