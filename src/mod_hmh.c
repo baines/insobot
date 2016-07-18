@@ -160,7 +160,7 @@ static bool update_schedule(void){
 	return true;
 }
 
-static void print_schedule(const char* chan, const char* name){
+static void print_schedule(const char* chan, const char* name, bool terse){
 	time_t now = time(0);
 
 	bool empty_sched = true;
@@ -188,6 +188,7 @@ static void print_schedule(const char* chan, const char* name){
 	} times[DAYS_IN_WEEK] = {};
 
 	int time_count = 0;
+	int prev_bucket = -1;
 
 	char* tz = tz_push(":US/Pacific");
 	
@@ -203,10 +204,16 @@ static void print_schedule(const char* chan, const char* name){
 		
 		int time_bucket = -1;
 
-		for(int j = 0; j < time_count; ++j){
-			if(lt.tm_hour == times[j].hour && lt.tm_min == times[j].min){
-				time_bucket = j;
-				break;
+		if(terse){
+			for(int j = 0; j < time_count; ++j){
+				if(lt.tm_hour == times[j].hour && lt.tm_min == times[j].min){
+					time_bucket = j;
+					break;
+				}
+			}
+		} else {
+			if(prev_bucket != -1 && lt.tm_hour == times[prev_bucket].hour && lt.tm_min == times[prev_bucket].min){
+				time_bucket = prev_bucket;
 			}
 		}
 
@@ -217,6 +224,8 @@ static void print_schedule(const char* chan, const char* name){
 		}
 
 		times[time_bucket].bits |= (1 << i);
+
+		prev_bucket = time_bucket;
 	}
 
 	empty_sched = true;
@@ -373,11 +382,12 @@ static void print_time(const char* chan, const char* name){
 	}
 }
 
-static void hmh_cmd(const char* chan, const char* name, const char* msg, int cmd){
+static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	switch(cmd){
 		case CMD_SCHEDULE: {
-			print_schedule(chan, name);
+			bool terse = strcasecmp(arg, " terse") == 0;
+			print_schedule(chan, name, terse);
 		} break;
 
 		case CMD_TIME: {
