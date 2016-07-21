@@ -24,6 +24,7 @@ typedef struct IRCModuleCtx_ {
 	void (*on_connect) (const char* serv);
 	void (*on_msg)     (const char* chan, const char* name, const char* msg);
 	void (*on_action)  (const char* chan, const char* name, const char* msg);
+	void (*on_pm)      (const char* name, const char* msg);
 	void (*on_join)    (const char* chan, const char* name);
 	void (*on_part)    (const char* chan, const char* name);
 	void (*on_nick)    (const char* prev_nick, const char* new_nick);

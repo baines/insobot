@@ -585,7 +585,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		case FIX_TIME: {
 			if(!has_cmd_perms) break;
 
-			if(!*arg++){
+			if(empty_arg){
 				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
 				break;
 			}
@@ -629,7 +629,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case SEARCH_QUOTES: {
-			if(!*arg++){
+			if(empty_arg){
 				ctx->send_msg(chan, "%s: Give me something to search for!", name);
 				break;
 			}

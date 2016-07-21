@@ -634,6 +634,14 @@ static void util_find_chan_nick(const char* chan, const char* nick, int* chan_id
 	}
 }
 
+static void util_trim_end_spaces(char* msg, size_t len){
+	if(len > 0){
+		for(char* p = msg + len - 1; *p == ' '; --p){
+			*p = 0;
+		}
+	}
+}
+
 /*****************
  * IRC Callbacks *
  *****************/
@@ -648,17 +656,10 @@ IRC_STR_CALLBACK(on_connect) {
 
 IRC_STR_CALLBACK(on_chat_msg) {
 	if(count < 2 || !params[0] || !params[1]) return;
+
 	const char *_chan = params[0], *_name = origin;
-
 	char* _msg = strdupa(params[1]);
-	size_t len = strlen(_msg);
-
-	// trim spaces at end of messages
-	if(len > 0){
-		for(char* p = _msg + len - 1; *p == ' '; --p){
-			*p = 0;
-		}
-	}
+	util_trim_end_spaces(_msg, strlen(_msg));
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		bool global = m->ctx->flags & IRC_MOD_GLOBAL;
@@ -673,19 +674,22 @@ IRC_STR_CALLBACK(on_chat_msg) {
 
 IRC_STR_CALLBACK(on_action) {
 	if(count < 2 || !params[0] || !params[1]) return;
+
 	const char *_chan = params[0], *_name = origin;
-
 	char* _msg = strdupa(params[1]);
-	size_t len = strlen(_msg);
-
-	// trim spaces at end of messages
-	if(len > 0){
-		for(char* p = _msg + len - 1; *p == ' '; --p){
-			*p = 0;
-		}
-	}
+	util_trim_end_spaces(_msg, strlen(_msg));
 
 	IRC_MOD_CALL_ALL_CHECK(on_action, (_chan, _name, _msg), IRC_CB_ACTION);
+}
+
+IRC_STR_CALLBACK(on_pm){
+	if(count < 2 || !params[1] || !origin) return;
+
+	const char* _name = origin;
+	char* _msg = strdupa(params[1]);
+	util_trim_end_spaces(_msg, strlen(_msg));
+
+	IRC_MOD_CALL_ALL(on_pm, (_name, _msg));
 }
 
 IRC_STR_CALLBACK(on_join) {
@@ -1100,6 +1104,7 @@ int main(int argc, char** argv){
 	irc_callbacks_t callbacks = {
 		.event_connect     = irc_on_connect,
 		.event_channel     = irc_on_chat_msg,
+		.event_privmsg     = irc_on_pm,
 		.event_join        = irc_on_join,
 		.event_part        = irc_on_part,
 		.event_nick        = irc_on_nick,
