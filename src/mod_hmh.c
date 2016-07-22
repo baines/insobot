@@ -6,6 +6,7 @@
 #include "stb_sb.h"
 #include "utils.h"
 #include <curl/curl.h>
+#include <sys/stat.h>
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
@@ -160,7 +161,7 @@ static bool update_schedule(void){
 	return true;
 }
 
-static void print_schedule(const char* chan, const char* name, bool terse){
+static void print_schedule(const char* chan, const char* name, const char* arg){
 	time_t now = time(0);
 
 	bool empty_sched = true;
@@ -174,7 +175,12 @@ static void print_schedule(const char* chan, const char* name, bool terse){
 	const size_t lim = empty_sched ? 30 : 1800;
 
 	if(now - last_schedule_update > lim){
-		if(update_schedule()) last_schedule_update = now;
+		if(update_schedule()){
+			last_schedule_update = now;
+		} else if(schedule_start.tm_year == 0){
+			ctx->send_msg(chan, "Error retrieving schedule :(");
+			return;
+		}
 	}
 
 	//FIXME: None of this crap should be done here, do it in update_schedule!
@@ -189,9 +195,38 @@ static void print_schedule(const char* chan, const char* name, bool terse){
 
 	int time_count = 0;
 	int prev_bucket = -1;
-
-	char* tz = tz_push(":US/Pacific");
+	bool terse = false;
 	
+	if(*arg == ' ' && strncasecmp(arg + 1, "terse", 5) == 0){
+		terse = true;
+		arg += 6;
+	}
+
+	char* tz;
+	if(*arg++ == ' '){
+		char timezone[64] = ":";
+		inso_strcat(timezone, sizeof(timezone), arg);
+
+		bool valid = false;
+		if(!strchr(timezone + 1, '.') && strcmp(timezone + 1, "Factory") != 0){
+			char tz_path[128] = "/usr/share/zoneinfo/posix/";
+			inso_strcat(tz_path, sizeof(tz_path), timezone + 1);
+
+			struct stat st;
+			if(stat(tz_path, &st) == 0 && S_ISREG(st.st_mode)){
+				tz = tz_push(timezone);
+				valid = true;
+			}
+		}
+
+		if(!valid){
+			ctx->send_msg(chan, "%s: Unknown timezone.", name);
+			return;
+		}
+	} else {
+		tz = tz_push(":US/Pacific");
+	}
+
 	// group days by equal times
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
 		struct tm lt = {};
@@ -254,6 +289,7 @@ static void print_schedule(const char* chan, const char* name, bool terse){
 	}
 
 	char prefix[64], suffix[64];
+	mktime(&schedule_start);
 	strftime(prefix, sizeof(prefix), "%b %d", &schedule_start);
 	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &schedule_start);
 	
@@ -289,7 +325,12 @@ static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
 	if(now - last_schedule_update > 1800){
-		if(update_schedule()) last_schedule_update = now;
+		if(update_schedule()){
+			last_schedule_update = now;
+		} else if(schedule_start.tm_year == 0){
+			ctx->send_msg(chan, "Error retrieving time :(");
+			return;
+		}
 	}
 
 	enum { SCHED_UNKNOWN = 0, SCHED_OFF = (1 << 0), SCHED_OLD = (1 << 1) };
@@ -386,8 +427,7 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 	switch(cmd){
 		case CMD_SCHEDULE: {
-			bool terse = strcasecmp(arg, " terse") == 0;
-			print_schedule(chan, name, terse);
+			print_schedule(chan, name, arg);
 		} break;
 
 		case CMD_TIME: {

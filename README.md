@@ -20,7 +20,7 @@ This table shows common modules & commands. Refer to the top of each module's
 | **mod_haiku**    | Poorly generates haikus | haiku                       | Let the poetry flow               | WLIST      |
 |                  |                         | scount \<word\>             | Show syllable guesstimate         | WLIST      |
 | **mod_help**     | Lists commands          | help [module]               | Shows commands (for [module])     | NORMAL     |
-| **mod_hmh**      | Handmade Hero commands  | schedule                    | Shows HMH schedule                | NORMAL     |
+| **mod_hmh**      | Handmade Hero commands  | schedule [tz timezone]      | Shows HMH schedule                | NORMAL     |
 |                  |                         | time                        | Shows time until next HMH stream  | NORMAL     |
 | **mod_karma**    | Tracks ++ and --        | karma                       | Shows your own karma              | NORMAL     |
 |                  |                         | karma \<user\>              | Shows \<user\>'s karma            | WLIST      |
