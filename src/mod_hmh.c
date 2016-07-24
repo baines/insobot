@@ -7,6 +7,7 @@
 #include "utils.h"
 #include <curl/curl.h>
 #include <sys/stat.h>
+#include <ctype.h>
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
@@ -206,6 +207,19 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	if(*arg++ == ' '){
 		char timezone[64] = ":";
 		inso_strcat(timezone, sizeof(timezone), arg);
+
+		char* p = timezone + 1;
+		for(char* p2 = p; *p2; ++p2) *p2 = tolower(*p2);
+		*p = toupper(*p);
+
+		if(strchr(p, '/')){
+			while((p = strchr(p, '/'))){
+				++p;
+				*p = toupper(*p);
+			}
+		} else {
+			while(*++p) *p = toupper(*p);
+		}
 
 		bool valid = false;
 		if(!strchr(timezone + 1, '.') && strcmp(timezone + 1, "Factory") != 0){
