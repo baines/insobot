@@ -8,7 +8,7 @@ This table shows common modules & commands. Refer to the top of each module's
 
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
-| **mod_admin**    | Administrative commands | fjoin      \<channel\>      | Force join a channel              | ADMIN      |
+| **mod_admin**    | Administrative commands | join       \<channel\>      | Force join a channel              | ADMIN      |
 | **mod_alias**    | Adds short ! macros     | alias      \<key\> \<val\>  | Adds a channel-specific alias     | WLIST      |
 |                  |                         | galias     \<key\> \<val\>  | Adds an alias for all channels    | WLIST      |
 |                  |                         | unalias    \<key\>          | Removes a channel-specific alias  | WLIST      |

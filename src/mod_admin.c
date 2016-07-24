@@ -18,7 +18,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &admin_cmd,
 	.on_stdin = &admin_stdin,
 	.commands = DEFINE_CMDS (
-		[FORCE_JOIN] = CONTROL_CHAR "fjoin"
+		[FORCE_JOIN] = CONTROL_CHAR "fjoin " CONTROL_CHAR "join"
 	)
 };
 

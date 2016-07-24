@@ -49,6 +49,7 @@ static void get_mod_cmds(IRCModuleCtx* mod, char* buf, size_t sz){
 }
 
 static void help_cmd(const char* chan, const char* name, const char* arg, int cmd){
+	if(cmd != CMD_HELP) return;
 
 	//TODO: description of each command?
 
@@ -66,29 +67,25 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 		}
 	}
 
-	switch(cmd){
-		case CMD_HELP: {
-			if(!*arg++){
-				ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module> to list its commands. Available modules: %s", name, mod_names);
-			} else {
-				const char* mod_end = strchrnul(arg, ' ');
-				char* mod = strndupa(arg, mod_end - arg);
+	if(!*arg++){
+		ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module> to list its commands. Available modules: %s", name, mod_names);
+	} else {
+		const char* mod_end = strchrnul(arg, ' ');
+		char* mod = strndupa(arg, mod_end - arg);
 
-				bool found = false;
-				for(IRCModuleCtx** m = mods; *m; ++m){
-					if(strcasecmp(mod, (*m)->name) == 0){
-						char cmds[256] = {};
-						get_mod_cmds(*m, cmds, sizeof(cmds));
-						ctx->send_msg(chan, "%s: Commands for %s: %s", name, mod, cmds);
-						found = true;
-						break;
-					}
-				}
-
-				if(!found){
-					ctx->send_msg(chan, "%s: I haven't heard of that module.", name);
-				}
+		bool found = false;
+		for(IRCModuleCtx** m = mods; *m; ++m){
+			if(strcasecmp(mod, (*m)->name) == 0){
+				char cmds[256] = {};
+				get_mod_cmds(*m, cmds, sizeof(cmds));
+				ctx->send_msg(chan, "%s: Commands for %s: %s", name, mod, cmds);
+				found = true;
+				break;
 			}
-		} break;
+		}
+
+		if(!found){
+			ctx->send_msg(chan, "%s: I haven't heard of that module.", name);
+		}
 	}
 }
