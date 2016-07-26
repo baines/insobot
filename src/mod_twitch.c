@@ -435,11 +435,15 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			sb_push(twitch_tracker_chans, strdup(chan));
 			ctx->send_msg(chan, "Enabled twitch tracker.");
 			twitch_tracker_update();
+			ctx->save_me();
+			return;
 		}
 		if(strcasecmp(arg, " disable") == 0 && enabled_index != -1){
 			free(twitch_tracker_chans[enabled_index]);
 			sb_erase(twitch_tracker_chans, enabled_index);
 			ctx->send_msg(chan, "Disabled twitch tracker.");
+			ctx->save_me();
+			return;
 		}
 	}
 
@@ -458,6 +462,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		t->tracked_name = optional_name;
 
 		ctx->send_msg(chan, "Now tracking channel %s", buffer);
+		ctx->save_me();
 
 	} else if(wlist && sscanf(arg, " del %s", buffer) == 1){
 		
@@ -465,6 +470,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		t->is_tracked = false;
 		
 		ctx->send_msg(chan, "Untracked channel %s", buffer);
+		ctx->save_me();
 
 	} else {
 	
@@ -481,6 +487,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			if(tag_index == -1){
 				sb_push(twitch_tracker_tags, strdup(name));
 				ctx->send_msg(chan, "%s: You'll now be tagged when streams go live!", name);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: You're already tagged, my friend.", name);
 			}
@@ -490,6 +497,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			if(tag_index != -1){
 				sb_erase(twitch_tracker_tags, tag_index);
 				ctx->send_msg(chan, "%s: OK, I've untagged you.", name);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: You're already not tagged.", name);
 			}
