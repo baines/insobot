@@ -510,25 +510,40 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 				}
 			}
 
-			ctx->send_msg(chan, "\037\002Currently live streams");
-			for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
-				if(!t->is_tracked || !t->stream_start) continue;
-				char* channel_name = twitch_keys[t - twitch_vals];
-				char* display_name = t->tracked_name ? t->tracked_name : channel_name + 1;
-			
-				ctx->send_msg(
-					chan,
-					"\0038%*s\017 -\00310 http://twitch.tv/%-*s \017- %s",
-					max_display_len,
-					display_name,
-					max_chan_len,
-					channel_name + 1,
-					t->stream_title
-				);
+			if(max_display_len == 0){
+				ctx->send_msg(chan, "No streams are currently live.");
+			} else {
+				ctx->send_msg(chan, "\002\037Currently live streams");
+
+				for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
+					if(!t->is_tracked || !t->stream_start) continue;
+					char* channel_name = twitch_keys[t - twitch_vals];
+					char* display_name = t->tracked_name ? t->tracked_name : channel_name + 1;
+
+					ctx->send_msg(
+						chan,
+						"\0038%*s\017 -\00310 http://twitch.tv/%-*s \017- %s",
+						max_display_len,
+						display_name,
+						max_chan_len,
+						channel_name + 1,
+						t->stream_title
+					);
+				}
 			}
 
+		} else if(strcasecmp(arg, " chans") == 0){
+
+			char chan_buf[1024] = {};
+			for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
+				if(!t->is_tracked) continue;
+				inso_strcat(chan_buf, sizeof(chan_buf), twitch_keys[t - twitch_vals] + 1);
+				inso_strcat(chan_buf, sizeof(chan_buf), " ");
+			}
+			ctx->send_msg(chan, "Tracked channels: %s", chan_buf);
+
 		} else {
-			ctx->send_msg(chan, "%s: Usage: !streams [list|tagme|untagme|add <chan> [name]|del <chan>", name);
+			ctx->send_msg(chan, "%s: Usage: !streams [list|tagme|untagme|chans|add <chan> [name]|del <chan>]", name);
 		}
 	}
 }
