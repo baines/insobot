@@ -103,6 +103,7 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
 	time_t now = time(0);
+	last_uptime_check = now;
 	last_follower_check = now;
 	last_tracker_update = now - 50;
 
@@ -451,10 +452,10 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = true;
-		if(t->tracked_name && optional_name){
+		if(t->tracked_name){
 			free(t->tracked_name);
-			t->tracked_name = optional_name;
 		}
+		t->tracked_name = optional_name;
 
 		ctx->send_msg(chan, "Now tracking channel %s", buffer);
 
