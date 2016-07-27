@@ -116,7 +116,7 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 		if(sscanf(line, "NOTIFY %s", buffer) == 1){
 			TwitchInfo* t = twitch_get_or_add(buffer);
-			
+
 			t->do_follower_notify = true;
 			t->last_follower_time = now;
 
@@ -166,8 +166,14 @@ static long twitch_curl(char** data, long last_time, const char* fmt, ...){
 	if(twitch_cid_header){
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_cid_header);
 	}
-	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
-	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, last_time);
+
+	if(last_time){
+		curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+		curl_easy_setopt(curl, CURLOPT_TIMEVALUE, last_time);
+	}
+
+	//curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, fwrite);
+	//curl_easy_setopt(curl, CURLOPT_HEADERDATA, stderr);
 
 	CURLcode ret = curl_easy_perform(curl);
 	free(url);
@@ -202,17 +208,21 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 	char* data = NULL;
 	yajl_val root = NULL;
 	time_t now = time(0);
-	
+
+	//printf("chan buf: [%s]\n", chan_buffer);
+	//printf("last_time: %zu\n", last_uptime_check);
+
 	long ret = twitch_curl(&data, last_uptime_check, "https://api.twitch.tv/kraken/streams?channel=%s", chan_buffer);
 	last_uptime_check = now;
 
 	if(ret == 304){
-		return;
+		puts("304");
+		goto unchanged;
 	}
 
 	if(ret == -1 || !(root = yajl_tree_parse(data, NULL, 0))){
 		fprintf(stderr, "mod_twitch: error getting uptime.\n");
-		return;
+		goto unchanged;
 	}
 
 	const char* streams_path[] = { "streams", NULL };
@@ -239,8 +249,6 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 				time_t new_stream_start;
 				if(end && !*end){
 					new_stream_start = timegm(&created_tm);
-				} else {
-					new_stream_start = 0;
 				}
 
 				info->live_state_changed = new_stream_start != info->stream_start;
@@ -268,6 +276,12 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 	}
 
 	sb_free(data);
+	return;
+
+unchanged:
+	for(int i = 0; i < count; ++i){
+		twitch_vals[indices[i]].live_state_changed = 0;
+	}
 }
 
 static bool twitch_check_live(size_t index){
@@ -434,7 +448,6 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		if(strcasecmp(arg, " enable") == 0 && enabled_index == -1){
 			sb_push(twitch_tracker_chans, strdup(chan));
 			ctx->send_msg(chan, "Enabled twitch tracker.");
-			twitch_tracker_update();
 			ctx->save_me();
 			return;
 		}
@@ -453,7 +466,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 	char* optional_name = NULL;
 
 	if(wlist && sscanf(arg, " add %s %m[^\n]", buffer, &optional_name) >= 1){
-		
+
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = true;
 		if(t->tracked_name){
@@ -465,15 +478,15 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		ctx->save_me();
 
 	} else if(wlist && sscanf(arg, " del %s", buffer) == 1){
-		
+
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = false;
-		
+
 		ctx->send_msg(chan, "Untracked channel %s", buffer);
 		ctx->save_me();
 
 	} else {
-	
+
 		int tag_index = -1;
 		for(char** tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
 			if(strcasecmp(*tag, name) == 0){
@@ -508,7 +521,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 
 			for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
 				if(!t->is_tracked || !t->stream_start) continue;
-				
+
 				size_t chan_len = strlen(twitch_keys[t - twitch_vals]) - 1;
 				max_chan_len = INSO_MAX(max_chan_len, chan_len);
 
@@ -737,6 +750,7 @@ static void twitch_tick(void){
 	time_t now = time(0);
 
 	if(now - last_tracker_update > tracker_update_interval){
+		puts("tracker update...");
 		twitch_tracker_update();
 		last_tracker_update = now;
 	}
