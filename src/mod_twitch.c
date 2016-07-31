@@ -251,7 +251,8 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 					new_stream_start = timegm(&created_tm);
 				}
 
-				info->live_state_changed = new_stream_start != info->stream_start;
+//				info->live_state_changed = new_stream_start != info->stream_start;
+				info->live_state_changed = info->stream_start == 0;
 				info->stream_start = new_stream_start;
 
 				if(title){
