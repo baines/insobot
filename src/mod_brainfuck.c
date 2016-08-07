@@ -22,7 +22,7 @@ static const IRCCoreCtx* ctx;
 static char bf_mem[30000];
 static const char* bf_end = bf_mem + sizeof(bf_mem) - 1;
 
-#define MAX_CYCLES 50000
+#define MAX_CYCLES 500000
 
 #if 0
 	#define BF_DBG(fmt, ...) printf(fmt, ##__VA_ARGS__)
@@ -48,14 +48,14 @@ static void brainfuck_cmd(const char* chan, const char* name, const char* arg, i
 	char  output[512] = {};
 	char* out_p       = output;
 
-	char* p           = bf_mem;
+	char* p           = bf_mem + sizeof(bf_mem)/2;
 	
 	memset(bf_mem, 0, sizeof(bf_mem));
 
 	int cycles = 0;
 	int nesting = 0;
 
-	while(cycles++ < MAX_CYCLES){
+	while(++cycles < MAX_CYCLES){
 		switch(*ip){
 			case '>': { BF_DBG(">\n"); if(p < bf_end) ++p; } break;
 			case '<': { BF_DBG("<\n"); if(p > bf_mem) --p; } break;
@@ -72,8 +72,10 @@ static void brainfuck_cmd(const char* chan, const char* name, const char* arg, i
 
 			case ',': {
 				BF_DBG("in [%d]\n", *in_p);
-				*p = *in_p ?: -1; // use -1 as EOF
-				if(*in_p) ++in_p;
+				// EOF = no change
+				if(*in_p){
+					*p = *in_p++;
+				}
 			} break;
 
 			case '[': {
