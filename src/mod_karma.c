@@ -84,7 +84,7 @@ static KEntry* karma_add_name(const char* name){
 	return ret;
 }
 
-static bool karma_update(KEntry* actor, const char* target, bool upvote){
+static bool karma_update(const char* chan, KEntry* actor, const char* target, bool upvote){
 	KEntry* k;
 
 	bool narcissist = false;
@@ -103,6 +103,25 @@ static bool karma_update(KEntry* actor, const char* target, bool upvote){
 			actor->down++;
 		}
 
+		// for miblo... what were you smoking? :P
+		{
+			const char* link = NULL;
+			int total = k->up - k->down;
+			if(total == 33){
+				switch(rand()%5){
+					case 0: link = "https://youtu.be/sNIF6EfL4aQ"; break;
+					case 1: link = "https://youtu.be/KskeSH4_9zQ"; break;
+					case 2: link = "https://youtu.be/Er3CzM534Qs"; break; // d7
+					case 3: link = "https://youtu.be/wsYL_46VOLU"; break;
+					case 4: link = "https://youtu.be/5AC65UldyxQ"; break;
+				};
+			}
+			if(total == 45) link = "https://youtu.be/LtTORnD9wWw";
+			if(total == 78) link = "https://youtu.be/zMS63my4DuA";
+
+			if(link) ctx->send_msg(chan, "Happy birthday %s %s", target, link);
+		}
+
 		return true;
 	}
 
@@ -112,7 +131,7 @@ static bool karma_update(KEntry* actor, const char* target, bool upvote){
 static const char ytmnd[] = "!ytmnd ";
 static const char ytwnd[] = "!ytwnd ";
 
-static void karma_check(KEntry* actor, const char* msg){
+static void karma_check(const char* chan, KEntry* actor, const char* msg){
 
 	const char* delim = msg;
 	bool changes = false;
@@ -127,7 +146,7 @@ static void karma_check(KEntry* actor, const char* msg){
 	){
 		const char* beg = msg + dog_size;
 		const char* end = strchrnul(msg + dog_size, ' ');
-		changes = karma_update(actor, strndupa(beg, end - beg), true);
+		changes = karma_update(chan, actor, strndupa(beg, end - beg), true);
 	} else {
 		for(const char* p = msg; *p; ++p){
 			if(*p == ' ') delim = p + 1;
@@ -146,7 +165,7 @@ static void karma_check(KEntry* actor, const char* msg){
 					target = strndupa(delim, p - delim);
 				}
 
-				if((changes = karma_update(actor, target, *p == '+'))){
+				if((changes = karma_update(chan, actor, target, *p == '+'))){
 					break;
 				}
 				++p;
@@ -162,7 +181,7 @@ static void karma_check(KEntry* actor, const char* msg){
 }
 
 static void karma_msg(const char* chan, const char* name, const char* msg){
-	karma_check(karma_add_name(name), msg);
+	karma_check(chan, karma_add_name(name), msg);
 }
 
 static void karma_cmd(const char* chan, const char* name, const char* arg, int cmd){
