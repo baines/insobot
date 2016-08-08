@@ -104,10 +104,11 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 		}
 
 		// for miblo... what were you smoking? :P
-		{
-			const char* link = NULL;
-			int total = k->up - k->down;
-			if(total == 33){
+
+		const char* link = NULL;
+
+		switch(k->up - k->down){
+			case 33: {
 				switch(rand()%5){
 					case 0: link = "https://youtu.be/sNIF6EfL4aQ"; break;
 					case 1: link = "https://youtu.be/KskeSH4_9zQ"; break;
@@ -115,12 +116,40 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 					case 3: link = "https://youtu.be/wsYL_46VOLU"; break;
 					case 4: link = "https://youtu.be/5AC65UldyxQ"; break;
 				};
-			}
-			if(total == 45) link = "https://youtu.be/LtTORnD9wWw";
-			if(total == 78) link = "https://youtu.be/zMS63my4DuA";
+			} break;
+			case 45: link = "https://youtu.be/LtTORnD9wWw"; break;
+			case 78: link = "https://youtu.be/zMS63my4DuA"; break;
 
-			if(link) ctx->send_msg(chan, "Happy birthday %s %s", target, link);
+			case 314:
+			case 3141:
+			case 31415: {
+				link = "https://youtu.be/0rYsPmVtHRM";
+			} break;
+
+			case 13 : link = "https://youtu.be/uPNBzvhNvSc"; break;
+			case 18 : link = "https://youtu.be/B-oU2xlViRQ"; break;
+			case 50 : link = "https://youtu.be/_8Aytn3Fcu0"; break;
+			case 69 : link = "https://youtu.be/lMKhq8l_9mI"; break;
+			case 88 : link = "https://youtu.be/IJ1DIFv0ZyY"; break;
+			case 101: link = "https://youtu.be/D3m99nfBUHg"; break;
+			case 144: link = "https://youtu.be/NjxNnqTcHhg"; break;
+			case 147: link = "https://youtu.be/7GkgoeKHsXI"; break;
+			case 180: link = "https://youtu.be/VRef1-6imT8"; break;
+			case 213: link = "https://youtu.be/KDwgQyJ_uzg"; break;
+			case 256: link = "https://youtu.be/jt5tRaV3iY0"; break;
+			case 360: link = "https://youtu.be/cGMWL8cOeAU"; break;
+			case 386: link = "https://youtu.be/VsE0BwQ3l8U"; break;
+			case 400: link = "https://youtu.be/z5LW07FTJbI"; break;
+			case 420: link = "https://youtu.be/WeYsTmIzjkw"; break;
+			case 444: link = "https://youtu.be/8URkBbDsF9o"; break;
+			case 512: link = "https://youtu.be/dulxbKkj9Wg"; break;
+			case 666: link = "https://youtu.be/WxnN05vOuSM"; break;
+			case 777: link = "https://youtu.be/gzfgUCOzUoY"; break;
+			case 888: link = "https://youtu.be/8NUesc8pXj4"; break;
+			case 925: link = "https://youtu.be/UbxUSsFXYo4"; break;
 		}
+
+		if(link) ctx->send_msg(chan, "Happy birthday %s %s", target, link);
 
 		return true;
 	}
