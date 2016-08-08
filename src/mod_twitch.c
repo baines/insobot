@@ -13,7 +13,7 @@ static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 
-enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER };
+enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "twitch",
@@ -28,7 +28,8 @@ const IRCModuleCtx irc_mod_ctx = {
 		[FOLLOW_NOTIFY]  = CONTROL_CHAR "fnotify",
 		[UPTIME]         = CONTROL_CHAR "uptime "  CONTROL_CHAR_2 "uptime",
 		[TWITCH_VOD]     = CONTROL_CHAR "vod "     CONTROL_CHAR_2 "vod",
-		[TWITCH_TRACKER] = CONTROL_CHAR "tracker " CONTROL_CHAR_2 "tracker " CONTROL_CHAR "streams " CONTROL_CHAR_2 "streams"
+		[TWITCH_TRACKER] = CONTROL_CHAR "tracker " CONTROL_CHAR_2 "tracker " CONTROL_CHAR "streams " CONTROL_CHAR_2 "streams",
+		[TWITCH_TITLE]   = CONTROL_CHAR "title "   CONTROL_CHAR_2 "title"
 	)
 };
 
@@ -43,7 +44,7 @@ static time_t last_follower_check;
 static time_t last_tracker_update;
 
 static CURL* curl;
-static struct curl_slist* twitch_cid_header;
+static struct curl_slist* twitch_headers;
 
 typedef struct {
 	bool do_follower_notify;
@@ -140,7 +141,14 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	if(client_id){
 		char buf[256];
 		snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
-		twitch_cid_header = curl_slist_append(NULL, buf);
+		twitch_headers = curl_slist_append(twitch_headers, buf);
+	}
+
+	const char* oauth_token = getenv("INSOBOT_TWITCH_TOKEN");
+	if(oauth_token){
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Authorization: OAuth %s", oauth_token);
+		twitch_headers = curl_slist_append(twitch_headers, buf);
 	}
 
 	return true;
@@ -163,8 +171,8 @@ static long twitch_curl(char** data, long last_time, const char* fmt, ...){
 	*data = NULL;
 	inso_curl_reset(curl, url, data);
 
-	if(twitch_cid_header){
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_cid_header);
+	if(twitch_headers){
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_headers);
 	}
 
 	if(last_time){
@@ -276,6 +284,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 		}
 	}
 
+	yajl_tree_free(root);
 	sb_free(data);
 	return;
 
@@ -571,6 +580,44 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 	}
 }
 
+static void twitch_set_title(const char* chan, const char* name, const char* msg){
+
+	char* title = curl_easy_escape(curl, msg, 0);
+
+	char *url, *data;
+	asprintf_check(&url , "https://api.twitch.tv/kraken/channels/%s", chan+1);
+	asprintf_check(&data, "channel[status]=%s", title);
+
+	curl_free(title);
+
+	char* response = NULL;
+	inso_curl_reset(curl, url, &response);
+
+	curl_easy_setopt(curl, CURLOPT_POST, 1);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_headers);
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+
+	curl_easy_perform(curl);
+
+	free(url);
+	free(data);
+
+	long http_code = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+//	fprintf(stderr, "response: [%s]\n", response);
+	sb_free(response);
+
+	if(http_code == 200){
+		ctx->send_msg(chan, "%s: Title updated successfully.", name);
+	} else if(http_code == 403){
+		ctx->send_msg(chan, "%s: I don't have permission to update the title.", name);
+	} else {
+		ctx->send_msg(chan, "%s: Error updating title for channel \"%s\".", name, chan+1);
+	}
+}
+
 static void twitch_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	bool is_admin = strcasecmp(chan + 1, name) == 0 || inso_is_admin(ctx, name);
 	bool is_wlist = is_admin || inso_is_wlist(ctx, name);
@@ -645,6 +692,12 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 
 		case TWITCH_TRACKER: {
 			twitch_tracker_cmd(chan, name, arg, is_wlist);
+		} break;
+
+		case TWITCH_TITLE: {
+			if(is_admin && *arg++ == ' '){
+				twitch_set_title(chan, name, arg);
+			}
 		} break;
 	}
 }
@@ -796,8 +849,8 @@ static void twitch_quit(void){
 	sb_free(twitch_keys);
 	sb_free(twitch_vals);
 
-	if(twitch_cid_header){
-		curl_slist_free_all(twitch_cid_header);
+	if(twitch_headers){
+		curl_slist_free_all(twitch_headers);
 	}
 
 	curl_easy_cleanup(curl);
