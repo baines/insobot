@@ -377,6 +377,7 @@ static void twitch_tracker_update(void){
 
 	bool any_changed = false;
 	bool any_live = false;
+	bool sent_ping = false;
 
 	size_t* track_indices = NULL;
 	size_t index_count = 0;
@@ -411,8 +412,9 @@ static void twitch_tracker_update(void){
 			inso_strcat(topic, sizeof(topic), " ");
 
 			if(changed){
-				if(!any_changed && *tag_buf){
+				if(!sent_ping && *tag_buf){
 					TWITCH_TRACKER_MSG("FAO %s:", tag_buf);
+					sent_ping = true;
 				}
 				any_changed = true;
 
