@@ -49,7 +49,7 @@ typedef struct KEntry_ {
 
 static KEntry* klist;
 
-static const int karma_cooldown = 60;
+static const int karma_cooldown = 600;
 
 static KEntry* karma_find(const char* name, bool adjust){
 	for(KEntry* k = klist; k < sb_end(klist); ++k){
@@ -108,6 +108,7 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 		const char* link = NULL;
 
 		switch(k->up - k->down){
+
 			case 33: {
 				switch(rand()%5){
 					case 0: link = "https://youtu.be/sNIF6EfL4aQ"; break;
@@ -117,7 +118,11 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 					case 4: link = "https://youtu.be/5AC65UldyxQ"; break;
 				};
 			} break;
-			case 45: link = "https://youtu.be/LtTORnD9wWw"; break;
+
+			case 45: {
+				link = rand()%2? "https://youtu.be/LtTORnD9wWw" : "https://youtu.be/lM7H0ooV_o8";
+			} break;
+
 			case 78: link = "https://youtu.be/zMS63my4DuA"; break;
 
 			case 314:
@@ -128,9 +133,13 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 
 			case 13 : link = "https://youtu.be/uPNBzvhNvSc"; break;
 			case 18 : link = "https://youtu.be/B-oU2xlViRQ"; break;
+			case 27 : link = "https://youtu.be/tLsQsirjmeo"; break;
+			case 40 : link = "https://youtu.be/QyQzDmnDriY"; break;
 			case 50 : link = "https://youtu.be/_8Aytn3Fcu0"; break;
+			case 65 : link = "https://youtu.be/zA52uNzx7Y4"; break;
 			case 69 : link = "https://youtu.be/lMKhq8l_9mI"; break;
 			case 88 : link = "https://youtu.be/IJ1DIFv0ZyY"; break;
+			case 96 : link = "https://youtu.be/WgQ7qOCDFYQ"; break;
 			case 101: link = "https://youtu.be/D3m99nfBUHg"; break;
 			case 144: link = "https://youtu.be/NjxNnqTcHhg"; break;
 			case 147: link = "https://youtu.be/7GkgoeKHsXI"; break;
