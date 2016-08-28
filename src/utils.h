@@ -5,6 +5,9 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <curl/curl.h>
 #include "stb_sb.h"
 
@@ -78,6 +81,24 @@ static inline int inso_strcat(char* buf, size_t sz, const char* str){
 	} else {
 		return sz - len;
 	}
+}
+
+static inline bool inso_mkdir_p(const char* path){
+	char* buf = strdupa(path);
+	char* prev_p = buf;
+	char* p;
+
+	while((p = strchr(prev_p, '/'))){
+		*p = 0;
+		if(access(buf, F_OK) != 0 && mkdir(buf, 00755) == -1){
+			perror(__func__);
+			return false;
+		}
+		*p = '/';
+		prev_p = p+1;
+	}
+
+	return true;
 }
 
 static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, ...){

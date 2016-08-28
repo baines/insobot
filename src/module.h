@@ -106,4 +106,8 @@ typedef struct IRCModMsg_ {
 	0\
 }
 
+#define CMD1(x) CONTROL_CHAR x " "
+#define CMD2(x) CONTROL_CHAR_2 x " "
+#define CMD(x) CMD1(x) CMD2(x)
+
 #endif

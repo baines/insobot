@@ -1172,8 +1172,6 @@ int main(int argc, char** argv){
 			int ret = select(max_fd + 1, &in, &out, NULL, &tv);
 				
 			if(ret > 0){
-				timerclear(&idle_tv);
-				ping_sent = 0;
 
 				if(irc_process_select_descriptors(irc_ctx, &in, &out) != 0){
 					fprintf(stderr, "Error processing select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
@@ -1191,6 +1189,15 @@ int main(int argc, char** argv){
 				if(FD_ISSET(ipc_socket, &in)){
 					util_ipc_recv();
 				}
+
+				for(int i = 0; i < max_fd + 1; ++i){
+					if(i != STDIN_FILENO && i != ipc_socket && FD_ISSET(i, &in)){
+						timerclear(&idle_tv);
+						ping_sent = 0;
+						break;
+					}
+				}
+
 			} else if(ret == 0){
 
 				struct timeval ping_tv    = { .tv_sec = 60 };

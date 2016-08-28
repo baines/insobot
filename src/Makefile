@@ -12,7 +12,7 @@ all: ../insobot $(module_out)
 	mkdir $@
 
 ../modules/%.so: %.c config.h module.h utils.h stb_sb.h | ../modules
-	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl -lz
+	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl -lyajl -lz -lcairo
 	
 clean:
 	rm -f ../insobot $(module_out) 
