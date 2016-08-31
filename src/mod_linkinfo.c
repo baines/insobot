@@ -34,8 +34,8 @@ static regex_t twitter_url_regex;
 static const char* twitter_token;
 
 static regex_t steam_url_regex;
-
 static regex_t vimeo_url_regex;
+static regex_t xkcd_url_regex;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -90,6 +90,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
+	ret = ret & (regcomp(
+		&xkcd_url_regex,
+		"https?://xkcd.com/([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
 	twitter_token = getenv("INSOBOT_TWITTER_TOKEN");
 	if(!twitter_token || !*twitter_token){
 		fputs("mod_linkinfo: no twitter token, expanding tweets won't work.\n", stderr);
@@ -107,6 +113,7 @@ static void linkinfo_quit(void){
 	regfree(&twitter_url_regex);
 	regfree(&steam_url_regex);
 	regfree(&vimeo_url_regex);
+	regfree(&xkcd_url_regex);
 }
 
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
@@ -587,6 +594,45 @@ out:
 	sb_free(data);
 }
 
+static void do_xkcd_info(const char* chan, const char* msg, regmatch_t* matches){
+
+	const char* id = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+	char* data = NULL;
+	char* url;
+	asprintf_check(&url, "https://xkcd.com/%s/info.0.json", id);
+
+	CURL* curl = inso_curl_init(url, &data);
+
+	CURLcode err;
+	if((err = curl_easy_perform(curl)) == CURLE_OK){
+		sb_push(data, 0);
+
+		static const char* title_path[] = { "title", NULL };
+		static const char* img_path[] = { "img", NULL };
+		static const char* alt_path[] = { "alt", NULL };
+
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		yajl_val title = yajl_tree_get(root, title_path, yajl_t_string);
+		yajl_val img = yajl_tree_get(root, img_path, yajl_t_string);
+		yajl_val alt = yajl_tree_get(root, alt_path, yajl_t_string);
+
+		if(!root || !title || !img || !alt){
+			fprintf(stderr, "mod_linkinfo; xkcd expand failed\n");
+		} else {
+			const char* suffix = strlen(alt->u.string) > 200 ? "..." : "";
+			ctx->send_msg(chan, "↑ xkcd %s: \"%s\", [%s] [Alt: %.200s%s]", id, title->u.string, img->u.string, alt->u.string, suffix);
+		}
+
+		yajl_tree_free(root);
+		curl_easy_cleanup(curl);
+	} else {
+		fprintf(stderr, "mod_linkinfo: xkcd curl [%s] err: %s", url, curl_easy_strerror(err));
+	}
+
+	sb_free(data);
+	free(url);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -610,4 +656,9 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 	if(regexec(&vimeo_url_regex, msg, 2, matches, 0) == 0){
 		do_vimeo_info(chan, msg, matches);
 	}
+
+	if(regexec(&xkcd_url_regex, msg, 2, matches, 0) == 0){
+		do_xkcd_info(chan, msg, matches);
+	}
+
 }
