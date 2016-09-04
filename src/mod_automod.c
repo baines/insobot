@@ -11,7 +11,7 @@ static void automod_cmd     (const char*, const char*, const char*, int);
 static bool automod_init    (const IRCCoreCtx*);
 static void automod_join    (const char*, const char*);
 static void automod_connect (const char*);
-//static void automod_quit    (void);
+static void automod_quit    (void);
 
 enum { AUTOMOD_TIMEOUT, AUTOMOD_UNBAN };
 
@@ -24,7 +24,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init    = &automod_init,
 	.on_connect = &automod_connect,
 	.on_join    = &automod_join,
-//	.on_quit    = &automod_quit
+	.on_quit    = &automod_quit,
 	.commands   = DEFINE_CMDS(
 		[AUTOMOD_TIMEOUT] = "!b \\b !to !ko \\ko",
 		[AUTOMOD_UNBAN]   = "!ub \\ub"
@@ -54,6 +54,23 @@ static bool automod_init(const IRCCoreCtx* _ctx){
 	is_twitch = true;
 	regcomp(&url_regex, "https?://[^[:space:]]+", REG_ICASE | REG_EXTENDED);
 	return true;
+}
+
+static void automod_quit(void){
+	regfree(&url_regex);
+
+	for(char** c = channels; c < sb_end(channels); ++c){
+		free(*c);
+	}
+	sb_free(channels);
+
+	for(Suspect** slist = suspects; slist < sb_end(suspects); ++slist){
+		for(Suspect* s = *slist; s < sb_end(*slist); ++s){
+			free(s->name);
+		}
+		sb_free(*slist);
+	}
+	sb_free(suspects);
 }
 
 static void automod_connect(const char* serv){

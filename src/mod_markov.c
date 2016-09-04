@@ -26,6 +26,7 @@ enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_STATUS };
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "markov",
 	.desc     = "Says incomprehensible stuff",
+	.flags    = IRC_MOD_DEFAULT,
 	.on_init  = &markov_init,
 	.on_quit  = &markov_quit,
 	.on_cmd   = &markov_cmd,

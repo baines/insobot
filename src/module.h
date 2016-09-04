@@ -90,12 +90,12 @@ enum {
 };
 
 // used for inter-module communication messages
-typedef struct IRCModMsg_ {
+struct IRCModMsg_ {
 	const char* cmd;
 	intptr_t    arg;
 	void        (*callback)(intptr_t result, intptr_t arg);
 	intptr_t    cb_arg;
-} IRCModMsg;
+};
 
 #define MOD_MSG(ctx, cmd, arg, cb, cb_arg) (ctx)->send_mod_msg(\
 	&(IRCModMsg){ (cmd), (intptr_t)(arg), (cb), (intptr_t)(cb_arg) }\

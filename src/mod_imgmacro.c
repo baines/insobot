@@ -7,10 +7,6 @@
 #include <cairo/cairo.h>
 #include <ctype.h>
 
-#define CMD1(x) CONTROL_CHAR x " "
-#define CMD2(x) CONTROL_CHAR_2 x " "
-#define CMD(x) CMD1(x) CMD2(x)
-
 static bool im_init (const IRCCoreCtx*);
 static void im_cmd  (const char*, const char*, const char*, int);
 static void im_pm   (const char*, const char*);
@@ -25,7 +21,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.desc        = "Creates image macros / \"memes\"",
 	.on_init     = &im_init,
 	.on_cmd      = &im_cmd,
-//	.on_pm       = &im_pm,
+	.on_pm       = &im_pm,
 	.on_save     = &im_save,
 	.on_quit     = &im_quit,
 	.on_ipc      = &im_ipc,
@@ -42,44 +38,17 @@ typedef struct IMEntry_ {
 	int id;
 	char* url;
 	char* text;
+	char* del;
 } IMEntry;
 
 static IMEntry* im_entries;
 
 static const char* imgur_client_id;
 static const char* imgur_album_id;
-//static const char* imgur_album_hash;
+static const char* imgur_album_hash;
 static struct curl_slist* imgur_curl_headers;
 
 static char* im_base_dir;
-
-static void im_base64(char* buffer, const uint8_t* data, size_t data_len){
-	static const char* lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-	size_t i;
-	for(i = 0; i < data_len; i += 3){
-
-		uint8_t bytes[3] = {
-			data[i],
-			i+1 < data_len ? data[i+1] : 0,
-			i+2 < data_len ? data[i+2] : 0
-		};
-
-		*buffer++ = lookup[  bytes[0] >> 0x2];
-		*buffer++ = lookup[((bytes[0] & 0x03) << 4) | (bytes[1] >> 4)];
-		*buffer++ = lookup[((bytes[1] & 0x0F) << 2) | (bytes[2] >> 6)];
-		*buffer++ = lookup[  bytes[2] & 0x3F];
-	}
-
-	switch(i - data_len){
-		case 2: buffer[-2] = '=';
-		case 1: buffer[-1] = '=';
-		case 0: break;
-		default: __builtin_unreachable();
-	}
-
-	*buffer++ = 0;
-}
 
 static char* im_get_template(const char* name){
 	char dir_buf[PATH_MAX];
@@ -110,24 +79,23 @@ static char* im_lookup(int id){
 static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 
 #if 0
-	printf("png_len: %u\n", png_len);
 	FILE* f = fopen("debug-image.png", "wb");
 	fwrite(png, png_len, 1, f);
 	fflush(f);
 	fclose(f);
+	return false;
 #endif
 
 	char title[32];
 	snprintf(title, sizeof(title), "%d", e->id);
 
-	char* base64_buf = malloc(png_len * 2);
-	im_base64(base64_buf, png, png_len);
-
 	struct curl_httppost *form = NULL, *last = NULL;
 
 	curl_formadd(&form, &last,
 				 CURLFORM_PTRNAME, "image",
-				 CURLFORM_PTRCONTENTS, base64_buf,
+				 CURLFORM_BUFFER, "image.png",
+				 CURLFORM_BUFFERPTR, png,
+				 CURLFORM_BUFFERLENGTH, png_len,
 				 CURLFORM_END);
 
 	curl_formadd(&form, &last,
@@ -136,27 +104,19 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 				 CURLFORM_END);
 
 	curl_formadd(&form, &last,
-				 CURLFORM_PTRNAME, "type",
-				 CURLFORM_PTRCONTENTS, "base64",
-				 CURLFORM_END);
-
-	curl_formadd(&form, &last,
 				 CURLFORM_PTRNAME, "description",
 				 CURLFORM_PTRCONTENTS, e->text,
 				 CURLFORM_END);
 
-#if 0
 	curl_formadd(&form, &last,
 				 CURLFORM_PTRNAME, "album",
 				 CURLFORM_PTRCONTENTS, imgur_album_hash,
 				 CURLFORM_END);
-#endif
 
 	char* data = NULL;
 	CURL* curl = inso_curl_init("https://api.imgur.com/3/image", &data);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, imgur_curl_headers);
 	curl_easy_setopt(curl, CURLOPT_HTTPPOST, form);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
 	CURLcode c = curl_easy_perform(curl);
 	if(c != CURLE_OK) printf("mod_imgmacro: curl error: %s\n", curl_easy_strerror(c));
 	sb_push(data, 0);
@@ -166,7 +126,6 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 
 	curl_easy_cleanup(curl);
 	curl_formfree(form);
-	free(base64_buf);
 
 	static const char* id_path[]  = { "data", "id", NULL };
 	static const char* del_path[] = { "data", "deletehash", NULL };
@@ -178,6 +137,8 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 	if(root && id && del){
 		printf("DELETE HASH: [%s] = [%s]\n", id->u.string, del->u.string);
 		asprintf_check(&e->url, "https://i.imgur.com/%s.png", id->u.string);
+		e->del = strdup(del->u.string);
+		ctx->save_me();
 	} else {
 		printf("mod_imgmacro: root/id/del null\n");
 		http_code = 0;
@@ -239,7 +200,7 @@ static void im_draw_text(cairo_t* cairo, double w, double h, const char* text, i
 
 static IMEntry* im_create(const char* template, const char* top, const char* bot){
 	
-	// check if one already exists first, cmp top / bot with IMEntry.text
+	// TODO: check if one already exists first, cmp top / bot with IMEntry.text
 
 	cairo_surface_t* img = cairo_image_surface_create_from_png(template);
 	cairo_t* cairo = cairo_create(img);
@@ -254,7 +215,7 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 	
 	cairo_set_line_width(cairo, font_sz / 24.0);
 	cairo_set_line_cap  (cairo, CAIRO_LINE_CAP_SQUARE);
-	cairo_set_line_join (cairo, CAIRO_LINE_CAP_SQUARE);
+	cairo_set_line_join (cairo, CAIRO_LINE_JOIN_BEVEL);
 
 	im_draw_text(cairo, img_w, img_h, top, IM_TEXT_TOP);
 	im_draw_text(cairo, img_w, img_h, bot, IM_TEXT_BOTTOM);
@@ -282,6 +243,9 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 
 	bool ok = im_upload(png_data, sb_count(png_data), &e);
 
+	cairo_destroy(cairo);
+	cairo_surface_destroy(img);
+
 	if(ok){
 		ctx->send_ipc(0, "update", 7);
 		sb_push(im_entries, e);
@@ -294,6 +258,8 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 	return ok ? &sb_last(im_entries) : NULL;
 }
 
+// TODO
+#if 0
 static void im_update(void){
 
 	for(IMEntry* i = im_entries; i < sb_end(im_entries); ++i){
@@ -344,15 +310,16 @@ static void im_update(void){
 	yajl_tree_free(root);
 	sb_free(data);
 }
+#endif
 
 static bool im_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	
 	imgur_client_id  = getenv("INSOBOT_IMGUR_CLIENT_ID");
 	imgur_album_id   = getenv("INSOBOT_IMGMACRO_ALBUM_ID");
-//	imgur_album_hash = getenv("INSOBOT_IMGMACRO_ALBUM_HASH");
+	imgur_album_hash = getenv("INSOBOT_IMGMACRO_ALBUM_HASH");
 
-	if(!imgur_client_id || !imgur_album_id /* || !imgur_album_hash */){
+	if(!imgur_client_id || !imgur_album_id || !imgur_album_hash){
 		return false;
 	}
 
@@ -369,8 +336,15 @@ static bool im_init(const IRCCoreCtx* _ctx){
 
 		asprintf_check(&im_base_dir, "%s/.local/share/insobot/imgmacro/", data_dir);
 	} else {
-		asprintf_check(&im_base_dir, "%s/insobot/imggmacro/", data_dir);
+		asprintf_check(&im_base_dir, "%s/insobot/imgmacro/", data_dir);
 	}
+
+	IMEntry e;
+	FILE* f = fopen(ctx->get_datafile(), "r");
+	while(fscanf(f, "%d %ms %ms %m[^\n]", &e.id, &e.url, &e.del, &e.text) == 4){
+		sb_push(im_entries, e);
+	}
+	fclose(f);
 
 //	inso_mkdir_p(im_base_dir);
 
@@ -415,16 +389,20 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 
 		case IM_SHOW: {
 			int id;
-			char* link;
+			char* link = NULL;
 
-			//FIXME: broken, get link manually
 			if(sscanf(arg, " %d", &id) != 1){
-				if(sb_count(im_entries) == 0){
-					break;
+				int total = sb_count(im_entries);
+				if(total == 0){
+					ctx->send_msg(chan, "%s: None here :(", name);
+				} else {
+					link = im_entries[rand() % total].url;
 				}
+			} else {
+				link = im_lookup(id);
 			}
 
-			if((link = im_lookup(id))){
+			if(link){
 				ctx->send_msg(chan, "%s: %s", name, link);
 			} else {
 				ctx->send_msg(chan, "%s: Unknown id.", name);
@@ -443,13 +421,24 @@ static void im_pm(const char* name, const char* msg){
 }
 
 static bool im_save(FILE* f){
-	return false;
+	for(IMEntry* i = im_entries; i < sb_end(im_entries); ++i){
+		fprintf(f, "%d %s %s %s\n", i->id, i->url, i->del, i->text);
+	}
+	return true;
 }
 
 static void im_quit(void){
+	for(IMEntry* i = im_entries; i < sb_end(im_entries); ++i){
+		free(i->url);
+		free(i->text);
+		free(i->del);
+	}
+	sb_free(im_entries);
 
+	free(im_base_dir);
+	curl_slist_free_all(imgur_curl_headers);
 }
 
 static void im_ipc(int sender_id, const uint8_t* data, size_t data_len){
-	im_update();
+//	im_update(); TODO
 }

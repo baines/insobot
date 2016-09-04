@@ -1,4 +1,4 @@
-CFLAGS   := -D_GNU_SOURCE -Wall -Wno-pointer-sign -std=gnu99 -g -fsanitize=address
+CFLAGS := -D_GNU_SOURCE -Wall -Wno-pointer-sign -std=gnu99 -g
 
 module_src := $(wildcard mod_*.c)
 module_out := $(patsubst %.c,../modules/%.so,$(module_src))

@@ -252,13 +252,9 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 				TwitchInfo* info = twitch_get_or_add(name->u.string);
 
 				struct tm created_tm = {};
-				const char* end = strptime(start->u.string, "%Y-%m-%dT%TZ", &created_tm);
+				strptime(start->u.string, "%Y-%m-%dT%TZ", &created_tm);
 
-				time_t new_stream_start;
-				if(end && !*end){
-					new_stream_start = timegm(&created_tm);
-				}
-
+				time_t new_stream_start = timegm(&created_tm);
 //				info->live_state_changed = new_stream_start != info->stream_start;
 				info->live_state_changed = info->stream_start == 0;
 				info->stream_start = new_stream_start;
@@ -806,13 +802,13 @@ static void twitch_tick(void){
 	time_t now = time(0);
 
 	if(now - last_tracker_update > tracker_update_interval){
-		puts("tracker update...");
+		puts("mod_twitch: tracker update...");
 		twitch_tracker_update();
 		last_tracker_update = now;
 	}
 
 	if(sb_count(twitch_keys) && (now - last_follower_check > follower_check_interval)){
-		puts("Checking twitch followers...");
+		puts("mod_twitch: checking new followers...");
 		twitch_check_followers();
 		last_follower_check = now;
 	}
@@ -844,12 +840,20 @@ static bool twitch_save(FILE* f){
 static void twitch_quit(void){
 	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 		free(twitch_keys[i]);
-		if(twitch_vals[i].last_vod_msg){
-			free(twitch_vals[i].last_vod_msg);
-		}
+		free(twitch_vals[i].last_vod_msg);
+		free(twitch_vals[i].stream_title);
+		free(twitch_vals[i].tracked_name);
 	}
 	sb_free(twitch_keys);
 	sb_free(twitch_vals);
+
+	for(char** c = twitch_tracker_chans; c < sb_end(twitch_tracker_chans); ++c) free(*c);
+	for(char** c = twitch_tracker_tags; c < sb_end(twitch_tracker_tags); ++c) free(*c);
+	sb_free(twitch_tracker_chans);
+	sb_free(twitch_tracker_tags);
+
+	for(TwitchUser* u = twitch_users; u < sb_end(twitch_users); ++u) free(u->name);
+	sb_free(twitch_users);
 
 	if(twitch_headers){
 		curl_slist_free_all(twitch_headers);

@@ -401,6 +401,8 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 
 		if(!IRC_MOD_CALL(m, on_init, (core_ctx))){
 			printf("** Init failed for %s.\n", mod_name);
+			dlclose(m->lib_handle);
+			m->lib_handle = NULL;
 			sb_erase(irc_modules, m - irc_modules);
 			--m;
 			continue;
