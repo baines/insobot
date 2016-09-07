@@ -127,6 +127,7 @@ static const char* bad_end_words[] = {
 	"a",
 	"as",
 	"if",
+	"i",
 	",",
 	"/",
 	NULL
@@ -143,8 +144,9 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 
 	int chain_len = 1 + markov_rand(max_chain_len);
 	int links = 0;
+	bool should_end = false;
 
-	while(++links){
+	do {
 		size_t total = 0;
 		size_t end_count = 0;
 
@@ -157,10 +159,10 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		assert(total);
 		ssize_t count = markov_rand(total);
 
-		bool should_end =
-			(links >= chain_len * 2 && end_count) ||
+		should_end =
 			(links >= chain_len && end_count > (total / 2)) ||
-			(links > (max_chain_len * 3));
+			(links >= chain_len * 1.5f && end_count) ||
+			(links >= chain_len * 2.0f);
 
 		val = chain_vals + key->val_idx;
 		while((count -= val->count) >= 0){
@@ -188,12 +190,9 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		ssize_t new_key_idx = find_key_idx(key->word_idx_2, val->word_idx);
 		assert(new_key_idx > 0);
 
-		if(should_end){
-			break;
-		}
-
 		key = chain_keys + new_key_idx;
-	}
+
+	} while(!should_end);
 
 	return strlen(buffer);
 }
@@ -235,11 +234,7 @@ static const char* markov_get_punct(){
 }
 
 static bool markov_gen_formatted(char* msg, size_t msg_len){
-	int val = markov_rand(15);
-	int num_sentences = 
-		val < 10 ? 1 :
-		val < 14 ? 2 :
-		3;
+	int num_sentences = markov_rand(10) < 8 ? 1 : 2;
 
 	while(num_sentences--){
 		int attempts = 0;

@@ -65,6 +65,21 @@ static void whitelist_load(void){
 	}
 
 	fclose(f);
+
+	bool found_owner = false;
+	for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
+		if(strcasecmp(BOT_OWNER, wle->name) == 0){
+			found_owner = true;
+			break;
+		}
+	}
+
+	if(!found_owner){
+		WLEntry wl = { .name = strdup(BOT_OWNER), .role = ROLE_ADMIN };
+		sb_push(wlist, wl);
+		ctx->save_me();
+	}
+
 }
 
 static inline bool role_check(const char* name, int role){
