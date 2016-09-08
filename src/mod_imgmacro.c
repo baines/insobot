@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <cairo/cairo.h>
 #include <ctype.h>
+#include <glob.h>
 
 static bool im_init (const IRCCoreCtx*);
 static void im_cmd  (const char*, const char*, const char*, int);
@@ -14,7 +15,7 @@ static bool im_save (FILE*);
 static void im_quit (void);
 static void im_ipc  (int, const uint8_t*, size_t);
 
-enum { IM_CREATE, IM_SHOW, IM_LIST };
+enum { IM_CREATE, IM_SHOW, IM_LIST, IM_AUTO };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name        = "imgmacro",
@@ -26,9 +27,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit     = &im_quit,
 	.on_ipc      = &im_ipc,
 	.commands    = DEFINE_CMDS (
-		[IM_CREATE] = CMD("newimg") CMD("mkmeme"),
-		[IM_SHOW]   = CMD("img")    CMD("meme"),
-		[IM_LIST]   = CMD("lsimg")  CMD("memelist")
+		[IM_CREATE] = CMD("newimg")  CMD("mkmeme"),
+		[IM_SHOW]   = CMD("img")     CMD("meme"),
+		[IM_LIST]   = CMD("lsimg")   CMD("memelist"),
+		[IM_AUTO]   = CMD("autoimg") CMD("automeme")
 	)
 };
 
@@ -54,17 +56,31 @@ static char* im_get_template(const char* name){
 	char dir_buf[PATH_MAX];
 	dir_buf[PATH_MAX - 1] = 0;
 
-	if(strchr(name, '.')) return NULL;
-
 	strncpy(dir_buf, im_base_dir, sizeof(dir_buf) - 1);
 
-	if(inso_strcat(dir_buf, sizeof(dir_buf), name) < 0) return NULL;
-	if(inso_strcat(dir_buf, sizeof(dir_buf), ".png") < 0) return NULL;
+	if(name){
+		if(strchr(name, '.')) return NULL;
+		if(inso_strcat(dir_buf, sizeof(dir_buf), name) < 0) return NULL;
+		if(inso_strcat(dir_buf, sizeof(dir_buf), ".png") < 0) return NULL;
 
-	printf("imgmacro template: [%s]\n", dir_buf);
+		printf("imgmacro template: [%s]\n", dir_buf);
 
-	struct stat st;
-	if(stat(dir_buf, &st) != 0 || !S_ISREG(st.st_mode)) return NULL;
+		struct stat st;
+		if(stat(dir_buf, &st) != 0 || !S_ISREG(st.st_mode)) return NULL;
+	} else {
+		inso_strcat(dir_buf, sizeof(dir_buf), "*.png");
+
+		glob_t glob_data;
+		if(glob(dir_buf, 0, NULL, &glob_data) != 0 || glob_data.gl_pathc == 0){
+			return NULL;
+		}
+		char* path = glob_data.gl_pathv[rand() % glob_data.gl_pathc];
+		strcpy(dir_buf, path);
+
+		globfree(&glob_data);
+
+		puts(dir_buf);
+	}
 
 	return strdup(dir_buf);
 }
@@ -108,10 +124,12 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 				 CURLFORM_PTRCONTENTS, e->text,
 				 CURLFORM_END);
 
+#if 0
 	curl_formadd(&form, &last,
 				 CURLFORM_PTRNAME, "album",
 				 CURLFORM_PTRCONTENTS, imgur_album_hash,
 				 CURLFORM_END);
+#endif
 
 	char* data = NULL;
 	CURL* curl = inso_curl_init("https://api.imgur.com/3/image", &data);
@@ -351,6 +369,14 @@ static bool im_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
+static void imgmacro_markov_cb(intptr_t result, intptr_t arg){
+	if(result && !*(char*)arg){
+		*(char**)arg = (char*)result;
+	} else if(result){
+		free((char*)result);
+	}
+}
+
 static void im_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	if(!inso_is_wlist(ctx, name)) return;
 
@@ -407,6 +433,56 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 			} else {
 				ctx->send_msg(chan, "%s: Unknown id.", name);
 			}
+		} break;
+
+		case IM_LIST: {
+
+		} break;
+
+		case IM_AUTO: {
+			char* markov_text = NULL;
+			MOD_MSG(ctx, "markov_gen", 0, &imgmacro_markov_cb, &markov_text);
+			if(!markov_text) break;
+
+			size_t word_count = 1;
+			for(char* c = markov_text; *c; ++c){
+				if(*c == ' ') word_count++;
+				*c = toupper(*c);
+			}
+			word_count = INSO_MIN(word_count, 12);
+
+			size_t half_count = word_count / 2;
+			char *txt_top = markov_text, *txt_bot = NULL;
+
+			for(char* c = markov_text; *c; ++c){
+				if(*c == ' ' && --half_count <= 0){
+					*c = '\0';
+					txt_bot = c+1;
+					break;
+				}
+			}
+
+			// give the bottom text a bit more than half to maybe finish sentences.
+			half_count = (word_count*3) / 2;
+			if(txt_bot){
+				for(char* c = txt_bot; *c; ++c){
+					if(*c == ' ' && --half_count <= 0){
+						*c = '\0';
+						break;
+					}
+				}
+			}
+
+			char* img_name = im_get_template(NULL);
+			IMEntry* e = im_create(img_name, txt_top, txt_bot);
+			if(e){
+				ctx->send_msg(chan, "%s Meme %d: %s", name, e->id, e->url);
+			} else {
+				ctx->send_msg(chan, "Error creating image");
+			}
+
+			free(img_name);
+			free(markov_text);
 		} break;
 	}
 }
