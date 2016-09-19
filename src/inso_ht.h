@@ -11,12 +11,13 @@
 
 typedef struct {
 	size_t capacity;
-	size_t orig_cap;
+	size_t prev_cap;
 	size_t used;
-	size_t offset;
 	size_t elem_size;
+	size_t rehash_idx;
 	size_t (*hash_fn)(const void*);
 	char*  memory;
+	char*  prev_memory;
 } inso_ht;
 
 #ifndef NDEBUG
@@ -33,24 +34,24 @@ INSO_HT_DECL void inso_ht_free (inso_ht*);
 INSO_HT_DECL int  inso_ht_put  (inso_ht*, const void* elem);
 INSO_HT_DECL bool inso_ht_get  (inso_ht*, void* outp, size_t hash, inso_ht_cmp_fn, void* param);
 INSO_HT_DECL bool inso_ht_del  (inso_ht*, size_t hash, inso_ht_cmp_fn, void* param);
-//INSO_HT_DECL int  inso_ht_ctl  (inso_ht*, int cmd, ...);
+INSO_HT_DECL bool inso_ht_tick (inso_ht*);
 
 // Implementation
 
 #if !defined(INSO_HT_SPLIT) || defined(INSO_HT_IMPL)
 
-INSO_HT_DECL bool   inso_htpriv_get_i (inso_ht*, size_t*, size_t, inso_ht_cmp_fn, void*);
-INSO_HT_DECL void   inso_htpriv_del_i (inso_ht*, size_t);
+INSO_HT_DECL int    inso_htpriv_put   (inso_ht*, const void*);
+INSO_HT_DECL bool   inso_htpriv_get_i (inso_ht*, intptr_t*, size_t, inso_ht_cmp_fn, void*);
+INSO_HT_DECL void   inso_htpriv_del_i (inso_ht*, intptr_t);
 INSO_HT_DECL size_t inso_htpriv_align (size_t);
 
 INSO_HT_DECL void inso_ht_init(inso_ht* ht, size_t nmemb, size_t size, inso_ht_hash_fn hash_fn){
+	assert(ht);
+	memset(ht, 0, sizeof(*ht));
 
 	nmemb = inso_htpriv_align(nmemb);
 
 	ht->capacity  = size * nmemb;
-	ht->orig_cap  = ht->capacity;
-	ht->used      = 0;
-	ht->offset    = 0;
 	ht->elem_size = size;
 	ht->hash_fn   = hash_fn;
 	ht->memory    = calloc(ht->capacity, 1);
@@ -61,37 +62,114 @@ INSO_HT_DECL void inso_ht_init(inso_ht* ht, size_t nmemb, size_t size, inso_ht_h
 }
 
 INSO_HT_DECL void inso_ht_free(inso_ht* ht){
-	if(ht && !ht->memory){
+	if(ht && ht->memory){
 		free(ht->memory);
-		ht->memory = 0;
+		if(ht->prev_memory){
+			free(ht->prev_memory);
+		}
 	}
+	memset(ht, 0, sizeof(*ht));
 }
 
 INSO_HT_DECL int inso_ht_put(inso_ht* ht, const void* elem){
 	assert(ht);
 	assert(ht->memory);
-
+	inso_ht_tick(ht);
+	
 	if(ht->used && (float)ht->used / (float)ht->capacity > 0.75f){
 
-		ht->offset    = ht->capacity;
-		ht->capacity *= 2;
-		ht->memory    = realloc(ht->memory, ht->capacity);
+		while(inso_ht_tick(ht));
 
-		INSO_HT_DBG("ht_put: expanding table. off: %zu, cap: %zu\n", ht->offset, ht->capacity);
+		ht->prev_cap    = ht->capacity;
+		ht->capacity   *= 2;
+		ht->prev_memory = ht->memory;
+		ht->memory      = calloc(ht->capacity, 1);
+		ht->rehash_idx  = 0;
+		ht->used        = 0;
+
+		INSO_HT_DBG("ht_put: expanding table. %zu -> %zu\n", ht->prev_cap, ht->capacity);
 
 		assert(ht->memory);
-		memset(ht->memory + ht->offset, 0, ht->capacity - ht->offset);
 	}
 
-	size_t limit = (ht->capacity - ht->offset) / ht->elem_size;
+	return inso_htpriv_put(ht, elem);
+}
+
+
+INSO_HT_DECL bool inso_ht_get(inso_ht* ht, void* outp, size_t hash, inso_ht_cmp_fn cmp, void* param){
+	assert(ht);
+	assert(ht->memory);
+	inso_ht_tick(ht);
+
+	intptr_t index;
+	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
+		if(index >= 0){
+			memcpy(outp, ht->memory + index * ht->elem_size, ht->elem_size);
+		} else {
+			memcpy(outp, ht->prev_memory - (index+1) * ht->elem_size, ht->elem_size);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+INSO_HT_DECL bool inso_ht_del(inso_ht* ht, size_t hash, inso_ht_cmp_fn cmp, void* param){
+	assert(ht);
+	assert(ht->memory);
+	inso_ht_tick(ht);
+
+	size_t index;
+	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
+		inso_htpriv_del_i(ht, index);
+		return true;
+	}
+
+	return false;
+}
+
+INSO_HT_DECL bool inso_ht_tick(inso_ht* ht){
+	if(!ht->prev_memory) return false;
+
+	size_t cap = ht->prev_cap / ht->elem_size;
+	size_t i;
+
+	for(i = ht->rehash_idx; i < cap; ++i){
+		uint8_t v = 0;
+		for(size_t j = 0; j < ht->elem_size; ++j){
+			v |= ht->prev_memory[i * ht->elem_size + j];
+		}
+
+		if(v){
+			inso_htpriv_put(ht, ht->prev_memory + i * ht->elem_size);
+			ht->rehash_idx = ++i;
+			break;
+		}
+	}
+
+	if(i >= cap){
+		free(ht->prev_memory);
+		ht->prev_memory = NULL;
+		INSO_HT_DBG("done rehashing table.\n");
+	}
+
+	return ht->prev_memory;
+}
+
+//////////////////////////////////
+
+INSO_HT_DECL int inso_htpriv_put(inso_ht* ht, const void* elem){
+
+	// TODO: robin-hood hashing?
+
+	size_t limit = ht->capacity / ht->elem_size;
 	size_t hash  = ht->hash_fn(elem);
-	size_t off   = ht->offset / ht->elem_size;
 	size_t coll  = 0;
 
 	for(size_t count = 0; count < limit; ++count){
-		size_t i = off + (hash + count) % limit;
+		size_t i = (hash + count) % limit;
 
-		unsigned char v = 0;
+		uint8_t v = 0;
 		for(size_t j = 0; j < ht->elem_size; ++j){
 			v |= ht->memory[i * ht->elem_size + j];
 		}
@@ -105,91 +183,59 @@ INSO_HT_DECL int inso_ht_put(inso_ht* ht, const void* elem){
 		}
 	}
 
-	asm("int3");
+	assert(!"ht_put: no space? wat.");
 
 	return 0;
 }
 
-INSO_HT_DECL bool inso_ht_get(inso_ht* ht, void* outp, size_t hash, inso_ht_cmp_fn cmp, void* param){
-	assert(ht);
-	assert(ht->memory);
-
-	size_t index;
-	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
-		memcpy(outp, ht->memory + index * ht->elem_size, ht->elem_size);
-		return true;
-	}
-
-	return false;
-}
-
-INSO_HT_DECL bool inso_ht_del(inso_ht* ht, size_t hash, inso_ht_cmp_fn cmp, void* param){
-	assert(ht);
-	assert(ht->memory);
-
-	size_t index;
-	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
-		inso_htpriv_del_i(ht, index);
-		return true;
-	}
-
-	return false;
-}
-
-//////////////////////////////////
-
 INSO_HT_DECL bool
-inso_htpriv_get_i(inso_ht* ht, size_t* idx, size_t hash, inso_ht_cmp_fn cmp, void* param){
-	// TODO optimization:
-	// MRU moving (robin-hood hashing)
-	// use priority func set by inso_ht_ctl instead of MRU if set.
-	
-	for(size_t off = 0, cap = ht->orig_cap; cap <= ht->capacity; off = cap, cap *= 2){
-		size_t limit = (cap - off) / ht->elem_size;
+inso_htpriv_get_i(inso_ht* ht, intptr_t* idx, size_t hash, inso_ht_cmp_fn cmp, void* param){
 
-		INSO_HT_DBG("ht_get_i: off=%zu, cap=%zu, limit=%zu\n", off, cap, limit);
+	char*  mem[] = { ht->memory   , ht->prev_memory };
+	size_t cap[] = { ht->capacity , ht->prev_cap    };
+
+	for(size_t n = 0; n < 2; ++n){
+		size_t limit = cap[n] / ht->elem_size;
 
 		for(size_t count = 0; count < limit; ++count){
-			size_t i = (off / ht->elem_size) + (hash + count) % limit;
+			size_t i = (hash + count) % limit;
 
-			unsigned char v = 0;
+			uint8_t v = 0;
 			for(size_t j = 0; j < ht->elem_size; ++j){
-				v |= ht->memory[i * ht->elem_size + j];
+				v |= mem[n][i * ht->elem_size + j];
 			}
 
 			if(!v) break;
 
-			if(cmp(ht->memory + i * ht->elem_size, param)){
-				*idx = i;
+			if((!n || i >= ht->rehash_idx) && cmp(mem[n] + i * ht->elem_size, param)){
+				*idx = n ? -(i+1) : i;
 				return true;
 			}
 		}
+
+		if(!ht->prev_memory) break;
 	}
 
 	return false;
 }
 
 INSO_HT_DECL void
-inso_htpriv_del_i(inso_ht* ht, size_t idx){
+inso_htpriv_del_i(inso_ht* ht, intptr_t idx){
+
+	if(idx < 0){
+		memset(ht->prev_memory - (idx+1), 0, ht->elem_size);
+		return;
+	}
 
 	memset(ht->memory + idx * ht->elem_size, 0, ht->elem_size);
 
-	size_t cap = ht->orig_cap / ht->elem_size;
-	size_t off = 0;
-
-	while(cap <= idx){
-		off = cap;
-		cap *= 2;
-	}
-
-	size_t limit = cap - off;
-
-	INSO_HT_DBG("ht_del: starting. idx=%zu, cap=%zu, off=%zu, lim=%zu.\n", idx, cap, off, limit);
+	size_t limit = ht->capacity / ht->elem_size;
+	INSO_HT_DBG("ht_del: starting. idx=%zu, cap=%zu, lim=%zu.\n", idx, ht->capacity, limit);
 
 	for(size_t count = 1; count < limit; ++count){
-		size_t i = off + (idx - off + count) % limit;
+		size_t i = (idx + count) % limit;
 		
-		unsigned char v = 0;
+		uint8_t v = 0;
 		for(size_t j = 0; j < ht->elem_size; ++j){
 			v |= ht->memory[i * ht->elem_size + j];
 		}
@@ -202,7 +248,7 @@ inso_htpriv_del_i(inso_ht* ht, size_t idx){
 		}
 
 		size_t hash = ht->hash_fn(ht->memory + i * ht->elem_size);
-		size_t idx2 = off + hash % limit;
+		size_t idx2 = hash % limit;
 
 		INSO_HT_DBG("hash=%zu, idx2=%zu, ", hash, idx2);
 
@@ -219,7 +265,7 @@ inso_htpriv_del_i(inso_ht* ht, size_t idx){
 		INSO_HT_DBG("\n");
 	}
 
-	asm("int3");
+	assert(!"ht_del: not found and no empty slots? wtf");
 }
 
 INSO_HT_DECL size_t inso_htpriv_align(size_t i){
