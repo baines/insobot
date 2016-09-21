@@ -346,7 +346,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	char* url = NULL;
 
 	asprintf_check(&auth_token, "Authorization: Bearer %s", twitter_token);
-	asprintf_check(&url, "https://api.twitter.com/1.1/statuses/show/%s.json", tweet_id);
+	asprintf_check(&url, "https://api.twitter.com/1.1/statuses/show/%s.json?tweet_mode=extended", tweet_id);
 
 	CURL* curl = inso_curl_init(url, &data);
 
@@ -366,7 +366,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 //	printf("TWITTER DEBUG: [%s]\n", data);
 
 	const char* date_path[] = { "created_at", NULL };
-	const char* text_path[] = { "text", NULL };
+	const char* text_path[] = { "full_text", NULL };
 	const char* user_path[] = { "user", "name", NULL };
 	const char* urls_path[] = { "entities", "urls", NULL };
 	const char* media_path[] = { "extended_entities", "media", NULL };
