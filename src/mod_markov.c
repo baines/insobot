@@ -139,7 +139,7 @@ static size_t chain_key_hash(const void* arg){
 static bool chain_key_cmp(const void* elem, void* param){
 	uint64_t* id = param;
 	const MarkovLinkKey* key = elem;
-	return (((size_t)key->word_idx_1 << 32UL) | key->word_idx_2) == *id;
+	return (((uint64_t)key->word_idx_1 << 32UL) | key->word_idx_2) == *id;
 }
 
 static uint32_t markov_rand(uint32_t limit){

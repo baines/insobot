@@ -10,15 +10,14 @@ static bool haiku_init(const IRCCoreCtx*);
 
 enum { HAIKU, SYLLABLE_COUNT };
 
-
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "haiku",
 	.desc       = "(poorly) generate haikus",
 	.on_cmd     = &haiku_cmd,
 	.on_init    = &haiku_init,
-	.commands = DEFINE_CMDS (
-		[HAIKU] = CONTROL_CHAR "haiku " CONTROL_CHAR_2 "haiku",
-		[SYLLABLE_COUNT] = CONTROL_CHAR "scount " CONTROL_CHAR_2 "scount"
+	.commands   = DEFINE_CMDS (
+		[HAIKU]          = CMD("haiku"),
+		[SYLLABLE_COUNT] = CMD("scount")
 	)
 };
 

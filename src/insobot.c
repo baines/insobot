@@ -19,6 +19,7 @@
 #include <limits.h>
 #include <glob.h>
 #include <dlfcn.h>
+#include <link.h>
 #include <pthread.h>
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
@@ -364,7 +365,6 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		mod_list_dirty = true;
 
 		const char* mod_name = basename(m->lib_path);
-		printf("Loading module %s\n", mod_name);
 
 		if(m->lib_handle){
 			util_module_save(m);
@@ -374,6 +374,9 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 
 		dlerror();
 		m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
+
+		struct link_map* mod_info = m->lib_handle;
+		printf("Loading module %-20s [0x%lx]\n", mod_name, mod_info->l_addr);
 
 		const char* errmsg = "NULL lib handle";
 		if(m->lib_handle && !(errmsg = dlerror())){

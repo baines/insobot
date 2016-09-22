@@ -78,8 +78,6 @@ static char* im_get_template(const char* name){
 		strcpy(dir_buf, path);
 
 		globfree(&glob_data);
-
-		puts(dir_buf);
 	}
 
 	return strdup(dir_buf);
@@ -513,6 +511,7 @@ static void im_quit(void){
 
 	free(im_base_dir);
 	curl_slist_free_all(imgur_curl_headers);
+	cairo_debug_reset_static_data();
 }
 
 static void im_ipc(int sender_id, const uint8_t* data, size_t data_len){
