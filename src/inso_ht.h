@@ -1,5 +1,8 @@
 #ifndef INSO_HT_H_
 #define INSO_HT_H_
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 
 #ifdef INSO_HT_SPLIT
 	#define INSO_HT_DECL
@@ -9,6 +12,7 @@
 
 // Interface
 
+// TODO: custom memory allocators
 typedef struct {
 	size_t capacity;
 	size_t prev_cap;
@@ -29,18 +33,18 @@ typedef struct {
 typedef size_t (*inso_ht_hash_fn) (const void* entry);
 typedef bool   (*inso_ht_cmp_fn)  (const void* entry, void* param);
 
-INSO_HT_DECL void inso_ht_init (inso_ht*, size_t nmemb, size_t size, inso_ht_hash_fn);
-INSO_HT_DECL void inso_ht_free (inso_ht*);
-INSO_HT_DECL int  inso_ht_put  (inso_ht*, const void* elem);
-INSO_HT_DECL bool inso_ht_get  (inso_ht*, void* outp, size_t hash, inso_ht_cmp_fn, void* param);
-INSO_HT_DECL bool inso_ht_del  (inso_ht*, size_t hash, inso_ht_cmp_fn, void* param);
-INSO_HT_DECL bool inso_ht_tick (inso_ht*);
+INSO_HT_DECL void  inso_ht_init (inso_ht*, size_t nmemb, size_t size, inso_ht_hash_fn);
+INSO_HT_DECL void  inso_ht_free (inso_ht*);
+INSO_HT_DECL void* inso_ht_put  (inso_ht*, const void* elem);
+INSO_HT_DECL void* inso_ht_get  (inso_ht*, size_t hash, inso_ht_cmp_fn, void* param);
+INSO_HT_DECL bool  inso_ht_del  (inso_ht*, size_t hash, inso_ht_cmp_fn, void* param);
+INSO_HT_DECL bool  inso_ht_tick (inso_ht*);
 
 // Implementation
 
 #if !defined(INSO_HT_SPLIT) || defined(INSO_HT_IMPL)
 
-INSO_HT_DECL int    inso_htpriv_put   (inso_ht*, const void*);
+INSO_HT_DECL void*  inso_htpriv_put   (inso_ht*, const void*);
 INSO_HT_DECL bool   inso_htpriv_get_i (inso_ht*, intptr_t*, size_t, inso_ht_cmp_fn, void*);
 INSO_HT_DECL void   inso_htpriv_del_i (inso_ht*, intptr_t);
 INSO_HT_DECL size_t inso_htpriv_align (size_t);
@@ -71,7 +75,7 @@ INSO_HT_DECL void inso_ht_free(inso_ht* ht){
 	memset(ht, 0, sizeof(*ht));
 }
 
-INSO_HT_DECL int inso_ht_put(inso_ht* ht, const void* elem){
+INSO_HT_DECL void* inso_ht_put(inso_ht* ht, const void* elem){
 	assert(ht);
 	assert(ht->memory);
 	inso_ht_tick(ht);
@@ -96,22 +100,24 @@ INSO_HT_DECL int inso_ht_put(inso_ht* ht, const void* elem){
 }
 
 
-INSO_HT_DECL bool inso_ht_get(inso_ht* ht, void* outp, size_t hash, inso_ht_cmp_fn cmp, void* param){
+INSO_HT_DECL void* inso_ht_get(inso_ht* ht, size_t hash, inso_ht_cmp_fn cmp, void* param){
 	assert(ht);
 	assert(ht->memory);
 	inso_ht_tick(ht);
 
 	intptr_t index;
 	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
-		if(index >= 0){
-			memcpy(outp, ht->memory + index * ht->elem_size, ht->elem_size);
-		} else {
-			memcpy(outp, ht->prev_memory - (index+1) * ht->elem_size, ht->elem_size);
+		char* mem = ht->memory;
+
+		if(index < 0){
+			index = -(index+1);
+			mem = ht->prev_memory;
 		}
-		return true;
+
+		return mem + index * ht->elem_size;
 	}
 
-	return false;
+	return NULL;
 }
 
 INSO_HT_DECL bool inso_ht_del(inso_ht* ht, size_t hash, inso_ht_cmp_fn cmp, void* param){
@@ -158,13 +164,12 @@ INSO_HT_DECL bool inso_ht_tick(inso_ht* ht){
 
 //////////////////////////////////
 
-INSO_HT_DECL int inso_htpriv_put(inso_ht* ht, const void* elem){
+INSO_HT_DECL void* inso_htpriv_put(inso_ht* ht, const void* elem){
 
 	// TODO: robin-hood hashing?
 
 	size_t limit = ht->capacity / ht->elem_size;
 	size_t hash  = ht->hash_fn(elem);
-	size_t coll  = 0;
 
 	for(size_t count = 0; count < limit; ++count){
 		size_t i = (hash + count) % limit;
@@ -177,16 +182,17 @@ INSO_HT_DECL int inso_htpriv_put(inso_ht* ht, const void* elem){
 		if(!v){
 			memcpy(ht->memory + (i * ht->elem_size), elem, ht->elem_size);
 			ht->used += ht->elem_size;
-			return coll;
-		} else {
-			++coll;
+			return ht->memory + i * ht->elem_size;
 		}
 	}
 
 	assert(!"ht_put: no space? wat.");
 
-	return 0;
+	return NULL;
 }
+
+// TODO: i think the negative index == in secondary table was a bad idea, just make this rehash
+// and return the new index?
 
 INSO_HT_DECL bool
 inso_htpriv_get_i(inso_ht* ht, intptr_t* idx, size_t hash, inso_ht_cmp_fn cmp, void* param){

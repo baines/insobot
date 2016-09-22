@@ -12,6 +12,7 @@
 #include <regex.h>
 #include <zlib.h>
 #include "utils.h"
+#include "inso_ht.h"
 
 static bool markov_init (const IRCCoreCtx*);
 static void markov_quit (void);
@@ -59,10 +60,17 @@ typedef struct {
 	uint32_t next;
 } MarkovLinkVal;
 
+typedef struct {
+	word_idx_t word_idx;
+	uint32_t   total;
+} WordInfo;
+
 static char* word_mem;
 
-static MarkovLinkKey* chain_keys;
+static inso_ht        chain_keys_ht;
 static MarkovLinkVal* chain_vals;
+
+static inso_ht word_ht;
 
 static char rng_state_mem[256];
 static struct random_data rng_state;
@@ -80,6 +88,60 @@ static size_t hash_idx;
 
 static char** markov_nicks;
 
+
+static uint32_t markov_hash(const char* str, size_t len){
+	uint32_t hash = 6159;
+	for(int i = 0; i < len; ++i){
+		hash = hash * 187 + str[i];
+	}
+	return hash;
+}
+
+static void markov_add_hash(const char* str, size_t len){
+	recent_hashes[hash_idx] = markov_hash(str, len);
+	hash_idx = (hash_idx + 1) % ARRAY_SIZE(recent_hashes);
+}
+
+static bool markov_check_dup(const char* str, size_t len){
+	uint32_t hash = markov_hash(str, len);
+	for(int i = 0; i < ARRAY_SIZE(recent_hashes); ++i){
+		if(recent_hashes[i] == hash) return true;
+	}
+	return false;
+}
+
+static size_t wordinfo_hash(const void* arg){
+	const WordInfo* w = arg;
+	return markov_hash(word_mem + w->word_idx, strlen(word_mem + w->word_idx));
+}
+
+static bool wordinfo_cmp(const void* elem, void* param){
+	const char* str = param;
+	const WordInfo* w = elem;
+	return strcmp(str, word_mem + w->word_idx) == 0;
+}
+
+static uint32_t hash6432shift(uint64_t key){
+	key = (~key) + (key << 18);
+	key = key ^ (key >> 31);
+	key = key * 21;
+	key = key ^ (key >> 11);
+	key = key + (key << 6);
+	key = key ^ (key >> 22);
+	return (uint32_t)key;
+}
+
+static size_t chain_key_hash(const void* arg){
+	const MarkovLinkKey* k = arg;
+	return hash6432shift((uint64_t)k->word_idx_1 << 32UL) | k->word_idx_2;
+}
+
+static bool chain_key_cmp(const void* elem, void* param){
+	uint64_t* id = param;
+	const MarkovLinkKey* key = elem;
+	return (((size_t)key->word_idx_1 << 32UL) | key->word_idx_2) == *id;
+}
+
 static uint32_t markov_rand(uint32_t limit){
 	int32_t x;
 
@@ -90,35 +152,35 @@ static uint32_t markov_rand(uint32_t limit){
 	return x % limit;
 }
 
-static bool find_word(const char* word, size_t word_len, word_idx_t* index){
-	char* w = alloca(word_len + 2);
-	w[0] = 0;
-	memcpy(w + 1, word, word_len + 1);
+static bool find_word_addref(const char* word, size_t word_len, word_idx_t* index){
+	WordInfo* info;
+	size_t hash = markov_hash(word, word_len);
+	char* zword = strndupa(word, word_len);
 
-	char* p = memmem(word_mem, sbmm_count(word_mem), w, word_len + 2);
-	if(p){
-		*index = (p + 1) - word_mem;
+	if((info = inso_ht_get(&word_ht, hash, &wordinfo_cmp, zword))){
+		*index = info->word_idx;
+		++info->total;
+		return true;
 	}
 
-	return p != NULL;
+	return false;
 }
 
 static word_idx_t find_or_add_word(const char* word, size_t word_len){
 	word_idx_t index;
-	if(!find_word(word, word_len, &index)){
+
+	if(!find_word_addref(word, word_len, &index)){
 		char* p = memcpy(sbmm_add(word_mem, word_len+1), word, word_len+1);
 		index = p - word_mem;
+		inso_ht_put(&word_ht, &(WordInfo){ index, 1 });
 	}
+
 	return index;
 }
 
-static ssize_t find_key_idx(word_idx_t a, word_idx_t b){
-	for(const MarkovLinkKey* k = chain_keys; k < sbmm_end(chain_keys); ++k){
-		if(k->word_idx_1 == a && k->word_idx_2 == b){
-			return k - chain_keys;
-		}
-	}
-	return -1;
+static MarkovLinkKey* find_key(word_idx_t a, word_idx_t b){
+	uint64_t id = ((uint64_t)a << 32) | b;
+	return inso_ht_get(&chain_keys_ht, hash6432shift(id), &chain_key_cmp, &id);
 }
 
 static const char* bad_end_words[] = {
@@ -137,10 +199,8 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 	if(!buffer_len) return 0;
 	*buffer = 0;
 
-	ssize_t key_idx = find_key_idx(start_sym_idx, start_sym_idx);
-	assert(key_idx != -1);
-
-	MarkovLinkKey* key = chain_keys + key_idx;
+	MarkovLinkKey* key = find_key(start_sym_idx, start_sym_idx);
+	assert(key);
 
 	int chain_len = 1 + markov_rand(max_chain_len);
 	int links = 0;
@@ -187,37 +247,14 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		}
 		inso_strcat(buffer, buffer_len, word);
 
-		ssize_t new_key_idx = find_key_idx(key->word_idx_2, val->word_idx);
-		assert(new_key_idx > 0);
-
-		key = chain_keys + new_key_idx;
+		key = find_key(key->word_idx_2, val->word_idx);
+		assert(key);
 
 	} while(!should_end);
 
 	return strlen(buffer);
 }
 
-static uint32_t markov_hash(const char* str, size_t len){
-	uint32_t hash = 9229;
-	for(int i = 0; i < len; ++i){
-		hash *= 31U;
-		hash += str[i];
-	}
-	return hash;
-}
-
-static void markov_add_hash(const char* str, size_t len){
-	recent_hashes[hash_idx] = markov_hash(str, len);
-	hash_idx = (hash_idx + 1) % ARRAY_SIZE(recent_hashes);
-}
-
-static bool markov_check_dup(const char* str, size_t len){
-	uint32_t hash = markov_hash(str, len);
-	for(int i = 0; i < ARRAY_SIZE(recent_hashes); ++i){
-		if(recent_hashes[i] == hash) return true;
-	}
-	return false;
-}
 
 static const char* markov_get_punct(){
 
@@ -284,49 +321,95 @@ static bool markov_gen_formatted(char* msg, size_t msg_len){
 	return true;
 }
 
-static void markov_load(){
+static bool markov_load(){
 	gzFile f = gzopen(ctx->get_datafile(), "rb");
-	uint32_t word_size = 0, key_size = 0, val_size = 0;
+	uint32_t word_size = 0, val_size = 0, version = 0;
+	char fourcc[4];
 
-	if(gzread(f, &word_size, sizeof(word_size)) < 1) goto out;
-	if(gzread(f, &key_size, sizeof(key_size)) < 1) goto out;
-	if(gzread(f, &val_size, sizeof(val_size)) < 1) goto out;
+#define GZREAD(f, ptr, sz) if(gzread(f, ptr, sz) < sz) goto fail
 
-	if(gzread(f, sbmm_add(word_mem, word_size), word_size) < word_size) goto out;
-	if(gzread(f, sbmm_add(chain_keys, key_size), sizeof(MarkovLinkKey) * key_size) < key_size) goto out;
-	if(gzread(f, sbmm_add(chain_vals, val_size), sizeof(MarkovLinkVal) * val_size) < val_size) goto out;
+	GZREAD(f, fourcc, 4);
+	if(memcmp(fourcc, "IBMK", 4) != 0){
+		fputs("markov_load: invalid file format.", stderr);
+		goto fail;
+	}
 
-	gzclose(f);
-	return;
+	GZREAD(f, &version, 4);
+	if(version != 3){
+		fputs("markov_load: invalid version.", stderr);
+		goto fail;
+	}
 
-out:
-	puts("markov: couldn't read file.");
-	gzclose(f);
-}
+	GZREAD(f, &word_size, sizeof(word_size));
+	GZREAD(f, &val_size , sizeof(val_size));
 
-static bool markov_save(FILE* file){
-	uint32_t word_size = sbmm_count(word_mem) - 1;
-	uint32_t key_size  = sbmm_count(chain_keys);
-	uint32_t val_size  = sbmm_count(chain_vals);
+	GZREAD(f, &chain_keys_ht.capacity, 4);
+	GZREAD(f, &chain_keys_ht.used    , 4);
 
-	gzFile f = gzdopen(dup(fileno(file)), "wb");
+	GZREAD(f, &word_ht.capacity, 4);
+	GZREAD(f, &word_ht.used    , 4);
 
-	if(gzwrite(f, &word_size, sizeof(word_size)) < 1) goto out;
-	if(gzwrite(f, &key_size, sizeof(key_size)) < 1) goto out;
-	if(gzwrite(f, &val_size, sizeof(val_size)) < 1) goto out;
+	GZREAD(f, sbmm_add(word_mem  , word_size), word_size);
+	GZREAD(f, sbmm_add(chain_vals, val_size) , val_size * sizeof(MarkovLinkVal));
 
-	if(gzwrite(f, word_mem + 1, word_size) < word_size) goto out;
-	if(gzwrite(f, chain_keys, sizeof(MarkovLinkKey) * key_size) < key_size) goto out;
-	if(gzwrite(f, chain_vals, sizeof(MarkovLinkVal) * val_size) < val_size) goto out;
+	chain_keys_ht.memory = calloc(chain_keys_ht.capacity, 1);
+	GZREAD(f, chain_keys_ht.memory, chain_keys_ht.capacity);
+
+	word_ht.memory = calloc(word_ht.capacity, 1);
+	GZREAD(f, word_ht.memory, word_ht.capacity);
+
+#undef GZREAD
 
 	gzclose(f);
 	return true;
 
-out:
+fail:
+	puts("markov: couldn't read file.");
+	gzclose(f);
+	return false;
+}
+
+static bool markov_save(FILE* file){
+	uint32_t word_size = sbmm_count(word_mem) - 1;
+	uint32_t val_size  = sbmm_count(chain_vals);
+	uint32_t version   = 3;
+	
+	while(inso_ht_tick(&chain_keys_ht));
+	while(inso_ht_tick(&word_ht));
+
+	gzFile f = gzdopen(dup(fileno(file)), "wb");
+
+#define GZWRITE(f, ptr, sz) if(gzwrite(f, ptr, sz) < sz) goto fail
+
+	GZWRITE(f, "IBMK"  , 4);
+	GZWRITE(f, &version, 4);
+
+	GZWRITE(f, &word_size, sizeof(word_size));
+	GZWRITE(f, &val_size , sizeof(val_size));
+
+	GZWRITE(f, &chain_keys_ht.capacity, 4);
+	GZWRITE(f, &chain_keys_ht.used    , 4);
+
+	GZWRITE(f, &word_ht.capacity, 4);
+	GZWRITE(f, &word_ht.used    , 4);
+
+	GZWRITE(f, word_mem + 1, word_size);
+	GZWRITE(f, chain_vals, sizeof(MarkovLinkVal) * val_size);
+
+	GZWRITE(f, chain_keys_ht.memory, chain_keys_ht.capacity);
+	GZWRITE(f, word_ht.memory, word_ht.capacity);
+
+#undef GZWRITE
+
+	gzclose(f);
+	return true;
+
+fail:
 	puts("markov: error saving file.");
 	gzclose(f);
 	return false;
 }
+
 
 static bool markov_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -348,7 +431,19 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 
 	regcomp(&url_regex, "(www\\.|https?:\\/\\/|\\.com|\\.[a-zA-Z]\\/)", REG_ICASE | REG_EXTENDED | REG_NOSUB);
 
-	markov_load();
+	chain_keys_ht.hash_fn   = &chain_key_hash;
+	chain_keys_ht.elem_size = sizeof(MarkovLinkKey);
+
+	word_ht.hash_fn   = &wordinfo_hash;
+	word_ht.elem_size = sizeof(WordInfo);
+
+	if(!markov_load()){
+		if(chain_keys_ht.memory) free(chain_keys_ht.memory);
+		inso_ht_init(&chain_keys_ht, 4096, sizeof(MarkovLinkKey), &chain_key_hash);
+
+		if(word_ht.memory) free(word_ht.memory);
+		inso_ht_init(&word_ht, 4096, sizeof(WordInfo), &wordinfo_hash);
+	}
 
 	start_sym_idx = find_or_add_word("^", 1);
 	end_sym_idx   = find_or_add_word("$", 1);
@@ -436,9 +531,9 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 
 			ctx->send_msg(
 				chan,
-				"%s: markov status: %d keys, %d chains, %dKB word mem.",
+				"%s: markov status: %zu keys, %d chains, %dKB word mem.",
 				name,
-				sbmm_count(chain_keys),
+				chain_keys_ht.used / chain_keys_ht.elem_size,
 				sbmm_count(chain_vals),
 				sbmm_count(word_mem) / 1024
 			);
@@ -481,10 +576,9 @@ static void markov_replace(char** msg, const char* from, const char* to){
 
 static void markov_add(word_idx_t indices[static 3]){
 
-	ssize_t key_idx = find_key_idx(indices[0], indices[1]);
+	MarkovLinkKey* key = find_key(indices[0], indices[1]);
 
-	if(key_idx == -1){
-
+	if(!key){
 		MarkovLinkVal val = {
 			.word_idx = indices[2],
 			.count = 1,
@@ -492,18 +586,18 @@ static void markov_add(word_idx_t indices[static 3]){
 		};
 		sbmm_push(chain_vals, val);
 
-		MarkovLinkKey key = {
+		MarkovLinkKey new_key = {
 			.word_idx_1 = indices[0],
 			.word_idx_2 = indices[1],
 			.val_idx  = sbmm_count(chain_vals) - 1
 		};
-		sbmm_push(chain_keys, key);
+		inso_ht_put(&chain_keys_ht, &new_key);
 
 	} else {
 		bool found = false;
-		size_t last_idx = key_idx;
+		ssize_t last_idx = -1;
 
-		for(uint32_t i = chain_keys[key_idx].val_idx; i != -1; i = chain_vals[i].next){
+		for(uint32_t i = key->val_idx; i != -1; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
 				if(chain_vals[i].count < UCHAR_MAX) ++chain_vals[i].count;
 				found = true;
@@ -520,6 +614,8 @@ static void markov_add(word_idx_t indices[static 3]){
 				.next = -1
 			};
 			sbmm_push(chain_vals, val);
+
+			assert(last_idx != -1);
 			chain_vals[last_idx].next = sbmm_count(chain_vals) - 1;
 		}
 	}
@@ -685,13 +781,15 @@ static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 
 static void markov_quit(void){
 	sbmm_free(word_mem);
-	sbmm_free(chain_keys);
 	sbmm_free(chain_vals);
 
 	for(int i = 0; i < sb_count(markov_nicks); ++i){
 		free(markov_nicks[i]);
 	}
 	sb_free(markov_nicks);
+
+	inso_ht_free(&chain_keys_ht);
+	inso_ht_free(&word_ht);
 
 	regfree(&url_regex);
 }
