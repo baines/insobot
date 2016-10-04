@@ -133,7 +133,7 @@ static uint32_t hash6432shift(uint64_t key){
 
 static size_t chain_key_hash(const void* arg){
 	const MarkovLinkKey* k = arg;
-	return hash6432shift((uint64_t)k->word_idx_1 << 32UL) | k->word_idx_2;
+	return hash6432shift(((uint64_t)k->word_idx_1 << 32UL) | k->word_idx_2);
 }
 
 static bool chain_key_cmp(const void* elem, void* param){
