@@ -52,8 +52,11 @@ static bool automod_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	init_time = time(0);
 	is_twitch = true;
-	regcomp(&url_regex, "https?://[^[:space:]]+", REG_ICASE | REG_EXTENDED);
-	return true;
+	return regcomp(
+		&url_regex,
+		"(https?://[^[:space:]]+|[^[:space:]]\\.[^[:space:]]{2,6}([:space:]|$|/))",
+		REG_ICASE | REG_EXTENDED | REG_NEWLINE
+	) == 0;
 }
 
 static void automod_quit(void){
@@ -177,7 +180,7 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 	}
 
 	// invalid sequences?
-	if(ret < 0){
+	if(ret == -1){
 		bad_char_score += 60;
 	}
 
@@ -203,20 +206,20 @@ static void get_user_cb(intptr_t result, intptr_t arg){
 }
 
 static int am_score_links(const Suspect* s, const char* msg, size_t len){
-	int url_len = 0;
+	bool is_url = false;
 	regmatch_t match;
 
 	if(regexec(&url_regex, msg, 1, &match, 0) == 0){
-		url_len = match.rm_eo - match.rm_so;
+		is_url = true;
 	}
 
 	time_t now = time(0);
 
 	// give twitch some time to give us the joins
-	if(is_twitch && (now - init_time) < 120) return 0;
+	if(is_twitch && (now - init_time) < 30) return 0;
 
-	// look for short urls as first message
-	if(url_len > 0 && url_len < 32 && !s->last_msg){
+	// look for urls as first message
+	if(is_url && !s->last_msg){
 
 		// has been ++'d before?
 		int karma = 0;
@@ -256,6 +259,7 @@ static const char* emotes[] = {
   "4Head",
   "AMPEnergy",
   "AMPEnergyCherry",
+  "AMPTropPunch",
   "ANELE",
   "ArgieB8",
   "ArsonNoSexy",
@@ -266,7 +270,6 @@ static const char* emotes[] = {
   "BCouch",
   "BCWarrior",
   "BibleThump",
-  "BiersDerp",
   "BigBrother",
   "BlargNaut",
   "bleedPurple",
@@ -280,19 +283,20 @@ static const char* emotes[] = {
   "ChefFrank",
   "cmonBruh",
   "CoolCat",
+  "copyThis",
   "CorgiDerp",
+  "CurseLit",
   "DAESuppy",
-  "DalLOVE",
   "DansGame",
   "DatSheffy",
   "DBstyle",
-  "deExcite",
   "deIlluminati",
   "DendiFace",
   "DogFace",
-  "DOOMGuy",
   "DoritosChip",
   "duDudu",
+  "DxAbomb",
+  "DxCat",
   "EagleEye",
   "EleGiggle",
   "FailFish",
@@ -303,12 +307,14 @@ static const char* emotes[] = {
   "FunRun",
   "FutureMan",
   "GingerPower",
+  "GivePLZ",
   "GrammarKing",
   "HassaanChop",
   "HassanChop",
   "HeyGuys",
   "HotPokket",
   "HumbleLife",
+  "imGlitch",
   "ItsBoshyTime",
   "Jebaited",
   "JKanStyle",
@@ -321,16 +327,16 @@ static const char* emotes[] = {
   "KappaWealth",
   "Keepo",
   "KevinTurtle",
+  "KingMe",
   "Kippa",
   "Kreygasm",
   "Mau5",
   "mcaT",
   "MikeHogu",
   "MingLee",
-  "MKXRaiden",
-  "MKXScorpion",
   "MrDestructoid",
   "MVGame",
+  "NervousMonkey",
   "NinjaTroll",
   "NomNom",
   "NoNoSpot",
@@ -347,10 +353,12 @@ static const char* emotes[] = {
   "panicBasket",
   "PanicVis",
   "PartyTime",
+  "pastaThat",
   "PeoplesChamp",
   "PermaSmug",
   "PeteZaroll",
   "PeteZarollTie",
+  "PicoMause",
   "PipeHype",
   "PJSalt",
   "PJSugar",
@@ -359,6 +367,7 @@ static const char* emotes[] = {
   "Poooound",
   "PraiseIt",
   "PRChase",
+  "PrimeMe",
   "PunchTrees",
   "PuppeyFace",
   "RaccAttack",
@@ -373,7 +382,6 @@ static const char* emotes[] = {
   "ShazBotstix",
   "SmoocherZ",
   "SMOrc",
-  "SMSkull",
   "SoBayed",
   "SoonerLater",
   "SSSsss",
@@ -382,6 +390,7 @@ static const char* emotes[] = {
   "StrawBeary",
   "SuperVinlin",
   "SwiftRage",
+  "TakeNRG",
   "TBCheesePull",
   "TBTacoLeft",
   "TBTacoRight",
@@ -399,8 +408,9 @@ static const char* emotes[] = {
   "UleetBackup",
   "UncleNox",
   "UnSane",
-  "VaultBoy",
   "VoHiYo",
+  "VoteNay",
+  "VoteYea",
   "WholeWheat",
   "WTRuck",
   "WutFace",
