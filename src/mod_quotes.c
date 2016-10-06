@@ -383,7 +383,8 @@ static Quote* quote_get(const char* chan, int id){
 
 static const char* quotes_get_chan(const char* default_chan, const char** arg, Quote*** qlist, bool* same){
 
-	const char* chan = default_chan;
+	const char* chan = getenv("INSOBOT_QUOTES_DEFAULT_CHAN");
+	if(!chan) chan = default_chan;
 	if(same) *same = true;
 
 	// if the arg starts with a #, parse the channel out of it
