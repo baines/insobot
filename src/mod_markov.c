@@ -1,6 +1,4 @@
-
 #define STB_SB_MMAP
-#include "stb_sb.h"
 #include <time.h>
 #include <string.h>
 #include <ctype.h>
@@ -11,6 +9,7 @@
 #include "module.h"
 #include "utils.h"
 #include "inso_ht.h"
+#include "stb_sb.h"
 
 static bool markov_init (const IRCCoreCtx*);
 static void markov_quit (void);
@@ -160,6 +159,16 @@ static bool chain_key_cmp(const void* elem, void* param){
 // }}}
 
 // Utility Funcs {{{
+
+static void* ht_alloc(size_t n){
+	void* mem = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	assert(mem != MAP_FAILED);
+	return mem;
+}
+
+static void ht_free(void* p, size_t n){
+	assert(munmap(p, n) == 0);
+}
 
 static uint32_t markov_rand(uint32_t limit){
 	int32_t x;
@@ -468,10 +477,10 @@ static bool markov_load(){
 	GZREAD(f, sbmm_add(word_mem  , word_size), word_size);
 	GZREAD(f, sbmm_add(chain_vals, val_size) , val_size * sizeof(MarkovLinkVal));
 
-	chain_keys_ht.memory = calloc(chain_keys_ht.capacity, 1);
+	chain_keys_ht.memory = ht_alloc(chain_keys_ht.capacity);
 	GZREAD(f, chain_keys_ht.memory, chain_keys_ht.capacity);
 
-	word_ht.memory = calloc(word_ht.capacity, 1);
+	word_ht.memory = ht_alloc(word_ht.capacity);
 	GZREAD(f, word_ht.memory, word_ht.capacity);
 
 #undef GZREAD
@@ -552,9 +561,13 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 
 	chain_keys_ht.hash_fn   = &chain_key_hash;
 	chain_keys_ht.elem_size = sizeof(MarkovLinkKey);
+	chain_keys_ht.alloc_fn  = &ht_alloc;
+	chain_keys_ht.free_fn   = &ht_free;
 
 	word_ht.hash_fn   = &wordinfo_hash;
 	word_ht.elem_size = sizeof(WordInfo);
+	word_ht.alloc_fn  = &ht_alloc;
+	word_ht.free_fn   = &ht_free;
 
 	if(!markov_load()){
 		if(chain_keys_ht.memory) free(chain_keys_ht.memory);

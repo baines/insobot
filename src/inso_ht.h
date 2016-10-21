@@ -12,7 +12,6 @@
 
 // Interface
 
-// TODO: custom memory allocators
 typedef struct {
 	size_t capacity;
 	size_t prev_cap;
@@ -22,6 +21,10 @@ typedef struct {
 	size_t (*hash_fn)(const void*);
 	char*  memory;
 	char*  prev_memory;
+
+	// set these manually before init if you want custom allocation
+	void* (*alloc_fn)(size_t);
+	void  (*free_fn)(void*, size_t);
 } inso_ht;
 
 #ifndef NDEBUG
@@ -58,7 +61,12 @@ INSO_HT_DECL void inso_ht_init(inso_ht* ht, size_t nmemb, size_t size, inso_ht_h
 	ht->capacity  = size * nmemb;
 	ht->elem_size = size;
 	ht->hash_fn   = hash_fn;
-	ht->memory    = calloc(ht->capacity, 1);
+
+	if(ht->alloc_fn && ht->free_fn){
+		ht->memory = ht->alloc_fn(ht->capacity);
+	} else {
+		ht->memory = calloc(ht->capacity, 1);
+	}
 
 	INSO_HT_DBG("ht_init: nmemb: %zu, cap: %zu\n", nmemb, ht->capacity);
 
@@ -67,9 +75,20 @@ INSO_HT_DECL void inso_ht_init(inso_ht* ht, size_t nmemb, size_t size, inso_ht_h
 
 INSO_HT_DECL void inso_ht_free(inso_ht* ht){
 	if(ht && ht->memory){
-		free(ht->memory);
+		bool custom = ht->alloc_fn && ht->free_fn;
+
+		if(custom){
+			ht->free_fn(ht->memory, ht->capacity);
+		} else {
+			free(ht->memory);
+		}
+
 		if(ht->prev_memory){
-			free(ht->prev_memory);
+			if(custom){
+				ht->free_fn(ht->prev_memory, ht->prev_cap);
+			} else {
+				free(ht->prev_memory);
+			}
 		}
 	}
 	memset(ht, 0, sizeof(*ht));
@@ -87,9 +106,14 @@ INSO_HT_DECL void* inso_ht_put(inso_ht* ht, const void* elem){
 		ht->prev_cap    = ht->capacity;
 		ht->capacity   *= 2;
 		ht->prev_memory = ht->memory;
-		ht->memory      = calloc(ht->capacity, 1);
 		ht->rehash_idx  = 0;
 		ht->used        = 0;
+		
+		if(ht->alloc_fn && ht->free_fn){
+			ht->memory = ht->alloc_fn(ht->capacity);
+		} else {
+			ht->memory = calloc(ht->capacity, 1);
+		}
 
 		INSO_HT_DBG("ht_put: expanding table. %zu -> %zu\n", ht->prev_cap, ht->capacity);
 
@@ -154,7 +178,11 @@ INSO_HT_DECL bool inso_ht_tick(inso_ht* ht){
 	}
 
 	if(i >= cap){
-		free(ht->prev_memory);
+		if(ht->alloc_fn && ht->free_fn){
+			ht->free_fn(ht->prev_memory, ht->prev_cap);
+		} else {
+			free(ht->prev_memory);
+		}
 		ht->prev_memory = NULL;
 		INSO_HT_DBG("done rehashing table.\n");
 	}
