@@ -1,16 +1,14 @@
+
 #define STB_SB_MMAP
 #include "stb_sb.h"
-#include "module.h"
 #include <time.h>
 #include <string.h>
 #include <ctype.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <assert.h>
 #include <regex.h>
 #include <zlib.h>
+#include "module.h"
 #include "utils.h"
 #include "inso_ht.h"
 
@@ -22,7 +20,7 @@ static void markov_msg  (const char*, const char*, const char*);
 static void markov_mod_msg(const char* sender, const IRCModMsg* msg);
 static bool markov_save (FILE*);
 
-enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_STATUS };
+enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_LENGTH, MARKOV_STATUS };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "markov",
@@ -36,14 +34,17 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save  = &markov_save,
 	.on_mod_msg = &markov_mod_msg,
 	.commands = DEFINE_CMDS (
-		[MARKOV_SAY]      = CONTROL_CHAR "say",
-		[MARKOV_ASK]      = CONTROL_CHAR "ask",
-		[MARKOV_INTERVAL] = CONTROL_CHAR "interval " CONTROL_CHAR "gap",
-		[MARKOV_STATUS]   = CONTROL_CHAR "status"
+		[MARKOV_SAY]      = CMD1("say"),
+		[MARKOV_ASK]      = CMD1("ask"),
+		[MARKOV_INTERVAL] = CMD1("interval") CMD1("gap"),
+		[MARKOV_LENGTH]   = CMD1("len"),
+		[MARKOV_STATUS]   = CMD1("status")
 	)
 };
 
 static const IRCCoreCtx* ctx;
+
+// Types {{{
 
 typedef uint32_t word_idx_t;
 
@@ -64,6 +65,17 @@ typedef struct {
 	word_idx_t word_idx;
 	uint32_t   total;
 } WordInfo;
+
+// }}}
+
+// Global Variables {{{
+
+static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", NULL };
+static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", NULL };
+static const char* skip_words[]    = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
+
+static const int say_cooldown = 300;
+static time_t last_say;
 
 static char* word_mem;
 
@@ -88,6 +100,9 @@ static size_t hash_idx;
 
 static char** markov_nicks;
 
+// }}}
+
+// Hash Funcs {{{
 
 static uint32_t markov_hash(const char* str, size_t len){
 	uint32_t hash = 6159;
@@ -142,6 +157,10 @@ static bool chain_key_cmp(const void* elem, void* param){
 	return (((uint64_t)key->word_idx_1 << 32UL) | key->word_idx_2) == *id;
 }
 
+// }}}
+
+// Utility Funcs {{{
+
 static uint32_t markov_rand(uint32_t limit){
 	int32_t x;
 
@@ -183,17 +202,100 @@ static MarkovLinkKey* find_key(word_idx_t a, word_idx_t b){
 	return inso_ht_get(&chain_keys_ht, hash6432shift(id), &chain_key_cmp, &id);
 }
 
-static const char* bad_end_words[] = {
-	"and",
-	"the",
-	"a",
-	"as",
-	"if",
-	"i",
-	",",
-	"/",
-	NULL
-};
+static const char* markov_get_punct(){
+	size_t val = markov_rand(100);
+
+	if(val < 67) return ".";
+	if(val < 72) return "?";
+	if(val < 85) return "!";
+	if(val < 97) return "...";
+	if(val < 98) return "‽";
+	if(val < 99) return ". FailFish";
+
+	return ". Kappa";
+}
+
+static void markov_add(word_idx_t indices[static 3]){
+
+	MarkovLinkKey* key = find_key(indices[0], indices[1]);
+
+	if(!key){
+		MarkovLinkVal val = {
+			.word_idx = indices[2],
+			.count = 1,
+			.next = -1
+		};
+		sbmm_push(chain_vals, val);
+
+		MarkovLinkKey new_key = {
+			.word_idx_1 = indices[0],
+			.word_idx_2 = indices[1],
+			.val_idx  = sbmm_count(chain_vals) - 1
+		};
+		inso_ht_put(&chain_keys_ht, &new_key);
+
+	} else {
+		bool found = false;
+		ssize_t last_idx = -1;
+
+		for(uint32_t i = key->val_idx; i != -1; i = chain_vals[i].next){
+			if(chain_vals[i].word_idx == indices[2]){
+				if(chain_vals[i].count < UCHAR_MAX) ++chain_vals[i].count;
+				found = true;
+				break;
+			}
+
+			last_idx = i;
+		}
+
+		if(!found){
+			MarkovLinkVal val = {
+				.word_idx = indices[2],
+				.count = 1,
+				.next = -1
+			};
+			sbmm_push(chain_vals, val);
+
+			assert(last_idx != -1);
+			chain_vals[last_idx].next = sbmm_count(chain_vals) - 1;
+		}
+	}
+}
+
+static void markov_replace(char** msg, const char* from, const char* to){
+	size_t from_len = strlen(from);
+	size_t to_len = strlen(to);
+	size_t msg_len = sb_count(*msg);
+
+	char* p;
+	size_t off = 0;
+
+	while((p = strstr(*msg + off, from))){
+
+		off = p - *msg;
+
+		if(to_len > from_len){
+			memset(sb_add(*msg, to_len - from_len), 0, to_len - from_len);
+		} else {
+			stb__sbn(*msg) -= (from_len - to_len);
+		}
+
+		p = *msg + off;
+
+		const char* end_p = *msg + msg_len;
+		memmove(p + to_len, p + from_len, end_p - (p + from_len));
+		memcpy(p, to, to_len);
+
+		off += to_len;
+
+		msg_len += (to_len - from_len);
+	}
+
+}
+
+// }}}
+
+// Generation {{{
 
 static size_t markov_gen(char* buffer, size_t buffer_len){
 	if(!buffer_len) return 0;
@@ -255,21 +357,6 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 	return strlen(buffer);
 }
 
-
-static const char* markov_get_punct(){
-
-	size_t val = markov_rand(100);
-	
-	if(val < 67) return ".";
-	if(val < 72) return "?";
-	if(val < 85) return "!";
-	if(val < 97) return "...";
-	if(val < 98) return "‽";
-	if(val < 99) return ". FailFish";
-	
-	return ". Kappa";
-}
-
 static bool markov_gen_formatted(char* msg, size_t msg_len){
 	int num_sentences = markov_rand(10) < 8 ? 1 : 2;
 
@@ -320,6 +407,35 @@ static bool markov_gen_formatted(char* msg, size_t msg_len){
 
 	return true;
 }
+
+static void markov_send(const char* chan){
+	char buffer[256];
+	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
+	ctx->send_msg(chan, "%s", buffer);
+}
+
+static void markov_reply(const char* chan, const char* nick){
+	char buffer[256];
+	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
+	ctx->send_msg(chan, "@%s: %s", nick, buffer);
+}
+
+static void markov_ask(const char* chan){
+	char buffer[256];
+	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
+
+	size_t len = strlen(buffer);
+	if(len && ispunct(buffer[len-1])){
+		buffer[len-1] = '?';
+	} else if(sizeof(buffer) - len > 1){
+		buffer[len] = '?';
+		buffer[len+1] = 0;
+	}
+	ctx->send_msg(chan, "Q: %s", buffer);
+}
+// }}}
+
+// Loading/Saving {{{
 
 static bool markov_load(){
 	gzFile f = gzopen(ctx->get_datafile(), "rb");
@@ -410,6 +526,9 @@ fail:
 	return false;
 }
 
+// }}}
+
+// IRC Callbacks {{{
 
 static bool markov_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -451,46 +570,20 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void markov_join(const char* chan, const char* name){
-
-	if(strcasecmp(name, ctx->get_username()) == 0) return;
+static void markov_quit(void){
+	sbmm_free(word_mem);
+	sbmm_free(chain_vals);
 
 	for(int i = 0; i < sb_count(markov_nicks); ++i){
-		if(strcasecmp(name, markov_nicks[i]) == 0){
-			return;
-		}
+		free(markov_nicks[i]);
 	}
-	sb_push(markov_nicks, strdup(name));
+	sb_free(markov_nicks);
+
+	inso_ht_free(&chain_keys_ht);
+	inso_ht_free(&word_ht);
+
+	regfree(&url_regex);
 }
-
-static void markov_send(const char* chan){
-	char buffer[256];
-	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
-	ctx->send_msg(chan, "%s", buffer);
-}
-
-static void markov_reply(const char* chan, const char* nick){
-	char buffer[256];
-	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
-	ctx->send_msg(chan, "@%s: %s", nick, buffer);
-}
-
-static void markov_ask(const char* chan){
-	char buffer[256];
-	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
-
-	size_t len = strlen(buffer);
-	if(len && ispunct(buffer[len-1])){
-		buffer[len-1] = '?';
-	} else if(sizeof(buffer) - len > 1){
-		buffer[len] = '?';
-		buffer[len+1] = 0;
-	}
-	ctx->send_msg(chan, "Q: %s", buffer);
-}
-
-static const int say_cooldown = 300;
-static time_t last_say;
 
 static void markov_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	time_t now = time(0);
@@ -526,109 +619,39 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 			ctx->send_msg(chan, "%s: interval = %zu.", name, msg_chance);
 		} break;
 
+		case MARKOV_LENGTH: {
+			if(!admin) break;
+
+			if(*arg++){
+				int len = strtoul(arg, NULL, 0);
+				if(len != 0){
+					max_chain_len = len;
+				}
+			}
+
+			ctx->send_msg(chan, "%s: length = %zu.", name, max_chain_len);
+		} break;
+
+
 		case MARKOV_STATUS: {
 			if(!admin) break;
 
 			ctx->send_msg(
 				chan,
-				"%s: markov status: %zu keys, %d chains, %dKB word mem.",
+				"%s: markov status: [words: %zu/%.2fMB] [keys: %zu/%.2fMB] [vals: %d/%.2fMB]",
 				name,
+				word_ht.used / word_ht.elem_size,
+				(sbmm_count(word_mem) + word_ht.used) / (1024.f*1024.f),
 				chain_keys_ht.used / chain_keys_ht.elem_size,
+				chain_keys_ht.used / (1024.f*1024.f),
 				sbmm_count(chain_vals),
-				sbmm_count(word_mem) / 1024
+				(sbmm_count(chain_vals) * sizeof(MarkovLinkVal)) / (1024.f*1024.f)
 			);
 
 		} break;
 	}
 
 }
-
-static void markov_replace(char** msg, const char* from, const char* to){
-	size_t from_len = strlen(from);
-	size_t to_len = strlen(to);
-	size_t msg_len = sb_count(*msg);
-
-	char* p;
-	size_t off = 0;
-
-	while((p = strstr(*msg + off, from))){
-
-		off = p - *msg;
-
-		if(to_len > from_len){
-			memset(sb_add(*msg, to_len - from_len), 0, to_len - from_len);
-		} else {
-			stb__sbn(*msg) -= (from_len - to_len);
-		}
-
-		p = *msg + off;
-
-		const char* end_p = *msg + msg_len;
-		memmove(p + to_len, p + from_len, end_p - (p + from_len));
-		memcpy(p, to, to_len);
-
-		off += to_len;
-
-		msg_len += (to_len - from_len);
-	}
-
-}
-
-static void markov_add(word_idx_t indices[static 3]){
-
-	MarkovLinkKey* key = find_key(indices[0], indices[1]);
-
-	if(!key){
-		MarkovLinkVal val = {
-			.word_idx = indices[2],
-			.count = 1,
-			.next = -1
-		};
-		sbmm_push(chain_vals, val);
-
-		MarkovLinkKey new_key = {
-			.word_idx_1 = indices[0],
-			.word_idx_2 = indices[1],
-			.val_idx  = sbmm_count(chain_vals) - 1
-		};
-		inso_ht_put(&chain_keys_ht, &new_key);
-
-	} else {
-		bool found = false;
-		ssize_t last_idx = -1;
-
-		for(uint32_t i = key->val_idx; i != -1; i = chain_vals[i].next){
-			if(chain_vals[i].word_idx == indices[2]){
-				if(chain_vals[i].count < UCHAR_MAX) ++chain_vals[i].count;
-				found = true;
-				break;
-			}
-			
-			last_idx = i;
-		}
-
-		if(!found){
-			MarkovLinkVal val = {
-				.word_idx = indices[2],
-				.count = 1,
-				.next = -1
-			};
-			sbmm_push(chain_vals, val);
-
-			assert(last_idx != -1);
-			chain_vals[last_idx].next = sbmm_count(chain_vals) - 1;
-		}
-	}
-}
-
-static const char* ignores[] = {
-	"hmh_bot",
-	"hmd_bot",
-	"drakebot_",
-	NULL
-};
-
-static const char* skip_words[] = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
 
 static void markov_msg(const char* chan, const char* name, const char* _msg){
 
@@ -766,6 +789,18 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 	sb_free(msg);
 }
 
+static void markov_join(const char* chan, const char* name){
+
+	if(strcasecmp(name, ctx->get_username()) == 0) return;
+
+	for(int i = 0; i < sb_count(markov_nicks); ++i){
+		if(strcasecmp(name, markov_nicks[i]) == 0){
+			return;
+		}
+	}
+	sb_push(markov_nicks, strdup(name));
+}
+
 static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "markov_gen") == 0){
 
@@ -779,17 +814,5 @@ static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 	}
 }
 
-static void markov_quit(void){
-	sbmm_free(word_mem);
-	sbmm_free(chain_vals);
+// }}}
 
-	for(int i = 0; i < sb_count(markov_nicks); ++i){
-		free(markov_nicks[i]);
-	}
-	sb_free(markov_nicks);
-
-	inso_ht_free(&chain_keys_ht);
-	inso_ht_free(&word_ht);
-
-	regfree(&url_regex);
-}

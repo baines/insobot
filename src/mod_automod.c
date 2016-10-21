@@ -128,6 +128,8 @@ static void automod_join(const char* chan, const char* name){
 static int am_score_caps(const Suspect* s, const char* msg, size_t len){
 	size_t num_caps = 0;
 
+	if(len < 10) return 0;
+
 	for(const char* p = msg; *p; ++p){
 		if(isupper(*p)) num_caps++;
 	}
@@ -181,11 +183,6 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 
 	// invalid sequences?
 	if(ret == -1){
-		bad_char_score += 60;
-	}
-
-	// symbol spam
-	if(len >= 10 && (punct / (float)len) > 0.4f){
 		bad_char_score += 60;
 	}
 
@@ -249,6 +246,8 @@ static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 
 	if((now - s->last_msg) < 5){
 		return 25;
+	} else if((now - s->last_msg) > 30){
+		return -25;
 	} else {
 		return 0;
 	}
