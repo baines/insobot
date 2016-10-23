@@ -64,6 +64,7 @@ struct IRCCoreCtx_ {
 	const char*    (*get_datafile) (void);
 	IRCModuleCtx** (*get_modules)  (bool channel_mods_only); // null terminated
 	const char**   (*get_channels) (void); // null terminated
+	const char**   (*get_nicks)    (const char* chan, int* count_out);
 	void           (*join)         (const char* chan);
 	void           (*part)         (const char* chan);
 	void           (*send_msg)     (const char* chan, const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));

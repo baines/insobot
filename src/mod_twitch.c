@@ -367,6 +367,31 @@ out:
 #define TWITCH_TRACKER_MSG(fmt, ...) \
 	for(char** c = twitch_tracker_chans; c < sb_end(twitch_tracker_chans); ++c) ctx->send_msg(*c, fmt, __VA_ARGS__)
 
+static void twitch_print_tags(const char* prefix){
+	char tag_buf[1024];
+
+	for(char** chan = twitch_tracker_chans; chan < sb_end(twitch_tracker_chans); ++chan){
+		*tag_buf = 0;
+
+		int count;
+		const char** nicks = ctx->get_nicks(*chan, &count);
+
+		for(char** tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
+			for(int i = 0; i < count; ++i){
+				if(strcasecmp(*tag, nicks[i]) == 0){
+					inso_strcat(tag_buf, sizeof(tag_buf), *tag);
+					inso_strcat(tag_buf, sizeof(tag_buf), " ");
+					break;
+				}
+			}
+		}
+
+		if(*tag_buf){
+			ctx->send_msg(*chan, "%s%s", prefix, tag_buf);
+		}
+	}
+}
+
 static void twitch_tracker_update(void){
 
 	char topic[1024] = "\002\0030,4[LIVE]\017 ";
@@ -388,12 +413,6 @@ static void twitch_tracker_update(void){
 	twitch_check_uptime(index_count, track_indices);
 	sb_free(track_indices);
 
-	char tag_buf[1024] = {};
-	for(char** c = twitch_tracker_tags; c < sb_end(twitch_tracker_tags); ++c){
-		inso_strcat(tag_buf, sizeof(tag_buf), *c);
-		inso_strcat(tag_buf, sizeof(tag_buf), " ");
-	}
-
 	for(int i = 0; i < sb_count(twitch_keys); ++i){
 		if(!twitch_vals[i].is_tracked) continue;
 
@@ -408,8 +427,8 @@ static void twitch_tracker_update(void){
 			inso_strcat(topic, sizeof(topic), " ");
 
 			if(changed){
-				if(!sent_ping && *tag_buf){
-					TWITCH_TRACKER_MSG("FAO %s:", tag_buf);
+				if(!sent_ping){
+					twitch_print_tags("FAO: ");
 					sent_ping = true;
 				}
 				any_changed = true;

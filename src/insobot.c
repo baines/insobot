@@ -866,6 +866,26 @@ static const char** core_get_channels(void){
 	return (const char**)channels;
 }
 
+static const char** core_get_nicks(const char* chan, int* count){
+	assert(count);
+
+	int index = -1;
+	for(int i = 0; i < sb_count(channels) - 1; ++i){
+		if(strcasecmp(channels[i], chan) == 0){
+			index = i;
+			break;
+		}
+	}
+
+	if(index >= 0){
+		*count = sb_count(chan_nicks[index]);
+		return (const char**)chan_nicks[index];
+	} else {
+		*count = 0;
+		return NULL;
+	}
+}
+
 static void core_join(const char* chan){
 
 	util_cmd_enqueue(IRC_CMD_JOIN, chan, NULL); //TODO: password protected channels?
@@ -1080,6 +1100,7 @@ int main(int argc, char** argv){
 		.get_datafile = &core_get_datafile,
 		.get_modules  = &core_get_modules,
 		.get_channels = &core_get_channels,
+		.get_nicks    = &core_get_nicks,
 		.send_msg     = &core_send_msg,
 		.send_raw     = &core_send_raw,
 		.send_ipc     = &core_send_ipc,
