@@ -498,7 +498,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		int tag_index = -1;
 		for(char** tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
 			if(strcasecmp(*tag, name) == 0){
-				tag_index = tag - twitch_tracker_chans;
+				tag_index = tag - twitch_tracker_tags;
 				break;
 			}
 		}
@@ -522,6 +522,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			} else {
 				ctx->send_msg(chan, "%s: You're already not tagged.", name);
 			}
+
 		} else if(strcasecmp(arg, " list") == 0){
 
 			int max_display_len = 0;
