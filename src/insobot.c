@@ -746,6 +746,24 @@ IRC_STR_CALLBACK(on_part) {
 	IRC_MOD_CALL_ALL_CHECK(on_part, (params[0], origin), IRC_CB_PART);
 }
 
+IRC_STR_CALLBACK(on_quit) {
+	if(!origin) return;
+
+	printf("QUIT: %s\n", origin);
+
+	for(int i = 0; i < sb_count(channels) - 1; ++i){
+		for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+			if(strcmp(origin, chan_nicks[i][j]) == 0){
+				free(chan_nicks[i][j]);
+				sb_erase(chan_nicks[i], j);
+
+				IRC_MOD_CALL_ALL_CHECK(on_part, (channels[i], origin), IRC_CB_PART);
+				break;
+			}
+		}
+	}
+}
+
 IRC_STR_CALLBACK(on_nick) {
 	if(count < 1 || !origin || !params[0]) return;
 	if(strcmp(origin, bot_nick) == 0){
@@ -1001,6 +1019,14 @@ static void core_log(const char* fmt, ...){
 	va_end(v);
 }
 
+static void core_strip_colors(char* msg){
+	char* stripped = irc_color_strip_from_mirc(msg);
+	assert(strlen(stripped) <= strlen(msg));
+
+	memcpy(msg, stripped, strlen(stripped) + 1);
+	free(stripped);
+}
+
 /***************
  * entry point *
  * *************/
@@ -1109,6 +1135,7 @@ int main(int argc, char** argv){
 		.part         = &core_part,
 		.save_me      = &core_self_save,
 		.log          = &core_log,
+		.strip_colors = &core_strip_colors,
 	};
 
 	sb_push(channels, 0);
@@ -1127,12 +1154,14 @@ int main(int argc, char** argv){
 	port = util_env_else("IRC_PORT", "6667");
 	bot_nick = strdup(user);
 
+	// TODO: .event_quit
 	irc_callbacks_t callbacks = {
 		.event_connect     = irc_on_connect,
 		.event_channel     = irc_on_chat_msg,
 		.event_privmsg     = irc_on_pm,
 		.event_join        = irc_on_join,
 		.event_part        = irc_on_part,
+		.event_quit        = irc_on_quit,
 		.event_nick        = irc_on_nick,
 		.event_ctcp_action = irc_on_action,
 		.event_numeric     = irc_on_numeric,

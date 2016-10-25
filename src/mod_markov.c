@@ -570,10 +570,10 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 	word_ht.free_fn   = &ht_free;
 
 	if(!markov_load()){
-		if(chain_keys_ht.memory) free(chain_keys_ht.memory);
+		ht_free(chain_keys_ht.memory, chain_keys_ht.capacity);
 		inso_ht_init(&chain_keys_ht, 4096, sizeof(MarkovLinkKey), &chain_key_hash);
 
-		if(word_ht.memory) free(word_ht.memory);
+		ht_free(word_ht.memory, word_ht.capacity);
 		inso_ht_init(&word_ht, 4096, sizeof(WordInfo), &wordinfo_hash);
 	}
 
@@ -645,7 +645,6 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 			ctx->send_msg(chan, "%s: length = %zu.", name, max_chain_len);
 		} break;
 
-
 		case MARKOV_STATUS: {
 			if(!admin) break;
 
@@ -689,6 +688,8 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 	size_t msg_len = strlen(_msg);
 	char* msg = NULL;
 	memcpy(sb_add(msg, msg_len + 1), _msg, msg_len + 1);
+
+	ctx->strip_colors(msg);
 
 	for(char* c = msg; c < sb_end(msg); ++c){
 		*c = tolower(*c);
