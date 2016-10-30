@@ -54,7 +54,7 @@ static bool automod_init(const IRCCoreCtx* _ctx){
 	is_twitch = true;
 	return regcomp(
 		&url_regex,
-		"(https?://[^[:space:]]+|[^[:space:]]\\.[^[:space:]]{2,6}([:space:]|$|/))",
+		"(https?://[^[:space:]]+|[^[:space:]]\\.[^[:space:]]{2,6}([:space:]|$|/|#|:|\\?))",
 		REG_ICASE | REG_EXTENDED | REG_NEWLINE
 	) == 0;
 }
@@ -246,8 +246,6 @@ static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 
 	if((now - s->last_msg) < 5){
 		return 25;
-	} else if((now - s->last_msg) > 30){
-		return -25;
 	} else {
 		return 0;
 	}

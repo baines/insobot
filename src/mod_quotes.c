@@ -460,24 +460,32 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 	switch(cmd){
 		case GET_QUOTE: {
-			if(empty_arg){
-				ctx->send_msg(chan, "%s: Usage: \\q <id>", name);
+			if(!empty_arg){
+				char* end;
+				int id = strtol(arg, &end, 0);
+				if(end == arg || id < 0){
+					ctx->send_msg(chan, "%s: Quotes start at id 0.", name);
+					break;
+				}
+
+				Quote* q = quote_get(quote_chan, id);
+				if(q){
+					ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", id, q->text, quote_chan+1, quote_strtime(q));
+				} else {
+					ctx->send_msg(chan, "%s: Can't find that quote.", name);
+				}
+				break;
+			}
+		} // fall-through
+
+		case GET_RANDOM: {
+			if(!sb_count(*quotes)){
+				ctx->send_msg(chan, "%s: No quotes found.", name);
 				break;
 			}
 
-			char* end;
-			int id = strtol(arg, &end, 0);
-			if(end == arg || id < 0){
-				ctx->send_msg(chan, "%s: Quotes start at id 0.", name);
-				break;
-			}
-
-			Quote* q = quote_get(quote_chan, id);
-			if(q){
-				ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", id, q->text, quote_chan+1, quote_strtime(q));
-			} else {
-				ctx->send_msg(chan, "%s: Can't find that quote.", name);
-			}
+			Quote* q = *quotes + (rand() % sb_count(*quotes));
+			ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", q->id, q->text, quote_chan+1, quote_strtime(q));
 		} break;
 
 		case ADD_QUOTE: {
@@ -693,16 +701,6 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 
 		} break;
-
-		case GET_RANDOM: {
-			if(!sb_count(*quotes)){
-				ctx->send_msg(chan, "%s: No quotes found.", name);
-				break;
-			}
-
-			Quote* q = *quotes + (rand() % sb_count(*quotes));
-			ctx->send_msg(chan, "Quote %d: \"%s\" ―%s %s", q->id, q->text, quote_chan+1, quote_strtime(q));
-		}
 	}
 
 	semop(quotes_sem, &quotes_unlock, 1);

@@ -12,8 +12,9 @@
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
 static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
+static void hmh_ipc     (int who, const uint8_t* ptr, size_t sz);
 
-enum { CMD_SCHEDULE, CMD_TIME };
+enum { CMD_SCHEDULE, CMD_TIME, CMD_QA };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "hmh",
@@ -21,9 +22,11 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd     = &hmh_cmd,
 	.on_init    = &hmh_init,
 	.on_mod_msg = &hmh_mod_msg,
+	.on_ipc     = &hmh_ipc,
 	.commands = DEFINE_CMDS (
 		[CMD_SCHEDULE] = CONTROL_CHAR "sched " CONTROL_CHAR "schedule",
-		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time "     CONTROL_CHAR "when " CONTROL_CHAR "next"
+		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time "     CONTROL_CHAR "when " CONTROL_CHAR "next",
+		[CMD_QA]       = "!qa"
 	)
 };
 
@@ -447,6 +450,11 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		case CMD_TIME: {
 			print_time(chan, name);
 		} break;
+
+		case CMD_QA: {
+			if(getenv("IRC_IS_TWITCH") || !inso_is_wlist(ctx, name)) return;
+			ctx->send_ipc(0, &cmd, sizeof(cmd));
+		} break;
 	}
 }
 
@@ -459,4 +467,9 @@ static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "is_hmh_live") == 0){
 		msg->callback(is_during_stream(), msg->cb_arg);
 	}
+}
+
+static void hmh_ipc(int who, const uint8_t* ptr, size_t sz){
+	if(!getenv("IRC_IS_TWITCH")) return;
+	ctx->send_msg("#handmade_hero", "!qa");
 }

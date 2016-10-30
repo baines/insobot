@@ -244,7 +244,6 @@ static void util_cmd_enqueue(int cmd, const char* chan, const char* data){
 }
 
 static void util_process_pending_cmds(void){
-
 	if(!sb_count(cmd_queue)) return;
 
 	struct timespec ts = {};
@@ -489,7 +488,6 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 }
 
 static void util_ipc_init(void){
-
 	char ipc_dir[128];
 	struct stat st;
 
@@ -799,7 +797,7 @@ IRC_STR_CALLBACK(on_unknown) {
 }
 
 IRC_NUM_CALLBACK(on_numeric) {
-	const char nick_start_symbols[] = "[]\\`_^{|}";
+	static const char nick_start_symbols[] = "[]\\`_^{|}";
 	
 	if(event == LIBIRC_RFC_RPL_NAMREPLY && count >= 4 && params[3]){
 		char *names = strdup(params[3]), 

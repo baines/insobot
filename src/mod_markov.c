@@ -70,7 +70,7 @@ typedef struct {
 // Global Variables {{{
 
 static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", NULL };
-static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", NULL };
+static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", "GitHub", NULL };
 static const char* skip_words[]    = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
 
 static const int say_cooldown = 300;
