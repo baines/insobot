@@ -6,11 +6,11 @@
 #include "stb_sb.h"
 #include "utils.h"
 #include <curl/curl.h>
-#include <sys/stat.h>
-#include <ctype.h>
+#include <ftw.h>
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
+static void hmh_quit    (void);
 static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
 static void hmh_ipc     (int who, const uint8_t* ptr, size_t sz);
 
@@ -21,6 +21,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.desc       = "Functionalitty specific to Handmade Hero",
 	.on_cmd     = &hmh_cmd,
 	.on_init    = &hmh_init,
+	.on_quit    = &hmh_quit,
 	.on_mod_msg = &hmh_mod_msg,
 	.on_ipc     = &hmh_ipc,
 	.commands = DEFINE_CMDS (
@@ -40,6 +41,8 @@ static time_t last_schedule_update;
 
 static struct tm schedule_start = {};
 static time_t schedule[DAYS_IN_WEEK] = {};
+
+static char* tz_buf;
 
 static bool is_upcoming_stream(void){
 	time_t now = time(0);
@@ -208,30 +211,34 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 
 	char* tz;
 	if(*arg++ == ' '){
-		char timezone[64] = ":";
-		inso_strcat(timezone, sizeof(timezone), arg);
-
-		char* p = timezone + 1;
-		for(char* p2 = p; *p2; ++p2) *p2 = tolower(*p2);
-		*p = toupper(*p);
-
-		if(strchr(p, '/')){
-			while((p = strchr(p, '/'))){
-				++p;
-				*p = toupper(*p);
-			}
-		} else {
-			while(*++p) *p = toupper(*p);
-		}
-
 		bool valid = false;
-		if(!strchr(timezone + 1, '.') && strcmp(timezone + 1, "Factory") != 0){
-			char tz_path[128] = "/usr/share/zoneinfo/posix/";
-			inso_strcat(tz_path, sizeof(tz_path), timezone + 1);
+		char timezone[64];
 
-			struct stat st;
-			if(stat(tz_path, &st) == 0 && S_ISREG(st.st_mode)){
-				tz = tz_push(timezone);
+		if(snprintf(timezone, sizeof(timezone), ":%s.", arg) < sizeof(timezone)){
+
+			// hack for Etc/* zones having reversed symbols...
+			char* p;
+			if((p = strchr(timezone, '+'))){
+				*p = '-';
+			} else if((p = strchr(timezone, '-'))){
+				*p = '+';
+			}
+
+			char* ptr = strcasestr(tz_buf, timezone);
+			if(!ptr){
+				timezone[0] = '/';
+				ptr = strcasestr(tz_buf, timezone);
+			}
+
+			if(ptr){
+				while(*ptr != ':') --ptr;
+				char* end = strchr(ptr, '.');
+				assert(end);
+
+				*end = 0;
+				tz = tz_push(ptr);
+				*end = '.';
+
 				valid = true;
 			}
 		}
@@ -458,9 +465,27 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 	}
 }
 
+static int ftw_cb(const char* path, const struct stat* st, int type){
+	if(type & FTW_D) return 0;
+	if(strncmp(path, "/usr/share/zoneinfo/posix/", 26) != 0) return 0;
+	if(strstr(path, "Factory")) return 0;
+
+	size_t plen = strlen(path) - 26;
+	sb_push(tz_buf, ':');
+	memcpy(sb_add(tz_buf, plen), path + 26, plen);
+	sb_push(tz_buf, '.');
+
+	return 0;
+}
+
 static bool hmh_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+	ftw("/usr/share/zoneinfo/posix/", &ftw_cb, 10);
 	return true;
+}
+
+static void hmh_quit(void){
+	sb_free(tz_buf);
 }
 
 static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
