@@ -214,7 +214,9 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		bool valid = false;
 		char timezone[64];
 
-		if(snprintf(timezone, sizeof(timezone), ":%s.", arg) < sizeof(timezone)){
+		if (!strchr(arg, ':') &&
+			!strchr(arg, '.') &&
+			snprintf(timezone, sizeof(timezone), ":%s.", arg) < sizeof(timezone)){
 
 			// hack for Etc/* zones having reversed symbols...
 			char* p;
@@ -481,6 +483,7 @@ static int ftw_cb(const char* path, const struct stat* st, int type){
 static bool hmh_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	ftw("/usr/share/zoneinfo/posix/", &ftw_cb, 10);
+	sb_push(tz_buf, 0);
 	return true;
 }
 
