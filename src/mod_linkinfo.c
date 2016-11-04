@@ -27,6 +27,9 @@ static regex_t yt_url_regex;
 static regex_t yt_title_regex;
 static regex_t yt_length_regex;
 
+static regex_t yt_playlist_regex;
+static const char* yt_api_key;
+
 static regex_t msdn_url_regex;
 static regex_t generic_title_regex;
 
@@ -44,7 +47,7 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&yt_url_regex,
-		"(y2u\\.be\\/|youtu\\.be\\/|youtube(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]+)",
+		"(y2u\\.be\\/|youtu\\.be\\/|youtube(-nocookie)?\\.com/(embed\\/|v\\/|watch\\?v=))([0-9A-Za-z_\\-]{11})",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -57,6 +60,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ret = ret & (regcomp(
 		&yt_length_regex,
 		"length_seconds=([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&yt_playlist_regex,
+		"youtube.com/playlist\\?list=([0-9A-Za-z_\\-]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -92,13 +101,18 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&xkcd_url_regex,
-		"https?://xkcd.com/([0-9]+)",
+		"https?://(www.)?xkcd.com/([0-9]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
 	twitter_token = getenv("INSOBOT_TWITTER_TOKEN");
 	if(!twitter_token || !*twitter_token){
 		fputs("mod_linkinfo: no twitter token, expanding tweets won't work.\n", stderr);
+	}
+
+	yt_api_key = getenv("INSOBOT_YT_API_KEY");
+	if(!yt_api_key || !*yt_api_key){
+		fputs("mod_linkinfo: no youtube api key, no expanding of playlists.\n", stderr);
 	}
 
 	return ret;
@@ -195,6 +209,49 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 
 	curl_easy_cleanup(curl);
 
+	sb_free(data);
+}
+
+void do_yt_playlist_info(const char* chan, const char* msg, regmatch_t* matches){
+	regmatch_t* id = matches + 1;
+	char url[1024];
+
+	if(id->rm_so == -1 || id->rm_eo == -1) return;
+
+	puts("mod_linkinfo: getting yt playlist info.");
+	snprintf(
+		url,
+		sizeof(url),
+		"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=%.*s&key=%s",
+		id->rm_eo - id->rm_so,
+		msg + id->rm_so,
+		yt_api_key
+	);
+
+	static const char* items_path[] = { "items", NULL };
+	static const char* title_path[] = { "snippet", "title", NULL };
+	static const char* chant_path[] = { "snippet", "channelTitle", NULL };
+
+	char* data = NULL;
+	CURL* curl = inso_curl_init(url, &data);
+	if(curl_easy_perform(curl) == 0){
+		sb_push(data, 0);
+
+		yajl_val root  = yajl_tree_parse(data, NULL, 0);
+		yajl_val items = yajl_tree_get(root, items_path, yajl_t_array);
+
+		if(items && items->u.array.len > 0){
+			yajl_val obj = items->u.array.values[0];
+			yajl_val title = yajl_tree_get(obj, title_path, yajl_t_string);
+			yajl_val chant = yajl_tree_get(obj, chant_path, yajl_t_string);
+
+			if(title && chant){
+				ctx->send_msg(chan, "↑ YT Playlist: [%s] by %s.", title->u.string, chant->u.string);
+			}
+		}
+		yajl_tree_free(root);
+	}
+	curl_easy_cleanup(curl);
 	sb_free(data);
 }
 
@@ -596,7 +653,7 @@ out:
 
 static void do_xkcd_info(const char* chan, const char* msg, regmatch_t* matches){
 
-	const char* id = strndupa(msg + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+	const char* id = strndupa(msg + matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
 	char* data = NULL;
 	char* url;
 	asprintf_check(&url, "https://xkcd.com/%s/info.0.json", id);
@@ -641,6 +698,10 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		do_youtube_info(chan, msg, matches);
 	}
 
+	if(regexec(&yt_playlist_regex, msg, 2, matches, 0) == 0){
+		do_yt_playlist_info(chan, msg, matches);
+	}
+
 	if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
 		do_generic_info(chan, msg, matches, "MSDN");
 	}
@@ -657,7 +718,7 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		do_vimeo_info(chan, msg, matches);
 	}
 
-	if(regexec(&xkcd_url_regex, msg, 2, matches, 0) == 0){
+	if(regexec(&xkcd_url_regex, msg, 3, matches, 0) == 0){
 		do_xkcd_info(chan, msg, matches);
 	}
 

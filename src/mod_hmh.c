@@ -260,9 +260,12 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		switch(schedule[i]){
 			case 0 : lt.tm_hour = lt.tm_min = TIME_UNKNOWN; break;
 			case -1: lt.tm_hour = lt.tm_min = TIME_OFF; break;
-			default: localtime_r(schedule + i, &lt); break;
+			default: {
+				localtime_r(schedule + i, &lt);
+				lt.tm_hour += (24 * (get_dow(&lt) - i));
+			} break;
 		}
-		
+
 		int time_bucket = -1;
 
 		if(terse){
@@ -284,7 +287,13 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 			times[time_bucket].min = lt.tm_min;
 		}
 
-		times[time_bucket].bits |= (1 << i);
+		int day = i;
+#if 0
+		if(schedule[i] != 0 && schedule[i] != -1){
+			day = get_dow(&lt);
+		}
+#endif
+		times[time_bucket].bits |= (1 << day);
 
 		prev_bucket = time_bucket;
 	}
