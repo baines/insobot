@@ -570,10 +570,10 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 	word_ht.free_fn   = &ht_free;
 
 	if(!markov_load()){
-		ht_free(chain_keys_ht.memory, chain_keys_ht.capacity);
+		if(chain_keys_ht.memory) ht_free(chain_keys_ht.memory, chain_keys_ht.capacity);
 		inso_ht_init(&chain_keys_ht, 4096, sizeof(MarkovLinkKey), &chain_key_hash);
 
-		ht_free(word_ht.memory, word_ht.capacity);
+		if(word_ht.memory) ht_free(word_ht.memory, word_ht.capacity);
 		inso_ht_init(&word_ht, 4096, sizeof(WordInfo), &wordinfo_hash);
 	}
 
