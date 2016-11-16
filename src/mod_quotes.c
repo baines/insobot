@@ -697,7 +697,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 					ctx->send_msg(chan, "%s: Matching quotes: %s", name, msg_buf);
 				}
 			} else {
-				ctx->send_msg(chan, "%s: No matches.", name);
+				ctx->send_msg(chan, "%s: No matches for '%s'.", name, arg);
 			}
 
 		} break;

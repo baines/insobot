@@ -18,8 +18,9 @@ static void markov_cmd  (const char*, const char*, const char*, int);
 static void markov_msg  (const char*, const char*, const char*);
 static void markov_mod_msg(const char* sender, const IRCModMsg* msg);
 static bool markov_save (FILE*);
+static void markov_stdin(const char* msg);
 
-enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_LENGTH, MARKOV_STATUS };
+enum { MARKOV_SAY, MARKOV_ASK, MARKOV_INTERVAL, MARKOV_LENGTH, MARKOV_STATUS, MARKOV_SAVE };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "markov",
@@ -31,13 +32,15 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_msg   = &markov_msg,
 	.on_join  = &markov_join,
 	.on_save  = &markov_save,
+	.on_stdin = &markov_stdin,
 	.on_mod_msg = &markov_mod_msg,
 	.commands = DEFINE_CMDS (
 		[MARKOV_SAY]      = CMD1("say"),
 		[MARKOV_ASK]      = CMD1("ask"),
 		[MARKOV_INTERVAL] = CMD1("interval") CMD1("gap"),
 		[MARKOV_LENGTH]   = CMD1("len"),
-		[MARKOV_STATUS]   = CMD1("status")
+		[MARKOV_STATUS]   = CMD1("status"),
+		[MARKOV_SAVE]     = CMD1("msave")
 	)
 };
 
@@ -495,6 +498,8 @@ fail:
 }
 
 static bool markov_save(FILE* file){
+	puts("mod_markov: now saving...");
+
 	uint32_t word_size = sbmm_count(word_mem) - 1;
 	uint32_t val_size  = sbmm_count(chain_vals);
 	uint32_t version   = 3;
@@ -526,11 +531,12 @@ static bool markov_save(FILE* file){
 
 #undef GZWRITE
 
+	puts("mod_markov: save complete.");
 	gzclose(f);
 	return true;
 
 fail:
-	puts("markov: error saving file.");
+	puts("mod_markov: error saving file.");
 	gzclose(f);
 	return false;
 }
@@ -660,6 +666,12 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 				(sbmm_count(chain_vals) * sizeof(MarkovLinkVal)) / (1024.f*1024.f)
 			);
 
+		} break;
+
+		case MARKOV_SAVE: {
+			if(strcmp(name, BOT_OWNER) != 0) break;
+			ctx->save_me();
+			ctx->send_msg(chan, "%s: save complete.", name);
 		} break;
 	}
 
@@ -825,6 +837,12 @@ static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 		}
 
 		msg->callback((intptr_t)buffer, msg->cb_arg);
+	}
+}
+
+static void markov_stdin(const char* msg){
+	if(strcmp(msg, "msave") == 0){
+		ctx->save_me();
 	}
 }
 
