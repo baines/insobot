@@ -31,6 +31,7 @@ static regex_t yt_playlist_regex;
 static const char* yt_api_key;
 
 static regex_t msdn_url_regex;
+static regex_t hmn_url_regex;
 static regex_t generic_title_regex;
 
 static regex_t twitter_url_regex;
@@ -72,6 +73,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ret = ret & (regcomp(
 		&msdn_url_regex,
 		"msdn\\.microsoft\\.com/[^/]+/library/.*\\.aspx",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&hmn_url_regex,
+		"([^/]+\\.)?handmade.network/(forums/t|blog/p)/[0-9]+",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -700,6 +707,10 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	if(regexec(&yt_playlist_regex, msg, 2, matches, 0) == 0){
 		do_yt_playlist_info(chan, msg, matches);
+	}
+
+	if(regexec(&hmn_url_regex, msg, 1, matches, 0) == 0){
+		do_generic_info(chan, msg, matches, "HMN");
 	}
 
 	if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
