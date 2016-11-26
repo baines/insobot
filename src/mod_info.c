@@ -27,12 +27,12 @@ static char* text_trim(const char* text){
 
 	do {
 		p = strchrnul(p+1, '.');
-		if(p - text < 150){
+		if(!len || p - text < 150){
 			len = p - text;
 		}
 	} while(*p && p - text < 150);
 
-	return strndup(text, len ? len : strlen(text));
+	return strndup(text, len);
 }
 
 static void info_cmd(const char* chan, const char* nick, const char* arg, int cmd){
