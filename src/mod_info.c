@@ -154,8 +154,6 @@ static void info_cmd(const char* chan, const char* nick, const char* arg, int cm
 				curl_easy_setopt(curl, CURLOPT_HEADERDATA, &location);
 
 				curl_easy_perform(curl);
-				curl_easy_cleanup(curl);
-
 				sb_free(data);
 
 				if(location){
