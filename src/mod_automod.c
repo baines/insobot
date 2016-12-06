@@ -6,6 +6,8 @@
 #include "stb_sb.h"
 #include "utils.h"
 
+//#define TRIGGER_HAPPY
+
 static void automod_msg     (const char*, const char*, const char*);
 static void automod_cmd     (const char*, const char*, const char*, int);
 static bool automod_init    (const IRCCoreCtx*);
@@ -125,6 +127,7 @@ static void automod_join(const char* chan, const char* name){
 	}
 }
 
+#ifdef TRIGGER_HAPPY
 static int am_score_caps(const Suspect* s, const char* msg, size_t len){
 	size_t num_caps = 0;
 
@@ -136,6 +139,7 @@ static int am_score_caps(const Suspect* s, const char* msg, size_t len){
 
 	return (num_caps / (float)len) > 0.80 ? 45 : 0;
 }
+#endif
 
 #ifndef __STDC_ISO_10646__
 	#error "Your OS/compiler doesn't store a Unicode / UCS4 codepoint in a wchar_t :("
@@ -186,10 +190,12 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 		bad_char_score += 60;
 	}
 
+#ifdef TRIGGER_HAPPY
 	// same char spam
 	if(max_same >= 8){
 		bad_char_score += (60 + (max_same - 8) * 5);
 	}
+#endif
 
 	return bad_char_score;
 }
@@ -241,6 +247,7 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 	return 0;
 }
 
+#ifdef TRIGGER_HAPPY
 static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 	time_t now = time(0);
 
@@ -250,6 +257,7 @@ static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 		return 0;
 	}
 }
+#endif
 
 // only global twitch emotes for now
 static const char* emotes[] = {
@@ -470,6 +478,9 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 	bool discipline = false;
 	int score = 0;
 
+#ifdef TRIGGER_HAPPY
+	const char* rules[] = { "caps", "ascii art", "flood", "emotes", "spambot?" };
+
 	int (*score_fns[])(const Suspect*, const char*, size_t) = {
 		am_score_caps,
 		am_score_ascii_art,
@@ -477,8 +488,15 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 		am_score_emotes,
 		am_score_links
 	};
+#else
+	const char* rules[] = { "ascii art", "emotes", "spambot?" };
 
-	const char* rules[] = { "caps", "ascii art", "flood", "emotes", "spambot?" };
+	int (*score_fns[])(const Suspect*, const char*, size_t) = {
+		am_score_ascii_art,
+		am_score_emotes,
+		am_score_links
+	};
+#endif
 
 	size_t len = strlen(msg);
 
