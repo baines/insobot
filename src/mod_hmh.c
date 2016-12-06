@@ -25,8 +25,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &hmh_mod_msg,
 	.on_ipc     = &hmh_ipc,
 	.commands = DEFINE_CMDS (
-		[CMD_SCHEDULE] = CONTROL_CHAR "sched " CONTROL_CHAR "schedule",
-		[CMD_TIME]     = CONTROL_CHAR "tm "    CONTROL_CHAR "time "     CONTROL_CHAR "when " CONTROL_CHAR "next",
+		[CMD_SCHEDULE] = CMD1("sched") CMD1("schedule"),
+		[CMD_TIME]     = CMD1("tm"   ) CMD1("time"    ) CMD1("when") CMD1("next"),
 		[CMD_QA]       = "!qa"
 	)
 };
@@ -37,10 +37,11 @@ enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
 
 static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 //static const char schedule_url[] = "http://127.0.0.1:8000/broadcast.csv";
-static time_t last_schedule_update;
 
-static struct tm schedule_start = {};
-static time_t schedule[DAYS_IN_WEEK] = {};
+static time_t last_schedule_update;
+static time_t schedule[DAYS_IN_WEEK];
+
+static int schedule_offset;
 
 static char* tz_buf;
 
@@ -61,6 +62,7 @@ static inline int get_dow(struct tm* tm){
 
 static bool update_schedule(void){
 
+	time_t now = time(0);
 	char* data = NULL;
 
 	CURL* curl = inso_curl_init(schedule_url, &data);
@@ -76,96 +78,69 @@ static bool update_schedule(void){
 
 	if(curl_ret != 0){
 		fprintf(stderr, "Error getting schedule: %s\n", curl_easy_strerror(curl_ret));
-
-		if((time(0) - mktime(&schedule_start)) > (6*24*60*60)){
+		if(now - schedule[0] > (7*24*60*60)){
+			schedule_offset = 0;
 			memset(schedule, 0, sizeof(schedule));
-			schedule_start.tm_mday += DAYS_IN_WEEK;
-			mktime(&schedule_start);
 		}
-
 		sb_free(data);
 		return false;
 	}
 
 	char* tz = tz_push(":US/Pacific");
 
-	time_t now = time(0);
-	struct tm now_tm = {}, prev_tm = {};
-	localtime_r(&now, &now_tm);
-
 	if(http_code == 304){
 		fprintf(stderr, "mod_hmh: Not modified.\n");
 	} else {
 		memset(schedule, 0, sizeof(schedule));
-		memset(&schedule_start, 0, sizeof(schedule_start));
+		schedule_offset = 0;
 
-		int record_idx = -1;
-		char *state, *line = strtok_r(data, "\r\n", &state);
+		char* state;
+		char* line = strtok_r(data, "\r\n", &state);
+
+		struct tm prev_tm = {};
 
 		for(; line; line = strtok_r(NULL, "\r\n", &state)){
 
 			struct tm scheduled_tm = {};
 			char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
-			if(*title != ','){
+			if(!title || *title != ','){
 				break;
+			}
+
+			bool new_week = get_dow(&scheduled_tm) < get_dow(&prev_tm);
+			if(new_week && memcmp(schedule, (time_t[7]){}, sizeof(schedule)) != 0){
+				if(!is_upcoming_stream()){
+					memset(schedule, 0, sizeof(schedule));
+					schedule_offset += 7;
+				} else {
+					break;
+				}
 			}
 
 			scheduled_tm.tm_isdst = -1;
 			time_t sched = mktime(&scheduled_tm);
-			int day_diff = (now - sched) / (24*60*60);
+			int day_diff = ((now - sched) / (24*60*60));
 
-			if(record_idx >= 0){
-				int idx_diff =  (get_dow(&scheduled_tm) - get_dow(&prev_tm));
-				record_idx += idx_diff;
-				if(record_idx >= DAYS_IN_WEEK || idx_diff < 0 || day_diff > (6*24*60*60)){
-					if(is_upcoming_stream()){
-						break;
-					} else {
-						memset(schedule, 0, sizeof(schedule));
-						record_idx = -1;
-					}
-				}
-			}
-
-			if(record_idx < 0 && day_diff < DAYS_IN_WEEK){
-				record_idx = get_dow(&scheduled_tm);
-				schedule_start = scheduled_tm;
-				schedule_start.tm_mday -= record_idx;
-				schedule_start.tm_isdst = -1;
-				mktime(&schedule_start);
-			}
-
-			if(record_idx >= 0){
+			if(day_diff < DAYS_IN_WEEK){
+				int sched_idx = get_dow(&scheduled_tm);
 				if(strcmp(title + 1, "off") == 0){
-					schedule[record_idx] = -1;
+					schedule[sched_idx] = -1;
 				} else {
-					schedule[record_idx] = sched;
-				}	
+					schedule[sched_idx] = sched;
+				}
 			}
 
 			prev_tm = scheduled_tm;
 		}
 	}
-
-	// skip to the next week if there are no upcoming streams and it's past friday.
-	struct tm cutoff_tm = schedule_start;
-	cutoff_tm.tm_mday += SAT;
-	cutoff_tm.tm_hour = 0;
-	cutoff_tm.tm_min = 0;
-	cutoff_tm.tm_isdst = -1;
-	time_t cutoff = mktime(&cutoff_tm);
-
-	if(!is_upcoming_stream() && now > cutoff){
-		memset(schedule, 0, sizeof(schedule));
-		schedule_start.tm_mday += DAYS_IN_WEEK;
-		mktime(&schedule_start);
-	}
-
+	
 	tz_pop(tz);
-
 	sb_free(data);
-
 	return true;
+}
+
+static void check_alias_cb(intptr_t result, intptr_t arg){
+	*(int*)arg = result;
 }
 
 static void print_schedule(const char* chan, const char* name, const char* arg){
@@ -181,16 +156,11 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 
 	const size_t lim = empty_sched ? 30 : 1800;
 
-	if(now - last_schedule_update > lim){
-		if(update_schedule()){
-			last_schedule_update = now;
-		} else if(schedule_start.tm_year == 0){
-			ctx->send_msg(chan, "Error retrieving schedule :(");
-			return;
-		}
+	if(now - last_schedule_update > lim && update_schedule()){
+		last_schedule_update = now;
 	}
 
-	//FIXME: None of this crap should be done here, do it in update_schedule!
+	//FIXME: None of this crap should be done here, do it in update_schedule! meh..
 	
 	enum { TIME_UNKNOWN = -1, TIME_OFF = -2 };
 
@@ -288,11 +258,6 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		}
 
 		int day = i;
-#if 0
-		if(schedule[i] != 0 && schedule[i] != -1){
-			day = get_dow(&lt);
-		}
-#endif
 		times[time_bucket].bits |= (1 << day);
 
 		prev_bucket = time_bucket;
@@ -323,10 +288,16 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		}
 	}
 
+	struct tm week_start = {};
+	localtime_r(&now, &week_start);
+	week_start.tm_mday += schedule_offset;
+	week_start.tm_mday -= get_dow(&week_start);
+	week_start.tm_isdst = -1;
+	mktime(&week_start);
+
 	char prefix[64], suffix[64];
-	mktime(&schedule_start);
-	strftime(prefix, sizeof(prefix), "%b %d", &schedule_start);
-	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &schedule_start);
+	strftime(prefix, sizeof(prefix), "%b %d"   , &week_start);
+	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &week_start);
 	
 	if(!empty_sched){
 		ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
@@ -359,16 +330,19 @@ static void note_callback(intptr_t result, intptr_t arg){
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 1800){
-		if(update_schedule()){
-			last_schedule_update = now;
-		} else if(schedule_start.tm_year == 0){
-			ctx->send_msg(chan, "Error retrieving time :(");
-			return;
-		}
+	if(now - last_schedule_update > 1800 && update_schedule()){
+		last_schedule_update = now;
 	}
 
 	enum { SCHED_UNKNOWN = 0, SCHED_OFF = (1 << 0), SCHED_OLD = (1 << 1) };
+
+	bool is_weekend;
+	{
+		char* tz = tz_push(":US/Pacific");
+		struct tm* lt = localtime(&now);
+		is_weekend = get_dow(lt) >= 5;
+		tz_pop(tz);
+	}
 
 	uint32_t schedule_flags = 0;
 	int index = -1;
@@ -389,7 +363,9 @@ static void print_time(const char* chan, const char* name){
 	MOD_MSG(ctx, "note_get_stream_start", "#handmade_hero #hero", &note_callback, &note_time);
 
 	int diff = now - note_time;
-	if(diff < (75*60)){
+
+	// FIXME: 75 normally
+	if(diff < (135*60)){
 		// add 15 mins since the note marks the end of the prestream.
 		diff += (15*60);
 	} else if(index == -1){
@@ -438,23 +414,35 @@ static void print_time(const char* chan, const char* name){
 		}
 	} else {
 		char* format;
-		int into = diff / 60;
+		int mins_in = diff / 60;
 		int duration = 15;
+		int mins_until_qa = is_weekend ? 135 : 75;
 
-		if(into < 15){
+		if(mins_in < 15){
 			format = "%d %s into the pre-stream Q&A. %d until start. %s";
-		} else if(into < 75){
-			into -= 15;
-			duration = 60;
+		} else if(mins_in < mins_until_qa){
+			mins_in -= 15;
+			duration = mins_until_qa - 15;
 			format = "%d %s into the main stream. %d until Q&A. %s";
 		} else {
-			into -= 75;
+			mins_in -= mins_until_qa;
 			format = "%d %s into the Q&A, %d until end. %s";
 		}
 
 		const char* suffix = note_time ? "(based on NOTE)" : "(based on schedule)";
-		const char* time_unit = into == 1 ? "minute" : "minutes";
-		ctx->send_msg(chan, format, into, time_unit, duration - into, suffix);
+		const char* time_unit = mins_in == 1 ? "minute" : "minutes";
+		ctx->send_msg(chan, format, mins_in, time_unit, duration - mins_in, suffix);
+	}
+}
+
+static bool check_for_alias(const char* keys, const char* chan, const char* cc){
+	if(strcmp(cc, "!") == 0){
+		int alias_exists = 0;
+		const char* args[] = { keys, chan };
+		MOD_MSG(ctx, "alias_exists", args, &check_alias_cb, &alias_exists);
+		return alias_exists != 0;
+	} else {
+		return false;
 	}
 }
 
@@ -462,11 +450,15 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 	switch(cmd){
 		case CMD_SCHEDULE: {
-			print_schedule(chan, name, arg);
+			if(!check_for_alias("schedule sched", chan, CONTROL_CHAR)){
+				print_schedule(chan, name, arg);
+			}
 		} break;
 
 		case CMD_TIME: {
-			print_time(chan, name);
+			if(!check_for_alias("tm time when next", chan, CONTROL_CHAR)){
+				print_time(chan, name);
+			}
 		} break;
 
 		case CMD_QA: {
