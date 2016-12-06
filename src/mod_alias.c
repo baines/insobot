@@ -10,12 +10,14 @@ static bool alias_save     (FILE*);
 static bool alias_init     (const IRCCoreCtx*);
 static void alias_modified (void);
 static void alias_quit     (void);
+static void alias_mod_msg  (const char*, const IRCModMsg*);
 
 enum { ALIAS_ADD, ALIAS_ADD_GLOBAL, ALIAS_DEL, ALIAS_DEL_GLOBAL, ALIAS_LIST, ALIAS_SET_PERM };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name        = "alias",
 	.desc        = "Allows defining simple responses to !commands",
+	.priority    = -1000,
 	.flags       = IRC_MOD_DEFAULT,
 	.on_save     = &alias_save,
 	.on_modified = &alias_modified,
@@ -23,13 +25,14 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd      = &alias_cmd,
 	.on_init     = &alias_init,
 	.on_quit     = &alias_quit,
+	.on_mod_msg  = &alias_mod_msg,
 	.commands    = DEFINE_CMDS (
-		[ALIAS_ADD]        = CONTROL_CHAR "alias",
-		[ALIAS_ADD_GLOBAL] = CONTROL_CHAR "galias",
-		[ALIAS_DEL]        = CONTROL_CHAR "unalias "    CONTROL_CHAR "delalias "  CONTROL_CHAR "rmalias ",
-		[ALIAS_DEL_GLOBAL] = CONTROL_CHAR "gunalias "   CONTROL_CHAR "gdelalias " CONTROL_CHAR "grmalias ",
-		[ALIAS_LIST]       = CONTROL_CHAR "lsalias "    CONTROL_CHAR "lsa "       CONTROL_CHAR "listalias "   CONTROL_CHAR "listaliases",
-		[ALIAS_SET_PERM]   = CONTROL_CHAR "chaliasmod " CONTROL_CHAR "chamod "    CONTROL_CHAR "aliasaccess " CONTROL_CHAR "setaliasaccess"
+		[ALIAS_ADD]        = CMD("alias"     ),
+		[ALIAS_ADD_GLOBAL] = CMD("galias"    ),
+		[ALIAS_DEL]        = CMD("unalias"   ) CMD("delalias" ) CMD("rmalias"    ),
+		[ALIAS_DEL_GLOBAL] = CMD("gunalias"  ) CMD("gdelalias") CMD("grmalias"   ),
+		[ALIAS_LIST]       = CMD("lsalias"   ) CMD("lsa"      ) CMD("listalias"  ) CMD("listaliases"),
+		[ALIAS_SET_PERM]   = CMD("chaliasmod") CMD("chamod"   ) CMD("aliasaccess") CMD("setaliasaccess")
 	)
 };
 
@@ -454,6 +457,11 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 		return;
 	}
 
+	// if some other module already responded to this !cmd, then don't say anything.
+	if(ctx->responded()){
+		return;
+	}
+
 	const char* arg = msg + strlen(key) + 1;
 	while(*arg == ' ') ++arg;
 
@@ -526,3 +534,25 @@ static bool alias_save(FILE* file){
 	return true;
 }
 
+static void alias_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "alias_exists") == 0){
+		const char** arglist = (const char**)msg->arg;
+		const char* keys = arglist[0];
+		const char* chan = arglist[1];
+
+		const char* prev_p = keys;
+		const char* p;
+
+		do {
+			p = strchrnul(prev_p, ' ');
+			char* key = strndupa(prev_p, p - prev_p);
+			prev_p = p+1;
+
+			int result = alias_find(chan, key, NULL, NULL);
+			if(result){
+				msg->callback(result, msg->cb_arg);
+				break;
+			}
+		} while(*p);
+	}
+}

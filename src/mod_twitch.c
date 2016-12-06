@@ -13,7 +13,7 @@ static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 
-enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
+enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD1, TWITCH_VOD2, TWITCH_TRACKER, TWITCH_TITLE };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "twitch",
@@ -25,11 +25,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit  = &twitch_quit,
 	.on_mod_msg = &twitch_mod_msg,
 	.commands = DEFINE_CMDS (
-		[FOLLOW_NOTIFY]  = CONTROL_CHAR "fnotify",
-		[UPTIME]         = CONTROL_CHAR "uptime "  CONTROL_CHAR_2 "uptime",
-		[TWITCH_VOD]     = CONTROL_CHAR "vod "     CONTROL_CHAR_2 "vod",
-		[TWITCH_TRACKER] = CONTROL_CHAR "tracker " CONTROL_CHAR_2 "tracker " CONTROL_CHAR "streams " CONTROL_CHAR_2 "streams",
-		[TWITCH_TITLE]   = CONTROL_CHAR "title "   CONTROL_CHAR_2 "title"
+		[FOLLOW_NOTIFY]  = CMD("fnotify"),
+		[UPTIME]         = CMD("uptime" ),
+		[TWITCH_VOD1]    = CMD1("vod"   ),
+		[TWITCH_VOD2]    = CMD2("vod"   ),
+		[TWITCH_TRACKER] = CMD("tracker"), CMD("streams"),
+		[TWITCH_TITLE]   = CMD("title"  )
 	)
 };
 
@@ -303,7 +304,11 @@ static bool twitch_check_live(size_t index){
 	return t->stream_start != 0;
 }
 
-static void twitch_print_vod(size_t index, const char* send_chan, const char* name){
+static void check_alias_cb(intptr_t result, intptr_t arg){
+	*(int*)arg = result;
+}
+
+static void twitch_print_vod(size_t index, const char* send_chan, const char* name, int cmd){
 
 	char* chan    = twitch_keys[index];
 	TwitchInfo* t = twitch_vals + index;
@@ -325,9 +330,9 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 		goto out;
 	}
 
-	const char* videos_path[]      = { "videos", NULL };
-	const char* vod_url_path[]     = { "url", NULL };
-	const char* vod_title_path[]   = { "title", NULL };
+	const char* videos_path[]    = { "videos", NULL };
+	const char* vod_url_path[]   = { "url", NULL };
+	const char* vod_title_path[] = { "title", NULL };
 
 	yajl_val videos = yajl_tree_get(root, videos_path, yajl_t_array);
 	if(!videos || !YAJL_IS_ARRAY(videos)){
@@ -335,8 +340,19 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 		goto out;
 	}
 
-	if(videos->u.array.len < 1){
-		fprintf(stderr, "twitch_print_vod: videos empty");
+	if(videos->u.array.len == 0){
+		int alias_exists = 0;
+
+		if((cmd == TWITCH_VOD1 && strcmp(CONTROL_CHAR  , "!") == 0) ||
+		   (cmd == TWITCH_VOD2 && strcmp(CONTROL_CHAR_2, "!") == 0)) {
+			const char* args[] = { "vod", send_chan };
+			MOD_MSG(ctx, "alias_exists", args, &check_alias_cb, &alias_exists);
+		}
+
+		if(!alias_exists){
+			ctx->send_msg(send_chan, "%s: No recent VoD found for %s.", name, chan + 1);
+		}
+
 		goto out;
 	}
 
@@ -688,7 +704,8 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 		} break;
 
-		case TWITCH_VOD: {
+		case TWITCH_VOD1:
+		case TWITCH_VOD2: {
 			TwitchInfo* t;
 
 			if(*arg++){
@@ -705,7 +722,7 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 				t = twitch_get_or_add(chan);
 			}
 
-			twitch_print_vod(t - twitch_vals, chan, name);
+			twitch_print_vod(t - twitch_vals, chan, name, cmd);
 		} break;
 
 		case TWITCH_TRACKER: {
