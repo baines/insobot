@@ -102,6 +102,8 @@ static IPCAddress* ipc_peers;
 
 static sig_atomic_t running = 1;
 
+static bool send_msg_called;
+
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
 	event_type     event,   \
@@ -664,6 +666,8 @@ IRC_STR_CALLBACK(on_chat_msg) {
 	char* _msg = strdupa(params[1]);
 	util_trim_end_spaces(_msg, strlen(_msg));
 
+	send_msg_called = false;
+
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		bool global = m->ctx->flags & IRC_MOD_GLOBAL;
 		if(global || util_check_perms(m->ctx->name, _chan, IRC_CB_CMD)){
@@ -942,6 +946,9 @@ static void core_send_msg(const char* chan, const char* fmt, ...){
 	if(vsnprintf(buff, sizeof(buff), fmt, v) > 0){
 		util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
 	}
+
+	send_msg_called = true;
+
 	va_end(v);
 }
 
@@ -1023,6 +1030,10 @@ static void core_strip_colors(char* msg){
 
 	memcpy(msg, stripped, strlen(stripped) + 1);
 	free(stripped);
+}
+
+static bool core_responded(void){
+	return send_msg_called;
 }
 
 /***************
@@ -1134,6 +1145,7 @@ int main(int argc, char** argv){
 		.save_me      = &core_self_save,
 		.log          = &core_log,
 		.strip_colors = &core_strip_colors,
+		.responded    = &core_responded,
 	};
 
 	sb_push(channels, 0);

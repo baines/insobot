@@ -14,7 +14,7 @@ typedef struct IRCModuleCtx_ {
 	const char*        name;
 	const char*        desc;
 	const char**       commands; // null-terminated, use DEFINE_CMDS macro
-	unsigned int       priority; // bigger number = higher priority
+	int                priority; // bigger number = higher priority
 	unsigned int       flags;
 	
 	bool (*on_init)    (const IRCCoreCtx* ctx);
@@ -74,6 +74,7 @@ struct IRCCoreCtx_ {
 	void           (*save_me)      (void);
 	void           (*log)          (const char* fmt, ...) __attribute__ ((format (printf, 1, 2)));
 	void           (*strip_colors) (char* msg);
+	bool           (*responded)    (void); // true if send_msg was called for the current msg already
 };
 
 // used for on_meta callback, which determines if the callback will be called or not.
