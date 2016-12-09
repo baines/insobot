@@ -111,7 +111,6 @@ static bool update_schedule(void){
 			if(new_week && memcmp(schedule, (time_t[7]){}, sizeof(schedule)) != 0){
 				if(!is_upcoming_stream()){
 					memset(schedule, 0, sizeof(schedule));
-					schedule_offset += 7;
 				} else {
 					break;
 				}
@@ -133,7 +132,12 @@ static bool update_schedule(void){
 			prev_tm = scheduled_tm;
 		}
 	}
-	
+
+	if(memcmp(schedule, (time_t[7]){}, sizeof(schedule)) != 0 && !is_upcoming_stream()){
+		schedule_offset = 7;
+		memset(schedule, 0, sizeof(schedule));
+	}
+
 	tz_pop(tz);
 	sb_free(data);
 	return true;
