@@ -56,7 +56,7 @@ static bool automod_init(const IRCCoreCtx* _ctx){
 	is_twitch = true;
 	return regcomp(
 		&url_regex,
-		"(https?://[^[:space:]]+|[^[:space:]]\\.[^[:space:]]{2,6}([:space:]|$|/|#|:|\\?))",
+        "\\b(https?://[^[:space:]]+|[a-zA-Z0-9][a-zA-Z0-9\\-_]*\\.[A-Za-z]{2,5}(\\.[A-Za-z]{2,5})*([:space:]|$|/|#|:|\\?))",
 		REG_ICASE | REG_EXTENDED | REG_NEWLINE
 	) == 0;
 }
