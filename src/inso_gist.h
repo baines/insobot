@@ -58,7 +58,7 @@ inso_gist* inso_gist_open(const char* id, const char* user, const char* token){
 	asprintf_check(&gist->api_url, "https://api.github.com/gists/%s", id);
 
 	gist->curl = curl_easy_init();
-	
+
 	char keybuf[9] = {};
 	memcpy(keybuf, id, 8);
 	key_t key = strtoul(keybuf, NULL, 16);
@@ -293,7 +293,7 @@ void inso_gist_close(inso_gist* gist){
 
 	free(gist->api_url);
 	free(gist->auth);
-	
+
 	if(gist->etag){
 		free(gist->etag);
 	}

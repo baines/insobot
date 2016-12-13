@@ -584,7 +584,7 @@ static bool quotes_save(FILE* _){
 	if(!quotes_dirty) return false;
 
 	inso_gist_file* file = NULL;
-	inso_gist_file_add(&file, " Quote List", "Here are the quotes stored by insogot, in csv format, one file per channel. Times are UTC.");
+	inso_gist_file_add(&file, " Quote List", "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.");
 
 	for(int i = 0; i < sb_count(channels); ++i){
 		if(sb_count(chan_quotes[i]) == 0){
