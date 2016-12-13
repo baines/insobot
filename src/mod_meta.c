@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include "config.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static void meta_cmd   (const char*, const char*, const char*, int);
 static bool meta_save  (FILE*);

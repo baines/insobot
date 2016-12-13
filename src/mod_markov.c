@@ -7,7 +7,7 @@
 #include <regex.h>
 #include <zlib.h>
 #include "module.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include "inso_ht.h"
 #include "stb_sb.h"
 

@@ -1,6 +1,6 @@
 #include "module.h"
 #include "config.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static bool brainfuck_init (const IRCCoreCtx*);
 static void brainfuck_cmd  (const char*, const char*, const char*, int);

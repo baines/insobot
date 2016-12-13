@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "module.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include "ctype.h"
 
 static void haiku_cmd (const char*, const char*, const char*, int);

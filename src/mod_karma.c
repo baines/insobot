@@ -5,7 +5,7 @@
 #include <time.h>
 #include "module.h"
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static void karma_msg      (const char*, const char*, const char*);
 static void karma_cmd      (const char*, const char*, const char*, int);

@@ -3,7 +3,7 @@
 #include "module.h"
 #include "config.h"
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static bool chans_init    (const IRCCoreCtx* ctx);
 static void chans_cmd     (const char*, const char*, const char*, int);

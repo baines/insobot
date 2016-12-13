@@ -3,8 +3,9 @@
 #include <string.h>
 #include <wchar.h>
 #include <ctype.h>
+#include <time.h>
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 //#define TRIGGER_HAPPY
 

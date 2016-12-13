@@ -6,7 +6,7 @@
 #include <string.h>
 #include <assert.h>
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static void linkinfo_msg  (const char*, const char*, const char*);
 static bool linkinfo_init (const IRCCoreCtx*);

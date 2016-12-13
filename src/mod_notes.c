@@ -1,7 +1,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include "module.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 static void notes_msg     (const char*, const char*, const char*);
 static void notes_msg_out (const char*, const char*);

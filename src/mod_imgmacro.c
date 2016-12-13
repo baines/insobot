@@ -1,6 +1,6 @@
 #include "module.h"
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include <yajl/yajl_tree.h>
 #include <curl/curl.h>
 #include <sys/stat.h>

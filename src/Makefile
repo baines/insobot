@@ -1,4 +1,5 @@
-CFLAGS := -D_GNU_SOURCE -Wall -Wno-pointer-sign -std=gnu99 -g -fsanitize=address
+CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -Wno-pointer-sign -std=gnu99 -g
+LDFLAGS := -Wl,--as-needed -Wl,--gc-sections
 
 headers    := $(wildcard *.h)
 module_src := $(wildcard mod_*.c)
@@ -26,8 +27,14 @@ all: ../insobot $(module_out)
 ../modules:
 	mkdir $@
 
-../modules/%.so: %.c $(headers) | ../modules
-	$(CC) $(CFLAGS) -fPIC -shared $< -o $@ -Wl,--as-needed -lcurl $(lyajl) $(lcairo) $(lz)
+../inso_%.o: inso_%.h
+	$(CC) $(CFLAGS) -x c -fPIC -DINSO_IMPL -c $^ -o $@
+
+../inso_%.a: $(patsubst %.h,../%.o,$(wildcard inso_*.h))
+	ar rcs $@ $^
+
+../modules/%.so: %.c ../inso_common.a | $(headers) ../modules
+	$(CC) $(CFLAGS) -fPIC $^ -shared -o $@ $(LDFLAGS) -lcurl $(lyajl) $(lcairo) $(lz)
 	
 clean:
 	$(RM) ../insobot $(module_out) 

@@ -1,7 +1,7 @@
 #include "module.h"
 #include "string.h"
 #include "config.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include "assert.h"
 
 static bool help_init (const IRCCoreCtx*);

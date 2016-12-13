@@ -28,7 +28,7 @@
 #include "config.h"
 #include "module.h"
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 
 #ifndef LIBIRC_OPTION_SSL_NO_VERIFY
 	#define LIBIRC_OPTION_SSL_NO_VERIFY (1 << 3)
@@ -391,7 +391,9 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 				dlclose(m->lib_handle);
 				m->lib_handle = NULL;
 			}
-			m->ctx = NULL;
+			free(m->lib_path);
+			sb_erase(irc_modules, m - irc_modules);
+			--m;
 			continue;
 		}
 	}
@@ -407,6 +409,7 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			printf("** Init failed for %s.\n", mod_name);
 			dlclose(m->lib_handle);
 			m->lib_handle = NULL;
+			free(m->lib_path);
 			sb_erase(irc_modules, m - irc_modules);
 			--m;
 			continue;
@@ -415,9 +418,9 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		for(int i = 0; i < sb_count(channels) - 1; ++i){
 			const char** c = (const char**)channels + i;
 
-			irc_on_join(irc_ctx, "join", bot_nick, c, 1);
+			IRC_MOD_CALL(m, on_join, (*c, bot_nick));
 			for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
-				irc_on_join(irc_ctx, "join", chan_nicks[i][j], c, 1);
+				IRC_MOD_CALL(m, on_join, (*c, chan_nicks[i][j]));
 			}
 		}
 	}
@@ -1308,6 +1311,7 @@ int main(int argc, char** argv){
 		IRC_MOD_CALL(m, on_quit, ());
 		free(m->lib_path);
 		dlclose(m->lib_handle);
+		m->lib_handle = NULL;
 	}
 
 	sb_free(irc_modules);

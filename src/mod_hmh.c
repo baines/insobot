@@ -4,7 +4,7 @@
 #include <time.h>
 #include "module.h"
 #include "stb_sb.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include <curl/curl.h>
 #include <ftw.h>
 
@@ -18,7 +18,7 @@ enum { CMD_SCHEDULE, CMD_TIME, CMD_QA };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "hmh",
-	.desc       = "Functionalitty specific to Handmade Hero",
+	.desc       = "Functionality specific to Handmade Hero",
 	.on_cmd     = &hmh_cmd,
 	.on_init    = &hmh_init,
 	.on_quit    = &hmh_quit,

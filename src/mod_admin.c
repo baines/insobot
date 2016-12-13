@@ -1,6 +1,6 @@
 #include "module.h"
 #include "config.h"
-#include "utils.h"
+#include "inso_utils.h"
 #include <string.h>
 #include <ctype.h>
 

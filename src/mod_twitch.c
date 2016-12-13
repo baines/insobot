@@ -4,7 +4,7 @@
 #include <time.h>
 #include <string.h>
 #include <yajl/yajl_tree.h>
-#include "utils.h"
+#include "inso_utils.h"
 
 static bool twitch_init    (const IRCCoreCtx*);
 static void twitch_cmd     (const char*, const char*, const char*, int);

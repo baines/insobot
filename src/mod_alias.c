@@ -2,7 +2,7 @@
 #include "stb_sb.h"
 #include <string.h>
 #include <ctype.h>
-#include "utils.h"
+#include "inso_utils.h"
 
 static void alias_msg      (const char*, const char*, const char*);
 static void alias_cmd      (const char*, const char*, const char*, int);
@@ -49,7 +49,7 @@ enum {
 };
 
 //NOTE: must be uppercase
-char* alias_permission_strs[] = {
+static const char* alias_permission_strs[] = {
 	"NORMAL",
 	"WLIST",
 	"ADMIN",
@@ -473,9 +473,9 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	bool has_cmd_perms = (value->permission == AP_NORMAL) || strcasecmp(chan+1, name) == 0;
 	if(!has_cmd_perms){
 		if (value->permission == AP_WHITELISTED){
-			MOD_MSG(ctx, "check_whitelist", name, &inso_permission_cb, &has_cmd_perms);
+			has_cmd_perms = inso_is_wlist(ctx, name);
 		} else if (value->permission == AP_ADMINONLY){
-			MOD_MSG(ctx, "check_admin", name, &inso_permission_cb, &has_cmd_perms);
+			has_cmd_perms = inso_is_admin(ctx, name);
 		} else {
 			// Some kind of weird unknown permission type. Assume normal access.
 			has_cmd_perms = true;

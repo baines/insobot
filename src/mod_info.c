@@ -1,7 +1,8 @@
 #include "module.h"
 #include <curl/curl.h>
 #include <yajl/yajl_tree.h>
-#include "utils.h"
+#include "inso_utils.h"
+#include "stb_sb.h"
 
 static void info_cmd  (const char*, const char*, const char*, int);
 static bool info_init (const IRCCoreCtx*);
