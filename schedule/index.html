@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
+<title>insobot stream schedule</title>
 <style type="text/css">
 html {
 	font-family: 'Liberation Sans', Arial, Helvetica, sans-serif;
@@ -25,12 +26,19 @@ body {
 	max-width: 40px;
 	height: 28px;
 	text-align: center;
-	border: 1px solid #333;
+	border-bottom: 1px solid #444;
+	border-right: 1px solid #444;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	color: #000;
 	cursor: default;
+}
+#schedule tr.alt {
+	background-color: #222226;
+}
+#schedule td.subtle-border {
+	border-bottom: 1px solid #282828;
 }
 #schedule td:first-child {
 	border-right: 2px solid #ccc;
@@ -69,7 +77,7 @@ body {
 	border-collapse: collapse;
 }
 #info-sched td {
-	border: 1px solid #333;
+	border: 1px solid #444;
 }
 h1 {
 	display: block;
@@ -324,6 +332,14 @@ function schedule_row_alloc(table, mask, hour, duration){
 
 		inc_span(table.rows[idx].cells[0], "rowSpan");
 
+		if(table.rows[idx].classList.contains("alt")){
+			row.classList.add("alt");
+		}
+
+		for(var k = 0; k < table.rows[idx].cells.length; ++k){
+			table.rows[idx].cells[k].classList.add("subtle-border");
+		}
+
 		for(var k = 0; k < 25; ++k){
 			row.insertCell();
 		}
@@ -404,6 +420,9 @@ function calc_schedule(table, e){
 
 		for(var i = 0; i < 7; ++i){
 			var row = body.insertRow();
+			if(i % 2){
+				row.classList.add("alt");
+			}
 			var col = row.insertCell();
 			col.innerHTML = days[i];
 			col.setAttribute("day-index", i);
