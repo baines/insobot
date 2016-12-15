@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style type="text/css">
+html {
+	font-family: 'Liberation Sans', Arial, Helvetica, sans-serif;
+	font-size: 12px;
+}
+body {
+	max-width: 900px;
+	margin: 0 auto;
+	background-color: #113322;
+	padding: 20px;
+}
+#schedule {
+	width: 900px;
+	outline: 2px solid #ccc;
+	border-collapse: collapse;
+	background-color: #17171A;
+}
+#schedule td {
+	padding: 0px;
+	min-width: 28px;
+	max-width: 40px;
+	height: 28px;
+	text-align: center;
+	border: 1px solid #333;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: #000;
+	cursor: default;
+}
+#schedule td:first-child {
+	border-right: 2px solid #ccc;
+	color: #fff;
+}
+#schedule thead, #schedule thead td {
+	border-bottom: 2px solid #ccc;
+	color: #fff;
+}
+#info {
+	outline: 2px solid #ccc;
+	background-color: #17171A;
+	color: #fff;
+	font-size: 125%;
+	margin: 15px auto;
+	padding: 5px;
+	vertical-align: text-top;
+	min-height: 150px;
+	text-align: center;
+}
+#info img {
+	float: left;
+	clear: right;
+}
+#info-name {
+	font-size: 120%;
+	text-decoration: underline;
+	font-weight: bold;
+	font-variant: small-caps;
+	line-height: 175%;
+}
+#info-sched {
+	width: 500px;
+	margin: 20px auto;
+	outline: 2px solid #ccc;
+	border-collapse: collapse;
+}
+#info-sched td {
+	border: 1px solid #333;
+}
+h1 {
+	display: block;
+	font-size: 200%;
+	margin: 0px auto 20px auto;
+	text-align: center;
+	font-variant: small-caps;
+	color: #fff;
+}
+#refresh {
+	float: right;
+	color: #fff;
+}
+</style>
+</head>
+<body>
+<h1>insobot stream schedule</h1>
+<table id="schedule" style="display: none"></table>
+<div id="info">
+<noscript><div style="line-height: 150px"><h1>javascript is required</h1></div></noscript>
+</div>
+<div id="refresh"></div>
+<script>
+var palette = [
+	"#06989A", "#8A609D", "#409A06", "#C4A000", "#729FCF", "#FFFFFF", "#2DE2E2",
+	"#A17FA8", "#6DE234", "#427FED", "#00D700", "#06D75F", "#5FD7D7", "#878700",
+	"#87AFAF", "#87D700", "#87D7AF", "#87D7FF",	"#87FF87", "#87FFD7", "#AF5F00",
+	"#AF5FAF", "#AF5FFF", "#AF87D7", "#AFAF00", "#AFAFAF", "#AFAFFF", "#AFD787",
+	"#AFFF5F", "#D75FAF", "#D75FD7", "#D787AF", "#D787FF", "#DFAF5F",
+];
+
+var twitch_info = {};
+var gist_info = [];
+
+function name_color(name){
+	var n = 0;
+	for(var i = 0; i < name.length; ++i){
+		n += name.charCodeAt(i);
+	}
+	return palette[n % palette.length];
+}
+
+function remap_day(i){
+	return i == 0 ? 6 : (i-1);
+}
+
+function get_sched_days_string(e){
+	var days_str = "";
+
+	if(e.repeat == 31){
+		days_str = "Weekdays";
+	} else if(e.repeat == 96){
+		days_str = "Weekends";
+	} else if(e.repeat == 127){
+		days_str = "Daily";
+	} else if(e.repeat == 0){
+		days_str = new Date(e.start).toLocaleDateString();
+	} else {
+		var days = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
+		for(var i = 0; i < 7; ++i){
+			if(e.repeat & (1 << i)){
+				if(days_str){
+					days_str += ", ";
+				}
+				days_str += days[i];
+			}
+		}
+	}
+
+	return days_str;
+}
+
+function get_sched_time_string(e){
+	var start_date = new Date(e.start);
+	var end_date = new Date(e.end);
+	var str = "";
+
+	str += start_date.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' });
+	str += " - ";
+	str += end_date.toLocaleTimeString(undefined,  { hour: 'numeric', minute: 'numeric', timeZoneName: 'short' });
+
+	return str;
+}
+
+function inc_span(cell, attr){
+	var span = 1;
+	if(cell.hasAttribute(attr)){
+		span = parseInt(cell[attr]);
+	}
+	cell[attr] = span+1;
+}
+
+function show_info(e){
+	var user = e.target.attributes["user"].value;
+	var info = document.getElementById("info");
+
+	var set_info = function(u){
+		while(info.firstChild) {
+			info.removeChild(info.firstChild);
+		}
+
+		var img_a = document.createElement("a");
+		img_a.href = 'https://twitch.tv/' + user;
+		img_a.appendChild(u.logo);
+		info.appendChild(img_a);
+
+		var name_a = document.createElement("a");
+		name_a.href = img_a.href;
+
+		var name = document.createElement("div");
+		name.id = "info-name";
+		name.innerText = u.name;
+		name.style = "color: " + name_color(user) + ";";
+
+		name_a.appendChild(name);
+		info.appendChild(name_a);
+
+		if(u.bio && u.bio != "null"){
+			var bio = document.createElement("div");
+			bio.id = "info-bio";
+			bio.innerText = u.bio;
+			info.appendChild(bio);
+		}
+
+		var sched = document.createElement("table");
+		sched.id = "info-sched";
+
+		gist_info.forEach(function(i){
+			if(i.user == user){
+				var cell;
+				var row  = sched.insertRow();
+
+				cell = row.insertCell();
+				cell.innerText = get_sched_days_string(i);
+
+				cell = row.insertCell();
+				cell.innerText = get_sched_time_string(i);
+
+				cell = row.insertCell();
+				cell.innerText = i.title;
+
+			}
+		});
+
+		info.appendChild(sched);
+	};
+
+	var fn = function(){
+		if(twitch_info[user] && twitch_info[user].state == "loaded"){
+			set_info(twitch_info[user]);
+		} else {
+			window.setTimeout(fn, 250);
+		}
+	}
+	fn();
+}
+
+function get_twitch_info(e){
+	if(!twitch_info[e.user]){
+		var x = new XMLHttpRequest();
+		x.addEventListener("load", function(){
+			var data = JSON.parse(this.responseText);
+
+			twitch_info[e.user] = {
+				state: "loaded",
+				name: data.display_name,
+				bio: data.bio
+			};
+
+			if(data.logo){
+				var img = document.createElement("img");
+				img.src = data.logo;
+				img.width = 150;
+				img.height = 150;
+				twitch_info[e.user].logo = img;
+			}
+		});
+		x.open("GET", "https://api.twitch.tv/kraken/users/" + e.user);
+		x.setRequestHeader("Client-ID", "jzkbprff40iqj646a697cyrvl0zt2m6");
+		x.send();
+
+		twitch_info[e.user] = {
+			state: "loading"
+		}
+	}
+}
+
+function get_row(table, day_index, hour_index){
+	for(var i = 0; i < table.rows.length; ++i){
+		var cell = table.rows[i].cells[0];
+		if(cell.hasAttribute("day-index")){
+			var index = parseInt(cell.attributes["day-index"].value);
+			if(index != day_index) continue;
+			if(cell.hasAttribute("rowSpan")){
+				var span = parseInt(cell.rowSpan) - 1;
+				if(typeof(hour_index) == "undefined"){
+					return i + span;
+				} else {
+					for(var j = 0; j < span; ++j){
+						cell = table.rows[i+j].cells[hour_index+1];
+						if(!cell.hasAttribute("user")){
+							return i+j;
+						}
+					}
+					return i + span;
+				}
+			} else {
+				return i;
+			}
+		}
+	}
+
+	return -1;
+}
+
+function get_col(table, hour_index){
+	return hour_index + 1;
+}
+
+function get_cell(table, day_index, hour_index){
+	return table.rows[get_row(table, day_index)].cells[get_col(table, hour_index)];
+}
+
+function schedule_row_alloc(table, mask, hour, duration){
+	var new_row_days = [];
+
+	for(var i = 0; i < 7; ++i){
+		if(!(mask & (1 << i))) continue;
+
+		var day = i;
+		for(var j = 0; j < duration; ++j){
+			var h = hour + j;
+			if(h > 23){
+				h = 0;
+				day = (day + 1) % 7;
+			}
+
+			var cell = get_cell(table, day, h);
+			if(cell.hasAttribute("user") && !new_row_days.includes(day)){
+				new_row_days.push(day);
+			}
+
+			if(!cell.hasAttribute("user")){
+				cell.setAttribute("user", "*");
+			}
+		}
+	}
+
+	new_row_days.forEach(function(day){
+		var idx = get_row(table, day);
+		var row = table.insertRow(idx+1);
+
+		inc_span(table.rows[idx].cells[0], "rowSpan");
+
+		for(var k = 0; k < 25; ++k){
+			row.insertCell();
+		}
+		row.cells[0].style = "display: none;";
+	});
+}
+
+function calc_schedule(table, e){
+	var date_start = new Date(e.start);
+	var date_end   = new Date(e.end);
+
+	var duration = (date_end.getTime() - date_start.getTime()) / (60*60*1000);
+
+	var prev_row = -1;
+	var prev_col = -1;
+
+	var mask = e.repeat;
+	mask |= (1 << remap_day(date_start.getDay()));
+
+	schedule_row_alloc(table, mask, date_start.getHours(), duration);
+
+	for(var i = 0; i < 7; ++i){
+		if(!(mask & (1 << i))) continue;
+
+		for(var j = 0; j < duration; ++j){
+			var d = i;
+			var h = date_start.getHours() + j;
+			if(h > 23){
+				h = 0;
+				d = (d + 1) % 7;
+			}
+
+			var row = get_row(table, d, h);
+			var col = get_col(table, h);
+			var cell = table.rows[row].cells[col];
+
+			if(row == prev_row){
+				inc_span(table.rows[row].cells[prev_col], "colSpan");
+				cell.setAttribute("style", "display: none;");
+				cell.setAttribute("user", e.user);
+			} else {
+				cell.setAttribute("style", "background-color: " + name_color(e.user) + ";");
+				cell.setAttribute("user", e.user);
+				cell.innerText = e.user;
+				cell.addEventListener("mouseover", show_info);
+				cell.addEventListener("click", show_info);
+
+				prev_col = col;
+			}
+			prev_row = row;
+		}
+	}
+}
+
+(function(){
+	document.getElementById("info").innerText = "Mouse over items for more info.";
+	document.getElementById("schedule").removeAttribute("style");
+
+	var x = new XMLHttpRequest();
+	x.addEventListener("load", function(){
+		var gist = JSON.parse(this.responseText);
+		var entries = JSON.parse(gist["files"]["schedule.json"]["content"]);
+		gist_info = entries;
+
+		var table = document.getElementById("schedule");
+		table.cellPadding = 0;
+		table.cellSpacing = 0;
+
+		var thead = table.createTHead().insertRow();
+		thead.insertCell();
+
+		for(var i = 0; i < 24; ++i){
+			thead.insertCell().innerHTML = i;
+		}
+
+		var body = table.createTBody();
+		var days = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
+
+		for(var i = 0; i < 7; ++i){
+			var row = body.insertRow();
+			var col = row.insertCell();
+			col.innerHTML = days[i];
+			col.setAttribute("day-index", i);
+
+			for(var j = 0; j < 24; ++j){
+				row.insertCell();
+			}
+		}
+
+		entries.forEach(function(e){
+			get_twitch_info(e);
+			calc_schedule(table, e);
+		});
+	});
+	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
+	x.send();
+	document.getElementById("refresh").innerText = "Last refresh: " + new Date().toLocaleString();
+})();
+</script>
+</body>
+</html>
