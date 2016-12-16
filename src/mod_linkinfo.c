@@ -5,6 +5,7 @@
 #include <yajl/yajl_tree.h>
 #include <string.h>
 #include <assert.h>
+#include <wchar.h>
 #include "stb_sb.h"
 #include "inso_utils.h"
 
@@ -78,7 +79,7 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&hmn_url_regex,
-		"([^/]+\\.)?handmade.network/(forums/t|blog/p)/[0-9]+",
+		"([^/]+\\.)?handmade.network/(forums(/[^/]+)?/t|blog/p)/[0-9]+",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -135,6 +136,51 @@ static void linkinfo_quit(void){
 	regfree(&steam_url_regex);
 	regfree(&vimeo_url_regex);
 	regfree(&xkcd_url_regex);
+}
+
+typedef struct {
+	char *from, *to;
+	size_t from_len, to_len;
+} Replacement;
+
+static void html_unescape(char* msg, size_t len){
+
+	#define RTAG(x, y) { .from = (x), .to = (y), .from_len = sizeof(x) - 1, .to_len = sizeof(y) - 1 }
+	Replacement tags[] = {
+		RTAG("&amp;", "&"),
+		RTAG("&gt;", ">"),
+		RTAG("&lt;", "<"),
+		RTAG("&quot;", "\""),
+		RTAG("&nbsp;", " ")
+	};
+	#undef RTAG
+
+	for(char* p = msg; *p; ++p){
+		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
+			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
+				const int sz = tags[i].from_len - tags[i].to_len;
+				assert(sz >= 0);
+
+				memmove(p, p + sz, len - (p - msg));
+				memcpy(p, tags[i].to, tags[i].to_len);
+			}
+		}
+
+		wchar_t wc;
+		if(sscanf(p, "&#%u;", &wc) == 1){
+			char c[5] = {};
+			mbstate_t state;
+			size_t new_sz = wcrtomb(c, wc, &state);
+			size_t old_sz = snprintf(NULL, 0, "%u", wc) + 3;
+			const int sz = old_sz - new_sz;
+
+			if(sz > 0 && sz <= 4){
+				memmove(p, p + sz, len - (p - msg));
+				memcpy(p, c, new_sz);
+			}
+		}
+	}
+
 }
 
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
@@ -295,7 +341,9 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 		regexec(&generic_title_regex, data, 2, title, 0) == 0 &&
 		(title_len = (title[1].rm_eo - title[1].rm_so)) > 0
 	){
-		ctx->send_msg(chan, "↑ %s: [%.*s]", tag, title_len, data + title[1].rm_so);
+		char* title_str = strndupa(data + title[1].rm_so, title_len);
+		html_unescape(title_str, title_len);
+		ctx->send_msg(chan, "↑ %s: [%s]", tag, title_str);
 	} else {
 		fprintf(stderr, "linkinfo: Couldn't extract title\n[%s]\n[%s]", curl_easy_strerror(curl_ret), data);
 		ctx->send_msg(chan, "Error getting %s data. Blame insofaras.", tag);
@@ -304,36 +352,6 @@ void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, con
 	curl_easy_cleanup(curl);
 
 	sb_free(data);
-}
-
-typedef struct {
-	char *from, *to;
-	size_t from_len, to_len;
-} Replacement;
-
-//XXX: this isn't very good. it only replaces a couple of escape sequences that turn up in the twitter api for whatever reason.
-static void dodgy_html_unescape(char* msg, size_t len){
-
-	#define RTAG(x, y) { .from = (x), .to = (y), .from_len = sizeof(x) - 1, .to_len = sizeof(y) - 1 }
-	Replacement tags[] = {
-		RTAG("&amp;", "&"),
-		RTAG("&gt;", ">"),
-		RTAG("&lt;", "<")
-	};
-	#undef RTAG
-
-	for(char* p = msg; *p; ++p){
-		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
-			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
-				const int sz = tags[i].from_len - tags[i].to_len;
-				assert(sz >= 0);
-
-				memmove(p, p + sz, len - (p - msg));
-				memcpy(p, tags[i].to, tags[i].to_len);
-			}
-		}
-	}
-
 }
 
 static const char* url_path[]        = { "url", NULL };
@@ -506,9 +524,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	strcpy(write_ptr, read_ptr);
 
 	for(unsigned char* c = fixed_text; *c; ++c) if(*c < ' ') *c = ' ';
-
-	dodgy_html_unescape(fixed_text, strlen(fixed_text));
-
+	html_unescape(fixed_text, strlen(fixed_text));
 	sb_free(url_replacements);
 
 	ctx->send_msg(chan, "↑ Tweet by %s: [%s] [%s]", user->u.string, fixed_text, time_buf);
