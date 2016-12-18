@@ -253,7 +253,10 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	char sched_user[64];
 	if(sscanf(arg, "#%63s", sched_user) == 1){
-		arg = strtok_r(NULL, " \t", &arg_state);
+		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
+			ctx->send_msg(chan, "Unable to parse time.");
+			return;
+		}
 	} else {
 		*stpncpy(sched_user, name, sizeof(sched_user)) = '\0';
 	}
