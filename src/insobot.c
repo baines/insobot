@@ -225,6 +225,7 @@ static void util_dispatch_cmds(Module* m, const char* chan, const char* name, co
 
 			if(strncasecmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
 				IRC_MOD_CALL(m, on_cmd, (chan, name, msg + sz, cmd_list - m->ctx->commands));
+				break;
 			}
 
 			while(*cmd_end == ' ') ++cmd_end;

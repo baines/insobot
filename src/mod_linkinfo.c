@@ -155,6 +155,8 @@ static void html_unescape(char* msg, size_t len){
 	};
 	#undef RTAG
 
+	char c[MB_CUR_MAX];
+
 	for(char* p = msg; *p; ++p){
 		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
 			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
@@ -163,24 +165,19 @@ static void html_unescape(char* msg, size_t len){
 
 				memmove(p, p + sz, len - (p - msg));
 				memcpy(p, tags[i].to, tags[i].to_len);
+				break;
 			}
 		}
 
 		wchar_t wc;
-		if(sscanf(p, "&#%u;", &wc) == 1){
-			char c[5] = {};
-			mbstate_t state;
-			size_t new_sz = wcrtomb(c, wc, &state);
-			size_t old_sz = snprintf(NULL, 0, "%u", wc) + 3;
-			const int sz = old_sz - new_sz;
-
-			if(sz > 0 && sz <= 4){
-				memmove(p, p + sz, len - (p - msg));
-				memcpy(p, c, new_sz);
+		int old_len, new_len;
+		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1){
+			if((new_len = wctomb(c, wc)) > 0 && old_len > new_len){
+				memmove(p, p + (old_len - new_len), len - (p - msg));
+				memcpy(p, c, new_len);
 			}
 		}
 	}
-
 }
 
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
