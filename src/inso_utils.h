@@ -92,26 +92,6 @@ static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, .
 	va_end(v);
 }
 
-static inline char* tz_push(const char* tz){
-	char* oldtz = getenv("TZ");
-	if(oldtz) oldtz = strdup(oldtz);
-
-	setenv("TZ", tz, 1);
-	tzset();
-
-	return oldtz;
-}
-
-static inline void tz_pop(char* oldtz){
-	if(oldtz){
-		setenv("TZ", oldtz, 1);
-		free(oldtz);
-	} else {
-		unsetenv("TZ");
-	}
-	tzset();
-}
-
 static inline void inso_permission_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }

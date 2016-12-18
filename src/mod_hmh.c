@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <curl/curl.h>
+#include <ftw.h>
 #include "module.h"
 #include "stb_sb.h"
 #include "inso_utils.h"
-#include <curl/curl.h>
-#include <ftw.h>
+#include "inso_tz.h"
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
@@ -25,7 +26,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &hmh_mod_msg,
 	.on_ipc     = &hmh_ipc,
 	.commands = DEFINE_CMDS (
-		[CMD_SCHEDULE] = CMD1("sched") CMD1("schedule"),
+		[CMD_SCHEDULE] = CMD1("schedule"),
 		[CMD_TIME]     = CMD1("tm"   ) CMD1("time"    ) CMD1("when") CMD1("next"),
 		[CMD_QA]       = "!qa"
 	)
