@@ -366,7 +366,7 @@ function calc_schedule(table, e){
 	var date_start = new Date(e.start);
 	var date_end   = new Date(e.end);
 
-	var duration = (date_end.getTime() - date_start.getTime()) / (60*60*1000);
+	var duration = Math.round((date_end.getTime() - date_start.getTime()) / (60*60*1000));
 
 	var prev_row = -1;
 	var prev_col = -1;
