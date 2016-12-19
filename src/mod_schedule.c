@@ -278,6 +278,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		const char* text;
 		int repeat_val;
 	} repeat_tokens[] = {
+		{ "today"   , 0    },
 		{ "daily"   , 0x7F },
 		{ "weekdays", 0x1F },
 		{ "weekends", 0x60 },
@@ -318,7 +319,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	// if found, make sure the start date is on one of the repeat days
 
-	if(found_days){
+	if(sched.repeat){
 		int today = get_dow(&utc);
 		if(!(sched.repeat & (1 << today))){
 			for(int i = 0; i < 7; ++i){
