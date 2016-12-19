@@ -124,21 +124,36 @@ function remap_day(i){
 	return i == 0 ? 6 : (i-1);
 }
 
+function get_fixed_mask(date, mask){
+	if(date.getDay() != date.getUTCDay()){
+		if(date.getTimezoneOffset() < 0){
+			mask <<= 1;
+			mask |= ((mask >> 7) & 1);
+			mask &= 0x7f;
+		} else {
+			mask |= ((mask & 1) << 7);
+			mask >>>= 1;
+		}
+	}
+	return mask;
+}
+
 function get_sched_days_string(e){
 	var days_str = "";
+	var mask = get_fixed_mask(new Date(e.start), e.repeat);
 
-	if(e.repeat == 31){
+	if(mask == 31){
 		days_str = "Weekdays";
-	} else if(e.repeat == 96){
+	} else if(mask == 96){
 		days_str = "Weekends";
-	} else if(e.repeat == 127){
+	} else if(mask == 127){
 		days_str = "Daily";
-	} else if(e.repeat == 0){
+	} else if(mask == 0){
 		days_str = new Date(e.start).toLocaleDateString();
 	} else {
 		var days = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
 		for(var i = 0; i < 7; ++i){
-			if(e.repeat & (1 << i)){
+			if(mask & (1 << i)){
 				if(days_str){
 					days_str += ", ";
 				}
@@ -356,17 +371,7 @@ function calc_schedule(table, e){
 	var prev_row = -1;
 	var prev_col = -1;
 
-	var mask = e.repeat;
-	if(date_start.getDay() != date_start.getUTCDay()){
-		if(date_start.getTimezoneOffset() < 0){
-			mask <<= 1;
-			mask |= ((mask >> 7) & 1);
-			mask &= 0x7f;
-		} else {
-			mask |= ((mask & 1) << 7);
-			mask >>>= 1;
-		}
-	}
+	var mask = get_fixed_mask(date_start, e.repeat);
 	mask |= (1 << remap_day(date_start.getDay()));
 
 	schedule_row_alloc(table, mask, date_start.getHours(), duration);
