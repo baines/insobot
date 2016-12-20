@@ -71,13 +71,14 @@ body {
 	line-height: 175%;
 }
 #info-sched {
-	width: 500px;
+	width: 620px;
 	margin: 20px auto;
 	outline: 2px solid #ccc;
 	border-collapse: collapse;
 }
 #info-sched td {
 	border: 1px solid #444;
+	padding: 0px 5px;
 }
 h1 {
 	display: block;
@@ -90,6 +91,11 @@ h1 {
 #refresh {
 	float: right;
 	color: #fff;
+}
+.highlight {
+	color: #ffff44 !important;
+	font-weight: bold;
+	text-decoration: underline;
 }
 </style>
 </head>
@@ -233,7 +239,6 @@ function show_info(e){
 
 				cell = row.insertCell();
 				cell.innerText = i.title;
-
 			}
 		});
 
@@ -451,6 +456,17 @@ function calc_schedule(table, e){
 			get_twitch_info(e);
 			calc_schedule(table, e);
 		});
+
+		var now = new Date();
+		var day = remap_day(now.getDay());
+		for(var i = 0; i < table.rows.length; ++i){
+			var c = table.rows[i].cells[0];
+			if(c.hasAttribute("day-index") && parseInt(c.attributes["day-index"].value) == day){
+				c.classList.add("highlight");
+				break;
+			}
+		}
+		table.rows[0].cells[now.getHours()+1].classList.add("highlight");
 	});
 	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
 	x.send();
