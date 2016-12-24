@@ -471,7 +471,10 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 	sb_erase(sched_vals[index], id);
 	if(sb_count(sched_vals[index]) == 0){
 		free(sched_keys[index]);
+		sb_free(sched_vals[index]);
+
 		sb_erase(sched_keys, index);
+		sb_erase(sched_vals, index);
 	}
 
 	sched_upload();
