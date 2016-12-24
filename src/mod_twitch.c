@@ -29,7 +29,7 @@ const IRCModuleCtx irc_mod_ctx = {
 		[UPTIME]         = CMD("uptime" ),
 		[TWITCH_VOD1]    = CMD1("vod"   ),
 		[TWITCH_VOD2]    = CMD2("vod"   ),
-		[TWITCH_TRACKER] = CMD("tracker"), CMD("streams"),
+		[TWITCH_TRACKER] = CMD("tracker") CMD("streams"),
 		[TWITCH_TITLE]   = CMD("title"  )
 	)
 };

@@ -235,8 +235,8 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 	if(!*_arg++){
 		ctx->send_msg(
 			chan,
-			"%s: usage: " CONTROL_CHAR "sched+ [#chan] [days] [<HH:MM>[-HH:MM][TZ]] [Title]."
-			"'days' can be a comma separated list e.g. 'mon,tue,fri', strings like 'daily', 'weekends', or a date like '2016-03-14'.",
+			"%s: usage: " CONTROL_CHAR "sched+ [#chan] [days] [<HH:MM>[-HH:MM][TZ]] [Title]. "
+			"'days' can be a list like 'mon,tue,fri', strings like 'daily', 'weekends' etc, or a date like '2016-03-14'.",
 			name
 		);
 		return;
@@ -273,6 +273,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 	gmtime_r(&now, &utc);
 	utc.tm_hour = 0;
 	utc.tm_min = 0;
+	utc.tm_sec = 0;
 
 	struct {
 		const char* text;
