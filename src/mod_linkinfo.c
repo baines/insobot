@@ -9,6 +9,8 @@
 #include "stb_sb.h"
 #include "inso_utils.h"
 
+//#define USE_LEGIT_YOUTUBE_API
+
 static void linkinfo_msg  (const char*, const char*, const char*);
 static bool linkinfo_init (const IRCCoreCtx*);
 static void linkinfo_quit (void);
@@ -180,6 +182,64 @@ static void html_unescape(char* msg, size_t len){
 	}
 }
 
+#ifdef USE_LEGIT_YOUTUBE_API
+static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
+	regmatch_t* match = matches + 4;
+
+	if(!yt_api_key) return;
+	if(match->rm_so == -1 || match->rm_eo == -1) return;
+
+	char* url;
+	asprintf_check(
+		&url,
+		"https://www.googleapis.com/youtube/v3/videos?id=%.*s&part=contentDetails,snippet&key=%s"
+		"&fields=items(snippet(title,liveBroadcastContent),contentDetails(duration))",
+		match->rm_eo - match->rm_so,
+		msg + match->rm_so,
+		yt_api_key
+	);
+
+	char* data = NULL;
+	CURL* curl = inso_curl_init(url, &data);
+	free(url);
+
+	if(curl_easy_perform(curl) == 0){
+		sb_push(data, 0);
+
+		static const char* items_path[]    = { "items", NULL };
+		static const char* title_path[]    = { "snippet", "title", NULL };
+		static const char* duration_path[] = { "contentDetails", "duration", NULL };
+		static const char* islive_path[]   = { "snippet", "liveBroadcastContent", NULL };
+
+		yajl_val root  = yajl_tree_parse(data, NULL, 0);
+		yajl_val items = yajl_tree_get(root, items_path, yajl_t_array);
+		yajl_val title = NULL, duration = NULL, islive = NULL;
+
+		if(root && items && items->u.array.len > 0){
+			title    = yajl_tree_get(items->u.array.values[0], title_path   , yajl_t_string);
+			duration = yajl_tree_get(items->u.array.values[0], duration_path, yajl_t_string);
+			islive   = yajl_tree_get(items->u.array.values[0], islive_path  , yajl_t_string);
+		}
+
+		if(title && islive && strcmp(islive->u.string, "live") == 0){
+			ctx->send_msg(chan, "↑ YT Video: [%s] [LIVE]", title->u.string);
+		} else if(title && duration){
+			int h = 0, m = 0, s = 0;
+			if(sscanf(duration->u.string, "PT%dH%dM%dS", &h, &m, &s) == 3){
+				ctx->send_msg(chan, "↑ YT Video: [%s] [%d:%02d:%02d]", title->u.string, h, m, s);
+			} else if(sscanf(duration->u.string, "PT%dM%dS", &m, &s) == 2){
+				ctx->send_msg(chan, "↑ YT Video: [%s] [%02d:%02d]", title->u.string, m, s);
+			} else if(sscanf(duration->u.string, "PT%dS", &s) == 1){
+				ctx->send_msg(chan, "↑ YT Video: [%s] [00:%02d]", title->u.string, s);
+			}
+		}
+		yajl_tree_free(root);
+	}
+
+	curl_easy_cleanup(curl);
+	sb_free(data);
+}
+#else
 static void do_youtube_info(const char* chan, const char* msg, regmatch_t* matches){
 	regmatch_t* match = matches + 4;
 
@@ -261,11 +321,13 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 
 	sb_free(data);
 }
+#endif
 
 void do_yt_playlist_info(const char* chan, const char* msg, regmatch_t* matches){
 	regmatch_t* id = matches + 1;
 	char url[1024];
 
+	if(!yt_api_key) return;
 	if(id->rm_so == -1 || id->rm_eo == -1) return;
 
 	puts("mod_linkinfo: getting yt playlist info.");

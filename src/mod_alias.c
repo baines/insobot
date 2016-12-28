@@ -27,12 +27,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit     = &alias_quit,
 	.on_mod_msg  = &alias_mod_msg,
 	.commands    = DEFINE_CMDS (
-		[ALIAS_ADD]        = CMD("alias"     ),
-		[ALIAS_ADD_GLOBAL] = CMD("galias"    ),
-		[ALIAS_DEL]        = CMD("unalias"   ) CMD("delalias" ) CMD("rmalias"    ),
-		[ALIAS_DEL_GLOBAL] = CMD("gunalias"  ) CMD("gdelalias") CMD("grmalias"   ),
-		[ALIAS_LIST]       = CMD("lsalias"   ) CMD("lsa"      ) CMD("listalias"  ) CMD("listaliases"),
-		[ALIAS_SET_PERM]   = CMD("chaliasmod") CMD("chamod"   ) CMD("aliasaccess") CMD("setaliasaccess")
+		[ALIAS_ADD]        = CMD1("alias"     ),
+		[ALIAS_ADD_GLOBAL] = CMD1("galias"    ),
+		[ALIAS_DEL]        = CMD1("unalias"   ) CMD1("delalias" ) CMD1("rmalias"    ),
+		[ALIAS_DEL_GLOBAL] = CMD1("gunalias"  ) CMD1("gdelalias") CMD1("grmalias"   ),
+		[ALIAS_LIST]       = CMD1("lsalias"   ) CMD1("lsa"      ) CMD1("listalias"  ) CMD1("listaliases"),
+		[ALIAS_SET_PERM]   = CMD1("chaliasmod") CMD1("chamod"   ) CMD1("aliasaccess") CMD1("setaliasaccess")
 	)
 };
 

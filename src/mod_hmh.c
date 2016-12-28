@@ -92,6 +92,7 @@ static bool update_schedule(void){
 	{
 		struct tm tmp = {};
 		localtime_r(&now, &tmp);
+		tmp.tm_isdst = -1;
 		tmp.tm_mday -= get_dow(&tmp);
 		tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
 		week_start = mktime(&tmp);
