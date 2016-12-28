@@ -42,10 +42,9 @@ static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 static time_t last_schedule_update;
 static time_t schedule[DAYS_IN_WEEK];
 
-static int schedule_offset;
-
 static char* tz_buf;
 
+#if 0
 static bool is_upcoming_stream(void){
 	time_t now = time(0);
 	for(int i = 0; i < DAYS_IN_WEEK; ++i){
@@ -55,6 +54,7 @@ static bool is_upcoming_stream(void){
 	}
 	return false;
 }
+#endif
 
 // converts tm_wday which uses 0..6 = sun..sat, to 0..6 = mon..sun
 static inline int get_dow(struct tm* tm){
@@ -79,8 +79,7 @@ static bool update_schedule(void){
 
 	if(curl_ret != 0){
 		fprintf(stderr, "Error getting schedule: %s\n", curl_easy_strerror(curl_ret));
-		if(now - schedule[0] > (7*24*60*60)){
-			schedule_offset = 0;
+		if(now - schedule[0] > (13*12*60*60)){
 			memset(schedule, 0, sizeof(schedule));
 		}
 		sb_free(data);
@@ -89,39 +88,37 @@ static bool update_schedule(void){
 
 	char* tz = tz_push(":US/Pacific");
 
+	time_t week_start, week_end;
+	{
+		struct tm tmp = {};
+		localtime_r(&now, &tmp);
+		tmp.tm_mday -= get_dow(&tmp);
+		tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
+		week_start = mktime(&tmp);
+		week_end = week_start + (7*24*60*60);
+	}
+
 	if(http_code == 304){
 		fprintf(stderr, "mod_hmh: Not modified.\n");
 	} else {
 		memset(schedule, 0, sizeof(schedule));
-		schedule_offset = 0;
 
 		char* state;
 		char* line = strtok_r(data, "\r\n", &state);
-
-		struct tm prev_tm = {};
 
 		for(; line; line = strtok_r(NULL, "\r\n", &state)){
 
 			struct tm scheduled_tm = {};
 			char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
 			if(!title || *title != ','){
+				printf("mod_hmh: error parsing csv, line was [%s]\n", line);
 				break;
-			}
-
-			bool new_week = get_dow(&scheduled_tm) < get_dow(&prev_tm);
-			if(new_week && memcmp(schedule, (time_t[7]){}, sizeof(schedule)) != 0){
-				if(!is_upcoming_stream()){
-					memset(schedule, 0, sizeof(schedule));
-				} else {
-					break;
-				}
 			}
 
 			scheduled_tm.tm_isdst = -1;
 			time_t sched = mktime(&scheduled_tm);
-			int day_diff = ((now - sched) / (24*60*60));
 
-			if(day_diff < DAYS_IN_WEEK){
+			if(sched >= week_start && sched < week_end){
 				int sched_idx = get_dow(&scheduled_tm);
 				if(strcmp(title + 1, "off") == 0){
 					schedule[sched_idx] = -1;
@@ -129,14 +126,7 @@ static bool update_schedule(void){
 					schedule[sched_idx] = sched;
 				}
 			}
-
-			prev_tm = scheduled_tm;
 		}
-	}
-
-	if(memcmp(schedule, (time_t[7]){}, sizeof(schedule)) != 0 && !is_upcoming_stream()){
-		schedule_offset = 7;
-		memset(schedule, 0, sizeof(schedule));
 	}
 
 	tz_pop(tz);
@@ -295,7 +285,6 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 
 	struct tm week_start = {};
 	localtime_r(&now, &week_start);
-	week_start.tm_mday += schedule_offset;
 	week_start.tm_mday -= get_dow(&week_start);
 	week_start.tm_isdst = -1;
 	mktime(&week_start);
@@ -498,7 +487,7 @@ static void hmh_quit(void){
 }
 
 static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
-	if(strcmp(msg->cmd, "is_hmh_live") == 0){
+	if(strcmp(msg->cmd, "hmh_is_live") == 0){
 		msg->callback(is_during_stream(), msg->cb_arg);
 	}
 }

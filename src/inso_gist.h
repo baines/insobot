@@ -300,6 +300,8 @@ void inso_gist_close(inso_gist* gist){
 
 	curl_easy_cleanup(gist->curl);
 
+	free(gist);
+
 	// free semaphore?
 }
 

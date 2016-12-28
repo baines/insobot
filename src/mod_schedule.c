@@ -4,6 +4,7 @@
 #include <yajl/yajl_tree.h>
 #include <yajl/yajl_gen.h>
 #include "module.h"
+#include "module_msgs.h"
 #include "stb_sb.h"
 #include "inso_utils.h"
 #include "inso_gist.h"
@@ -12,6 +13,7 @@
 static bool sched_init (const IRCCoreCtx*);
 static void sched_cmd  (const char*, const char*, const char*, int);
 static void sched_quit (void);
+static void sched_mod_msg (const char*, const IRCModMsg*);
 
 enum { SCHED_ADD, SCHED_DEL, SCHED_EDIT, SCHED_SHOW, SCHED_LINK };
 
@@ -21,6 +23,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init     = &sched_init,
 	.on_cmd      = &sched_cmd,
 	.on_quit     = &sched_quit,
+	.on_mod_msg  = &sched_mod_msg,
 	.commands    = DEFINE_CMDS (
 		[SCHED_ADD]  = CMD("sched+"),
 		[SCHED_DEL]  = CMD("sched-"),
@@ -559,4 +562,43 @@ static void sched_cmd(const char* chan, const char* name, const char* arg, int c
 static void sched_quit(void){
 	sched_free();
 	inso_gist_close(gist);
+}
+
+static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
+	if(strcmp(msg->cmd, "sched_get") == 0){
+		const char* name = (const char*)msg->arg;
+
+		int index = -1;
+		for(int i = 0; i < sb_count(sched_keys); ++i){
+			if(strcmp(sched_keys[i], name) == 0){
+				index = i;
+				break;
+			}
+		}
+
+		if(index != -1){
+			SchedMsg result = {
+				.user = sched_keys[index],
+			};
+
+			for(int i = 0; i < sb_count(sched_keys[index]); ++i){
+				result.sched_id = i;
+				result.start  = sched_vals[index][i].start;
+				result.end    = sched_vals[index][i].end;
+				result.title  = sched_vals[index][i].title;
+				result.repeat = sched_vals[index][i].repeat;
+
+				msg->callback((intptr_t)&result, msg->cb_arg);
+			}
+		}
+
+		return;
+	}
+
+	// TODO
+	if(strcmp(msg->cmd, "sched_set") == 0){
+		SchedMsg* request = (SchedMsg*)msg->arg;
+
+		return;
+	}
 }
