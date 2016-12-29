@@ -285,6 +285,15 @@ function get_twitch_info(e){
 	}
 }
 
+function get_day_cell(table, day_index){
+	for(var i = 0; i < table.rows.length; ++i){
+		var c = table.rows[i].cells[0];
+		if(c.hasAttribute("day-index") && parseInt(c.attributes["day-index"].value) == day_index){
+			return c;
+		}
+	}
+}
+
 function get_row(table, day_index, hour_index){
 	for(var i = 0; i < table.rows.length; ++i){
 		var cell = table.rows[i].cells[0];
@@ -350,7 +359,7 @@ function schedule_row_alloc(table, mask, hour, duration){
 		var idx = get_row(table, day);
 		var row = table.insertRow(idx+1);
 
-		inc_span(table.rows[idx].cells[0], "rowSpan");
+		inc_span(get_day_cell(table, day), "rowSpan");
 
 		if(table.rows[idx].classList.contains("alt")){
 			row.classList.add("alt");
@@ -372,6 +381,8 @@ function calc_schedule(table, e){
 	var date_end   = new Date(e.end);
 
 	var duration = Math.round((date_end.getTime() - date_start.getTime()) / (60*60*1000));
+	if(duration <= 0) duration = 1;
+	if(duration > 24) duration = 24; // probably shouldn't happen?
 
 	var prev_row = -1;
 	var prev_col = -1;
@@ -422,7 +433,6 @@ function calc_schedule(table, e){
 	x.addEventListener("load", function(){
 		var gist = JSON.parse(this.responseText);
 		var entries = JSON.parse(gist["files"]["schedule.json"]["content"]);
-		gist_info = entries;
 
 		var table = document.getElementById("schedule");
 		table.cellPadding = 0;
@@ -452,20 +462,19 @@ function calc_schedule(table, e){
 			}
 		}
 
+		// remove old schedules (> 12h ago)
+		entries = entries.filter(function(e){
+			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (12*60*60*1000);
+		});
+		gist_info = entries;
+
 		entries.forEach(function(e){
 			get_twitch_info(e);
 			calc_schedule(table, e);
 		});
 
 		var now = new Date();
-		var day = remap_day(now.getDay());
-		for(var i = 0; i < table.rows.length; ++i){
-			var c = table.rows[i].cells[0];
-			if(c.hasAttribute("day-index") && parseInt(c.attributes["day-index"].value) == day){
-				c.classList.add("highlight");
-				break;
-			}
-		}
+		get_day_cell(table, remap_day(now.getDay())).classList.add("highlight");
 		table.rows[0].cells[now.getHours()+1].classList.add("highlight");
 	});
 	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
