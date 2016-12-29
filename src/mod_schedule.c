@@ -345,7 +345,8 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		if(p && p != arg && !*p){
 			start_date.tm_hour = 0;
 			start_date.tm_min = 0;
-			sched.start = timegm(&start_date);
+			start_date.tm_sec = 0;
+			sched.start = sched.end = timegm(&start_date);
 			found_days = true;
 		}
 	}
