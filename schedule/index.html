@@ -38,7 +38,7 @@ body {
 	background-color: #222226;
 }
 #schedule td.subtle-border {
-	border-bottom: 1px solid #282828;
+	border-bottom: 1px solid rgba(68, 68, 68, 0.15);
 }
 #schedule td:first-child {
 	border-right: 2px solid #ccc;
@@ -48,7 +48,7 @@ body {
 	border-bottom: 2px solid #ccc;
 	color: #fff;
 }
-#info {
+#info, #next {
 	outline: 2px solid #ccc;
 	background-color: #17171A;
 	color: #fff;
@@ -92,6 +92,11 @@ h1 {
 	float: right;
 	color: #fff;
 }
+#next {
+	min-height: 0;
+	font-size: 90%;
+	font-family: 'Input Mono', 'DejaVu Sans Mono', 'Liberation Sans Mono', 'Consolas', monospace
+}
 .highlight {
 	color: #ffff44 !important;
 	font-weight: bold;
@@ -102,6 +107,7 @@ h1 {
 <body>
 <h1>insobot stream schedule</h1>
 <table id="schedule" style="display: none"></table>
+<div id="next" style="display: none"></div>
 <div id="info">
 <noscript><div style="line-height: 150px"><h1>javascript is required</h1></div></noscript>
 </div>
@@ -117,6 +123,7 @@ var palette = [
 
 var twitch_info = {};
 var gist_info = [];
+var streams = [];
 
 function name_color(name){
 	var n = 0;
@@ -287,6 +294,86 @@ function get_twitch_info(e){
 	}
 }
 
+function add_stream(e, i){
+	var base  = new Date();
+	var start = new Date(e.start);
+	var end   = new Date(e.end);
+
+	var base_epoch = (base.getTime() / 1000);
+	base_epoch -= remap_day(base.getDay())*24*60*60;
+	base_epoch -= base.getHours()*60*60;
+	base_epoch -= base.getMinutes()*60;
+	base_epoch -= base.getSeconds();
+	base_epoch = Math.floor(base_epoch);
+	base_epoch += (i*24*60*60);
+
+	var start_epoch = base_epoch + start.getHours()*60*60;
+	var end_epoch = start_epoch + ((end.getTime() - start.getTime()) / 1000);
+
+	streams.push({
+		user: e.user,
+		title: e.title,
+		start: start_epoch,
+		end: end_epoch
+	});
+}
+
+// If only I were using npm!
+function left_pad(str, pad_num, pad_char){
+	var diff = pad_num - str.length;
+	while(diff-- > 0){
+		str = pad_char + str;
+	}
+	return str;
+}
+
+function update_next(){
+	var now = Math.floor(new Date().getTime() / 1000);
+	var live = [];
+	var next = null;
+
+	for(var i = 0; i < streams.length; ++i){
+		var s = streams[i];
+
+		if(s.start < now){
+			if(now < s.end){
+				live.push(s);
+			}
+			continue;
+		}
+
+		if(!next){
+			next = s;
+		} else {
+			break;
+		}
+	}
+
+	var div = document.getElementById("next");
+	while(div.firstChild) div.removeChild(div.firstChild);
+
+	if(live.length > 0){
+		var txt = document.createElement("div");
+		txt.innerText = "Currently Live: ";
+		live.forEach(function(l){
+			txt.innerText += "[" + l.user + " — " + l.title + "] "
+		});
+		div.appendChild(txt);
+	}
+
+	if(next){
+		var txt = document.createElement("div");
+		var diff = next.start - now;
+		var h = (Math.floor(diff / (60*60))).toString();
+		var m = (Math.floor(diff / 60) % 60).toString();
+		var s = (diff % 60).toString();
+
+		txt.innerText = "Up Next: [" + next.user + " — " + next.title + "] in ["
+			+ h + ":" + left_pad(m, 2, '0') + ":" + left_pad(s, 2, '0') + "]";
+		div.appendChild(txt);
+	}
+}
+
 function get_day_cell(table, day_index){
 	for(var i = 0; i < table.rows.length; ++i){
 		var c = table.rows[i].cells[0];
@@ -397,6 +484,8 @@ function calc_schedule(table, e){
 	for(var i = 0; i < 7; ++i){
 		if(!(mask & (1 << i))) continue;
 
+		add_stream(e, i);
+
 		for(var j = 0; j < duration; ++j){
 			var d = i;
 			var h = date_start.getHours() + j;
@@ -431,6 +520,7 @@ function calc_schedule(table, e){
 (function(){
 	document.getElementById("info").innerText = "Mouse over items for more info.";
 	document.getElementById("schedule").removeAttribute("style");
+	document.getElementById("next").removeAttribute("style");
 
 	var x = new XMLHttpRequest();
 	x.addEventListener("load", function(){
@@ -476,9 +566,15 @@ function calc_schedule(table, e){
 			calc_schedule(table, e);
 		});
 
+		streams.sort(function(a, b){
+			return a.start - b.start;
+		});
+
 		var now = new Date();
 		get_day_cell(table, remap_day(now.getDay())).classList.add("highlight");
 		table.rows[0].cells[now.getHours()+1].classList.add("highlight");
+
+		window.setInterval(update_next, 1000);
 	});
 	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
 	x.send();
