@@ -338,17 +338,18 @@ function schedule_row_alloc(table, mask, hour, duration){
 	for(var i = 0; i < 7; ++i){
 		if(!(mask & (1 << i))) continue;
 
-		var day = i;
 		for(var j = 0; j < duration; ++j){
+			var d = i;
 			var h = hour + j;
-			if(h > 23){
-				h = 0;
-				day = (day + 1) % 7;
+
+			while(h > 23){
+				h -= 24;
+				d = (d + 1) % 7;
 			}
 
-			var cell = get_cell(table, day, h);
-			if(cell.hasAttribute("user") && !new_row_days.includes(day)){
-				new_row_days.push(day);
+			var cell = get_cell(table, d, h);
+			if(cell.hasAttribute("user") && !new_row_days.includes(d)){
+				new_row_days.push(d);
 			}
 
 			if(!cell.hasAttribute("user")){
@@ -384,7 +385,6 @@ function calc_schedule(table, e){
 
 	var duration = Math.round((date_end.getTime() - date_start.getTime()) / (60*60*1000));
 	if(duration <= 0) duration = 1;
-	if(duration > 24) duration = 24; // probably shouldn't happen?
 
 	var prev_row = -1;
 	var prev_col = -1;
@@ -400,8 +400,9 @@ function calc_schedule(table, e){
 		for(var j = 0; j < duration; ++j){
 			var d = i;
 			var h = date_start.getHours() + j;
-			if(h > 23){
-				h = 0;
+
+			while(h > 23){
+				h -= 24;
 				d = (d + 1) % 7;
 			}
 
