@@ -200,13 +200,15 @@ function show_info(e){
 			info.removeChild(info.firstChild);
 		}
 
-		var img_a = document.createElement("a");
-		img_a.href = 'https://twitch.tv/' + user;
-		img_a.appendChild(u.logo);
-		info.appendChild(img_a);
+		if(u.logo){
+			var img_a = document.createElement("a");
+			img_a.href = 'https://twitch.tv/' + user;
+			img_a.appendChild(u.logo);
+			info.appendChild(img_a);
+		}
 
 		var name_a = document.createElement("a");
-		name_a.href = img_a.href;
+		name_a.href = 'https://twitch.tv/' + user;
 
 		var name = document.createElement("div");
 		name.id = "info-name";
