@@ -377,6 +377,16 @@ function update_next(){
 			+ h + ":" + left_pad(m, 2, '0') + ":" + left_pad(s, 2, '0') + "]";
 		div.appendChild(txt);
 	}
+
+	//highlight update
+	var elems = document.getElementsByClassName("highlight");
+	while(elems.length) elems[0].classList.remove("highlight");
+
+	var now = new Date();
+	var table = document.getElementById("schedule");
+
+	get_day_cell(table, remap_day(now.getDay())).classList.add("highlight");
+	table.rows[0].cells[now.getHours()+1].classList.add("highlight");
 }
 
 function get_day_cell(table, day_index){
@@ -574,10 +584,6 @@ function calc_schedule(table, e){
 		streams.sort(function(a, b){
 			return a.start - b.start;
 		});
-
-		var now = new Date();
-		get_day_cell(table, remap_day(now.getDay())).classList.add("highlight");
-		table.rows[0].cells[now.getHours()+1].classList.add("highlight");
 
 		window.setInterval(update_next, 1000);
 	});
