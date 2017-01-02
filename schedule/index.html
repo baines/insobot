@@ -298,7 +298,7 @@ function add_stream(e, i){
 	var start = new Date(e.start);
 	var end   = new Date(e.end);
 
-	var start_offset = (i*24*60*60) + start.getHours()*60*60;
+	var start_offset = (i*24*60*60) + (start.getHours()*60*60) + (start.getMinutes()*60);
 	var end_offset   = start_offset + ((end.getTime() - start.getTime()) / 1000);
 
 	streams.push({
@@ -318,18 +318,18 @@ function left_pad(str, pad_num, pad_char){
 	return str;
 }
 
-function get_week_epoch(){
+function get_week_offset(){
 	var base = new Date();
-	var base_epoch = (base.getTime() / 1000);
-	base_epoch -= remap_day(base.getDay())*24*60*60;
-	base_epoch -= base.getHours()*60*60;
-	base_epoch -= base.getMinutes()*60;
-	base_epoch -= base.getSeconds();
-	return Math.floor(base_epoch);
+	var offset = 0;
+	offset += remap_day(base.getDay())*24*60*60;
+	offset += base.getHours()*60*60;
+	offset += base.getMinutes()*60;
+	offset += base.getSeconds();
+	return offset;
 }
 
 function update_next(){
-	var now = Math.floor(new Date().getTime() / 1000) - get_week_epoch();
+	var now = get_week_offset();
 	var live = [];
 	var next = null;
 
@@ -340,12 +340,8 @@ function update_next(){
 			if(now < s.end){
 				live.push(s);
 			}
-			continue;
-		}
-
-		if(!next){
-			next = s;
 		} else {
+			next = s;
 			break;
 		}
 	}
@@ -367,6 +363,7 @@ function update_next(){
 			txt.innerText += "[" + l.user + " — " + l.title + "] "
 		});
 		div.appendChild(txt);
+		div.appendChild(document.createElement("hr"));
 	}
 
 	if(next){
