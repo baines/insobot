@@ -358,7 +358,7 @@ function update_next(){
 
 	if(live.length > 0){
 		var txt = document.createElement("div");
-		txt.innerText = "Currently Live: ";
+		txt.innerText = "Now: ";
 		live.forEach(function(l){
 			txt.innerText += "[" + l.user + " — " + l.title + "] "
 		});
@@ -431,7 +431,7 @@ function get_col(table, hour_index){
 }
 
 function get_cell(table, day_index, hour_index){
-	return table.rows[get_row(table, day_index)].cells[get_col(table, hour_index)];
+	return table.rows[get_row(table, day_index, hour_index)].cells[get_col(table, hour_index)];
 }
 
 function schedule_row_alloc(table, mask, hour, duration){
@@ -449,13 +449,23 @@ function schedule_row_alloc(table, mask, hour, duration){
 				d = (d + 1) % 7;
 			}
 
-			var cell = get_cell(table, d, h);
-			if(cell.hasAttribute("user") && !new_row_days.includes(d)){
-				new_row_days.push(d);
+			var day_cell = get_day_cell(table, d);
+			var cols = parseInt(day_cell.rowSpan) || 1;
+			var occupied_cells = 0;
+
+			for(var k = 0; k < cols; ++k){
+				var cell = get_cell(table, d, h);
+				if(cell.hasAttribute("user")){
+					occupied_cells++;
+				}
+
+				if(!cell.hasAttribute("user")){
+					cell.setAttribute("user", "*");
+				}
 			}
 
-			if(!cell.hasAttribute("user")){
-				cell.setAttribute("user", "*");
+			if(occupied_cells == cols && !new_row_days.includes(d)){
+				new_row_days.push(d);
 			}
 		}
 	}
@@ -481,12 +491,24 @@ function schedule_row_alloc(table, mask, hour, duration){
 	});
 }
 
+function get_duration(_start, _end){
+	var start = new Date(_start.valueOf());
+	var end   = new Date(_end.valueOf());
+
+	start.setMinutes(0);
+
+	if(end.getMinutes() > 0){
+		end.setHours(end.getHours() + 1);
+		end.setMinutes(0);
+	}
+
+	return Math.max(0, Math.floor((end.getTime() - start.getTime()) / (60*60*1000)));
+}
+
 function calc_schedule(table, e){
 	var date_start = new Date(e.start);
 	var date_end   = new Date(e.end);
-
-	var duration = Math.round((date_end.getTime() - date_start.getTime()) / (60*60*1000));
-	if(duration <= 0) duration = 1;
+	var duration = get_duration(date_start, date_end);
 
 	var prev_row = -1;
 	var prev_col = -1;
