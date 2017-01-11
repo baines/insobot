@@ -41,6 +41,7 @@ static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 
 static time_t last_schedule_update;
 static time_t schedule[DAYS_IN_WEEK];
+static time_t schedule_week;
 
 static char* tz_buf;
 
@@ -97,6 +98,11 @@ static bool update_schedule(void){
 		tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
 		week_start = mktime(&tmp);
 		week_end = week_start + (7*24*60*60);
+
+		if(week_start != schedule_week){
+			memset(schedule, 0, sizeof(schedule));
+		}
+		schedule_week = week_start;
 	}
 
 	if(http_code == 304){

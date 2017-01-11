@@ -71,10 +71,16 @@ static int sched_get(const char* name){
 			return i;
 		}
 	}
+	return -1;
+}
 
-	sb_push(sched_keys, strdup(name));
-	sb_push(sched_vals, 0);
-
+static int sched_get_add(const char* name){
+	int i;
+	if((i = sched_get(name)) == -1){
+		sb_push(sched_keys, strdup(name));
+		sb_push(sched_vals, 0);
+		i = sb_count(sched_vals) - 1;
+	}
 	return i;
 }
 
@@ -86,7 +92,7 @@ static bool sched_reload(void){
 		puts("mod_schedule: not modified.");
 		return true;
 	}
-	
+
 	if(ret != INSO_GIST_OK){
 		puts("mod_schedule: gist error.");
 		return false;
@@ -154,7 +160,7 @@ static bool sched_reload(void){
 		localtime_r(&entry.start, &tm);
 		printf("mod_schedule: got entry: [%s] [%02d:%02d] [%dmin] [%x] [%s]\n", vals[0]->u.string, tm.tm_hour, tm.tm_min, diff, entry.repeat, entry.title);
 
-		int index = sched_get(vals[0]->u.string);
+		int index = sched_get_add(vals[0]->u.string);
 		sb_push(sched_vals[index], entry);
 	}
 
@@ -230,53 +236,65 @@ static void sched_upload(void){
 	inso_gist_file_add(&file, "schedule.json", json_data);
 	yajl_gen_free(json);
 
+#if 1
 	inso_gist_save(gist, "insobot stream schedule", file);
+#else
+	printf("schedule.json: [%s]\n", file->content);
+#endif
 	inso_gist_file_free(file);
 }
 
-static void sched_add(const char* chan, const char* name, const char* _arg){
-	if(!*_arg++){
-		ctx->send_msg(
-			chan,
-			"%s: usage: " CONTROL_CHAR "sched+ [#chan] [days] [<HH:MM>[-HH:MM][TZ]] [Title]. "
-			"'days' can be a list like 'mon,tue,fri', strings like 'daily', 'weekends' etc, or a date like '2016-03-14'.",
-			name
-		);
-		return;
-	}
-
-	char* arg_state;
-	char* arg = strtok_r(strdupa(_arg), " \t", &arg_state);
-	if(!arg){
-		ctx->send_msg(chan, "Unable to parse time.");
-		return;
-	}
-
-	// parse optional channel
-
-	char sched_user[64];
-	if(sscanf(arg, "#%63s", sched_user) == 1){
-		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
-			ctx->send_msg(chan, "Unable to parse time.");
-			return;
+static bool sched_parse_chan(const char* in, char* out, int out_len){
+	if(*in == '#'){
+		size_t len = strlen(in) - 1;
+		if(len < out_len){
+			memcpy(out, in+1, len+1);
+			for(char* p = out; *p; ++p) *p = tolower(*p);
+			return true;
 		}
+	}
+	return false;
+}
+
+static bool sched_parse_id(const char* in, int* id_out, int* day_out){
+	char day[4] = {};
+	int id, day_id = -1;
+	int ret = sscanf(in, "%d%3s", &id, day);
+
+	if(ret == 2){
+		static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
+		for(int i = 0; i < ARRAY_SIZE(days); ++i){
+			if(strcasecmp(day, days[i]) == 0){
+				day_id = i;
+				break;
+			}
+		}
+	}
+
+	if(ret == 0){
+		return false;
 	} else {
-		*stpncpy(sched_user, name, sizeof(sched_user)) = '\0';
+		*id_out  = id;
+		*day_out = day_id;
+		return true;
 	}
+}
 
-	for(char* c = sched_user; *c; ++c){
-		*c = tolower(*c);
-	}
-
-	// parse days spec, special tokens
-
+static bool sched_parse_days(const char* _in, struct tm* date, int* day_mask){
 	time_t now = time(0);
 
-	struct tm utc;
-	gmtime_r(&now, &utc);
-	utc.tm_hour = 0;
-	utc.tm_min = 0;
-	utc.tm_sec = 0;
+	char* in = strdupa(_in);
+
+	*day_mask = 0;
+
+	gmtime_r(&now, date);
+	date->tm_hour = 0;
+	date->tm_min = 0;
+	date->tm_sec = 0;
+
+	bool found = false;
+
+	// try specific strings
 
 	struct {
 		const char* text;
@@ -286,34 +304,29 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		{ "daily"   , 0x7F },
 		{ "weekdays", 0x1F },
 		{ "weekends", 0x60 },
-		{ "weekly"  , 1 << get_dow(&utc) },
+		{ "weekly"  , 1 << get_dow(date) },
 	};
 
-	SchedEntry sched = {};
-	sched.start = sched.end = timegm(&utc);
-
-	bool found_days = false;
-
 	for(int i = 0; i < ARRAY_SIZE(repeat_tokens); ++i){
-		if(strcasecmp(arg, repeat_tokens[i].text) == 0){
-			sched.repeat = repeat_tokens[i].repeat_val;
-			found_days = true;
+		if(strcasecmp(in, repeat_tokens[i].text) == 0){
+			*day_mask = repeat_tokens[i].repeat_val;
+			found = true;
 			break;
 		}
 	}
 
-	// parse days spec, comma separated days (if no special token found)
+	// try comma separated days list
 
-	const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
+	if(!found){
+		static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
 
-	if(!found_days){
 		char* day_state;
-		char* day = strtok_r(arg, ",", &day_state);
+		char* day = strtok_r(in, ",", &day_state);
 		while(day){
 			for(int i = 0; i < ARRAY_SIZE(days); ++i){
 				if(strcasecmp(day, days[i]) == 0){
-					sched.repeat |= (1 << i);
-					found_days = true;
+					*day_mask |= (1 << i);
+					found = true;
 					break;
 				}
 			}
@@ -321,50 +334,45 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		}
 	}
 
-	// if found, make sure the start date is on one of the repeat days
+	// make sure the start date is on one of the repeat days
 
-	if(sched.repeat){
-		int today = get_dow(&utc);
-		if(!(sched.repeat & (1 << today))){
+	if(*day_mask){
+		int today = get_dow(date);
+		if(!(*day_mask & (1 << today))){
 			for(int i = 0; i < 7; ++i){
-				if(sched.repeat & (1 << i)){
-					int diff = i - today;
-					sched.start += (60*60*24*diff);
-					sched.end   += (60*60*24*diff);
+				if(*day_mask & (1 << i)){
+					date->tm_mday += (i - today);
+					mktime(date);
 					break;
 				}
 			}
 		}
 	}
 
-	// parse days spec, explicit date.
+	// return now if found
 
-	if(!found_days){
-		struct tm start_date = {};
-		char* p = strptime(arg, "%F", &start_date);
-		if(p && p != arg && !*p){
-			start_date.tm_hour = 0;
-			start_date.tm_min = 0;
-			start_date.tm_sec = 0;
-			sched.start = sched.end = timegm(&start_date);
-			found_days = true;
-		}
+	if(found) return true;
+
+	// try explicit date
+
+	char* p = strptime(in, "%F", date);
+	if(p && p != in && !*p){
+		date->tm_hour = 0;
+		date->tm_min = 0;
+		date->tm_sec = 0;
+		mktime(date);
+		return true;
 	}
 
-	if(found_days){
-		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
-			ctx->send_msg(chan, "Unable to parse time.");
-			return;
-		}
-	}
+	return false;
+}
 
-	// parse timestamp
-
+static bool sched_parse_time(const char* in, int* mins_start, int* mins_end){
 	int time_pieces[4] = {};
 	int read_count[2] = {};
 
 	int time_count = sscanf(
-		arg,
+		in,
 		"%d:%d%n-%d:%d%n",
 		time_pieces + 0,
 		time_pieces + 1,
@@ -374,42 +382,91 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		read_count  + 1
 	);
 
-	if(time_count == 0){
-		ctx->send_msg(chan, "Unable to parse time.");
-		return;
+	if(time_count < 2){
+		return false;
 	}
 
-	if(time_count <= 2){
+	if(time_count == 2){
 		time_pieces[2] = time_pieces[0] + 1;
 		time_pieces[3] = time_pieces[1];
 	}
 
-	int start_mins = (time_pieces[0]*60) + time_pieces[1];
-	int end_mins   = (time_pieces[2]*60) + time_pieces[3];
+	*mins_start = (time_pieces[0]*60) + time_pieces[1];
+	*mins_end   = (time_pieces[2]*60) + time_pieces[3];
 
-	if(end_mins < start_mins){
-		end_mins += (24*60);
+	if(*mins_end < *mins_start){
+		*mins_end += (24*60);
 	}
-
-	sched.start += start_mins * 60;
-	sched.end   += end_mins   * 60;
 
 	// parse timezone
 
 	if(time_count == 2 || time_count == 4){
-		const char* tz_name = arg + read_count[time_count / 4];
+		const char* tz_name = in + read_count[time_count >> 2];
 		int tz_offset;
 
 		if(tz_name && tz_abbr2off(tz_name, &tz_offset)){
-			sched.start -= (tz_offset * 60);
-			sched.end   -= (tz_offset * 60);
+			*mins_start -= tz_offset;
+			*mins_end   -= tz_offset;
 		}
 	}
+
+	return true;
+}
+
+static void sched_add(const char* chan, const char* name, const char* _arg){
+	if(!*_arg++){
+		ctx->send_msg(
+			chan,
+			"%s: usage: " CONTROL_CHAR "sched+ [#chan] [days] <HH:MM>[-HH:MM][TZ] [Title]. "
+			"'days' can be a list like 'mon,tue,fri', strings like 'daily', 'weekends' etc, or a date like '2016-03-14'.",
+			name
+		);
+		return;
+	}
+
+	char* arg_state;
+	char* arg;
+	if(!(arg = strtok_r(strdupa(_arg), " \t", &arg_state))){
+		goto fail;
+	}
+
+	// parse channel
+
+	char sched_user[128];
+	if(sched_parse_chan(arg, sched_user, sizeof(sched_user))){
+		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
+			goto fail;
+		}
+	} else {
+		*stpncpy(sched_user, name, sizeof(sched_user)) = '\0';
+	}
+
+	// parse days
+
+	struct tm date;
+	int day_mask;
+	if(sched_parse_days(arg, &date, &day_mask)){
+		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
+			goto fail;
+		}
+	}
+
+	// parse time
+
+	int start_mins, end_mins;
+	if(!sched_parse_time(arg, &start_mins, &end_mins)){
+		goto fail;
+	}
+
+	SchedEntry sched = {
+		.start  = timegm(&date) + start_mins * 60,
+		.end    = timegm(&date) + end_mins   * 60,
+		.repeat = day_mask,
+	};
 
 	// parse title
 
 	char* title = NULL;
-
 	while((arg = strtok_r(NULL, " \t", &arg_state))){
 		if(title){
 			sb_push(title, ' ');
@@ -425,14 +482,160 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		sb_free(title);
 	}
 
-	ctx->send_msg(chan, "Added schedule for %s's [%s] stream.", sched_user, sched.title);
-
 	// add it
 
-	int index = sched_get(sched_user);
+	int index = sched_get_add(sched_user);
 	sb_push(sched_vals[index], sched);
 
+	ctx->send_msg(
+		chan,
+		"Added schedule for \0038%s\017's [\00311%s\017] stream \0038#%d\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		sched_user,
+		sched.title,
+		sb_count(sched_vals[index])-1
+	);
+
 	sched_upload();
+	return;
+
+fail:
+	ctx->send_msg(chan, "Unable to parse time.");
+}
+
+static void sched_edit(const char* chan, const char* name, const char* _arg){
+	if(!*_arg++){
+		ctx->send_msg(
+			chan,
+			"%s: usage: " CONTROL_CHAR "schedit [#chan] <id> [days] [HH:MM[-HH:MM][TZ]] [Title]. "
+			"'days' can be a list like 'mon,tue,fri', strings like 'daily', 'weekends' etc, or a date like '2016-03-14'.",
+			name
+		);
+		return;
+	}
+
+	char* arg_state;
+	char* arg;
+	if(!(arg = strtok_r(strdupa(_arg), " \t", &arg_state))){
+		ctx->send_msg(chan, "%s: Couldn't parse ID.", name);
+		return;
+	}
+
+	// parse channel
+	char sched_user[128];
+	if(sched_parse_chan(arg, sched_user, sizeof(sched_user))){
+		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
+			ctx->send_msg(chan, "%s: Couldn't parse ID.", name);
+			return;
+		}
+	} else {
+		*stpncpy(sched_user, name, sizeof(sched_user)) = '\0';
+	}
+
+	// parse id
+	SchedEntry* entry = NULL;
+	int id, day_id;
+	if(!sched_parse_id(arg, &id, &day_id)){
+		ctx->send_msg(chan, "%s: Couldn't parse ID.", name);
+		return;
+	} else {
+		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
+			ctx->send_msg(chan, "%s: Nothing to edit...", name);
+			return;
+		}
+	}
+
+	// check id validity
+	{
+		int index = sched_get(sched_user);
+		if(index == -1){
+			ctx->send_msg(chan, "%s: Couldn't find any schedules by that user.", name);
+			return;
+		}
+		entry = sched_vals[index];
+		if(sb_count(entry) <= id){
+			ctx->send_msg(chan, "%s: %s doesn't have a schedule with id %d.", name, sched_user, id);
+			return;
+		}
+		entry += id;
+	}
+
+	// FIXME
+	if(day_id != -1){
+		ctx->send_msg(chan, "%s: Sorry, sub-ids NYI :(", name);
+		return;
+	}
+
+	enum {
+		EDIT_DATE  = (1 << 0),
+		EDIT_TIME  = (1 << 1),
+		EDIT_TITLE = (1 << 2),
+	};
+	uint32_t edit_mask = 0;
+
+	// parse days
+	struct tm date;
+	int day_mask;
+	if(sched_parse_days(arg, &date, &day_mask)){
+		edit_mask |= EDIT_DATE;
+		arg = strtok_r(NULL, " \t", &arg_state);
+	}
+
+	// parse time
+	int start_mins, end_mins;
+	if(arg && sched_parse_time(arg, &start_mins, &end_mins)){
+		edit_mask |= EDIT_TIME;
+		arg = strtok_r(NULL, " \t", &arg_state);
+	}
+
+	// parse title
+	char* title = NULL;
+	while(arg){
+		edit_mask |= EDIT_TITLE;
+		if(title){
+			sb_push(title, ' ');
+		}
+		size_t len = strlen(arg);
+		memcpy(sb_add(title, len), arg, len);
+		arg = strtok_r(NULL, " \t", &arg_state);
+	}
+
+	// apply changes
+	if(edit_mask & EDIT_DATE){
+		if(day_mask){
+			entry->repeat = day_mask;
+		} else {
+			struct tm old_date, new_date = date;
+			gmtime_r(&entry->start, &old_date);
+			new_date.tm_hour = old_date.tm_hour;
+			new_date.tm_min  = old_date.tm_min;
+			entry->start = timegm(&new_date);
+		}
+	}
+
+	if(edit_mask & EDIT_TIME){
+		struct tm old_date;
+		gmtime_r(&entry->start, &old_date);
+		old_date.tm_hour = 0;
+		old_date.tm_min  = 0;
+		entry->start = timegm(&old_date) + start_mins * 60;
+		entry->end   = timegm(&old_date) + end_mins   * 60;
+	}
+
+	if(edit_mask & EDIT_TITLE){
+		free(entry->title);
+		entry->title = strndup(title, sb_count(title));
+		sb_free(title);
+	}
+
+	sched_upload();
+
+	ctx->send_msg(
+		chan, 
+		"Updated \0038%s\017's [\00311%s\017] stream schedule \0038#%d\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		sched_user,
+		entry->title,
+		id
+	);
 }
 
 static void sched_del(const char* chan, const char* name, const char* arg){
@@ -452,14 +655,7 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 		*c = tolower(*c);
 	}
 
-	int index = -1;
-	for(int i = 0; i < sb_count(sched_keys); ++i){
-		if(strcmp(sched_keys[i], sched_user) == 0){
-			index = i;
-			break;
-		}
-	}
-
+	int index = sched_get(sched_user);
 	if(index == -1){
 		ctx->send_msg(chan, "%s: I don't have any schedule info for '%s'", name, sched_user);
 		return;
@@ -483,7 +679,13 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 
 	sched_upload();
 
-	ctx->send_msg(chan, "%s: Deleted %s's schedule #%d.", name, sched_user, id);
+	ctx->send_msg(
+		chan,
+		"%s: Deleted \0038%s\017's schedule \0038#%d\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		name,
+		sched_user,
+		id
+	);
 }
 
 static void sched_show(const char* chan, const char* name, const char* arg){
@@ -495,14 +697,7 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 		sched_user = arg + 1;
 	}
 
-	int index = -1;
-	for(int i = 0; i < sb_count(sched_keys); ++i){
-		if(strcasecmp(sched_keys[i], sched_user) == 0){
-			index = i;
-			break;
-		}
-	}
-
+	int index = sched_get(sched_user);
 	if(index == -1){
 		ctx->send_msg(chan, "%s: I don't have any schedules for %s", name, sched_user);
 		return;
@@ -514,6 +709,7 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 			sb_push(sched_buf, ' ');
 		}
 
+		// TODO: show the date & repeat days here.
 		char tmp[256];
 		int len = snprintf(tmp, sizeof(tmp), "[%d: %s]", i, sched_vals[index][i].title);
 		if(len >= sizeof(tmp)){
@@ -547,6 +743,15 @@ static void sched_cmd(const char* chan, const char* name, const char* arg, int c
 			}
 		} break;
 
+		case SCHED_EDIT: {
+			if(inso_is_wlist(ctx, name)){
+				inso_gist_lock(gist);
+				sched_reload();
+				sched_edit(chan, name, arg);
+				inso_gist_unlock(gist);
+			}
+		} break;
+
 		case SCHED_SHOW: {
 			if(inso_is_wlist(ctx, name)){
 				sched_reload();
@@ -568,14 +773,7 @@ static void sched_quit(void){
 static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "sched_get") == 0){
 		const char* name = (const char*)msg->arg;
-
-		int index = -1;
-		for(int i = 0; i < sb_count(sched_keys); ++i){
-			if(strcmp(sched_keys[i], name) == 0){
-				index = i;
-				break;
-			}
-		}
+		int index = sched_get(name);
 
 		if(index != -1){
 			SchedMsg result = {
