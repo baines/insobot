@@ -29,13 +29,14 @@ static const IRCCoreCtx* ctx;
 static regex_t yt_url_regex;
 static regex_t yt_title_regex;
 static regex_t yt_length_regex;
-
 static regex_t yt_playlist_regex;
 static const char* yt_api_key;
 
 static regex_t msdn_url_regex;
 static regex_t hmn_url_regex;
+static regex_t hmn_og_regex;
 static regex_t generic_title_regex;
+static regex_t ograph_desc_regex;
 
 static regex_t twitter_url_regex;
 static const char* twitter_token;
@@ -81,13 +82,26 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 
 	ret = ret & (regcomp(
 		&hmn_url_regex,
-		"([^/]+\\.)?handmade.network/(forums(/[^/]+)?/t|blog/p)/[0-9]+",
+		"([^/]+\\.)?handmade\\.network/(forums(/[^/]+)?/t|blogs?/p)/[0-9]+",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	ret = ret & (regcomp(
+		&hmn_og_regex,
+		"([^/]+\\.)?handmade\\.network/[^$[:space:]]*",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
 	ret = ret & (regcomp(
 		&generic_title_regex,
 		"<title>([^<]+)</title>",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
+	// TODO: Avoid summoning Zalgo
+	ret = ret & (regcomp(
+		&ograph_desc_regex,
+		"<meta property=\"og:description\" content=\"([^\"]+)\"",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -132,8 +146,12 @@ static void linkinfo_quit(void){
 	regfree(&yt_url_regex);
 	regfree(&yt_title_regex);
 	regfree(&yt_length_regex);
+	regfree(&yt_playlist_regex);
 	regfree(&msdn_url_regex);
+	regfree(&hmn_url_regex);
+	regfree(&hmn_og_regex);
 	regfree(&generic_title_regex);
+	regfree(&ograph_desc_regex);
 	regfree(&twitter_url_regex);
 	regfree(&steam_url_regex);
 	regfree(&vimeo_url_regex);
@@ -153,11 +171,15 @@ static void html_unescape(char* msg, size_t len){
 		RTAG("&gt;", ">"),
 		RTAG("&lt;", "<"),
 		RTAG("&quot;", "\""),
-		RTAG("&nbsp;", " ")
+		RTAG("&nbsp;", " "),
+
+		// not really html tags, but useful replacements
+		RTAG("\n", " "),
+		RTAG("\r", " "),
 	};
 	#undef RTAG
 
-	char c[MB_CUR_MAX];
+	char c[MB_LEN_MAX];
 
 	for(char* p = msg; *p; ++p){
 		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
@@ -367,50 +389,54 @@ void do_yt_playlist_info(const char* chan, const char* msg, regmatch_t* matches)
 	sb_free(data);
 }
 
-void do_generic_info(const char* chan, const char* msg, regmatch_t* matches, const char* tag){
-
-	const char url_prefix[] = "https://";
-	int prefix_sz = sizeof(url_prefix) - 1;
-	int match_sz  = matches[0].rm_eo - matches[0].rm_so;
-
-	char* url = alloca(match_sz + sizeof(url_prefix));
-	memcpy(url, url_prefix, prefix_sz);
-	memcpy(url + prefix_sz, msg + matches[0].rm_so, match_sz);
-	url[prefix_sz + match_sz] = 0;
-
+char* do_download(const char* url){
 	char* data = NULL;
-
-	fprintf(stderr, "linkinfo: Fetching [%s]\n", url);
-
-
-	/* if you get curl SSL Connect errors here for some reason, it seems like a bug in 
-	 * the gnutls version of curl, using the openssl version fixed it for me
-	 */
-
 	CURL* curl = inso_curl_init(url, &data);
 	CURLcode curl_ret = curl_easy_perform(curl);
-
 	sb_push(data, 0);
+	curl_easy_cleanup(curl);
 
+	if(curl_ret == CURLE_OK){
+		return data;
+	} else {
+		sb_free(data);
+		return NULL;
+	}
+}
+
+void do_generic_info(const char* chan, const char* url, const char* tag){
+	char* html;
 	regmatch_t title[2];
 	int title_len = 0;
 
-	if(
-		curl_ret == 0 &&
-		regexec(&generic_title_regex, data, 2, title, 0) == 0 &&
+	fprintf(stderr, "linkinfo: Fetching title [%s]\n", url);
+
+	if((html = do_download(url)) &&
+		regexec(&generic_title_regex, html, 2, title, 0) == 0 &&
 		(title_len = (title[1].rm_eo - title[1].rm_so)) > 0
 	){
-		char* title_str = strndupa(data + title[1].rm_so, title_len);
+		char* title_str = strndupa(html + title[1].rm_so, title_len);
 		html_unescape(title_str, title_len);
 		ctx->send_msg(chan, "↑ %s: [%s]", tag, title_str);
-	} else {
-		fprintf(stderr, "linkinfo: Couldn't extract title\n[%s]\n[%s]", curl_easy_strerror(curl_ret), data);
-		ctx->send_msg(chan, "Error getting %s data. Blame insofaras.", tag);
 	}
 
-	curl_easy_cleanup(curl);
+	sb_free(html);
+}
 
-	sb_free(data);
+void do_ograph_info(const char* chan, const char* url, const char* tag){
+	char* html;
+	regmatch_t desc[2];
+
+	fprintf(stderr, "linkinfo: Fetching og desc [%s]\n", url);
+
+	if((html = do_download(url)) && regexec(&ograph_desc_regex, html, 2, desc, 0) == 0){
+		int len = desc[1].rm_eo - desc[1].rm_so;
+		char* desc_str = strndupa(html + desc[1].rm_so, len);
+		html_unescape(desc_str, len);
+		ctx->send_msg(chan, "↑ %s: [%s]", tag, desc_str);
+	}
+
+	sb_free(html);
 }
 
 static const char* url_path[]        = { "url", NULL };
@@ -775,6 +801,8 @@ static void do_xkcd_info(const char* chan, const char* msg, regmatch_t* matches)
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
+	regmatch_t* m = matches;
+	char url[512];
 
 	if(regexec(&yt_url_regex, msg, 5, matches, 0) == 0){
 		do_youtube_info(chan, msg, matches);
@@ -785,11 +813,18 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 	}
 
 	if(regexec(&hmn_url_regex, msg, 1, matches, 0) == 0){
-		do_generic_info(chan, msg, matches, "HMN");
+		if(msg[m->rm_eo] != '-'){
+			snprintf(url, sizeof(url), "https://%.*s", m->rm_eo - m->rm_so, msg + m->rm_so);
+			do_generic_info(chan, url, "HMN");
+		}
+	} else if(regexec(&hmn_og_regex, msg, 1, matches, 0) == 0){
+		snprintf(url, sizeof(url), "https://%.*s", m->rm_eo - m->rm_so, msg + m->rm_so);
+		do_ograph_info(chan, url, "HMN");
 	}
 
 	if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
-		do_generic_info(chan, msg, matches, "MSDN");
+		snprintf(url, sizeof(url), "https://%.*s", m->rm_eo - m->rm_so, msg + m->rm_so);
+		do_generic_info(chan, url, "MSDN");
 	}
 
 	if(regexec(&twitter_url_regex, msg, 2, matches, 0) == 0){
