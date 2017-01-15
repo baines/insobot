@@ -364,6 +364,7 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		key = find_key(key->word_idx_2, val->word_idx);
 		assert(key);
 
+		++links;
 	} while(!should_end);
 
 	return strlen(buffer);

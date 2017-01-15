@@ -464,7 +464,7 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 		case CMD_QA: {
 			if(getenv("IRC_IS_TWITCH") || !inso_is_wlist(ctx, name)) return;
-			ctx->send_ipc(0, &cmd, sizeof(cmd));
+			//ctx->send_ipc(0, &cmd, sizeof(cmd));
 		} break;
 	}
 }
@@ -501,5 +501,5 @@ static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
 
 static void hmh_ipc(int who, const uint8_t* ptr, size_t sz){
 	if(!getenv("IRC_IS_TWITCH")) return;
-	ctx->send_msg("#handmade_hero", "!qa");
+	//ctx->send_msg("#handmade_hero", "!qa");
 }
