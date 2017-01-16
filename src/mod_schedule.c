@@ -601,10 +601,12 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 			entry->repeat = day_mask;
 		}
 		struct tm old_date, new_date = date;
+		int diff = entry->end - entry->start;
 		gmtime_r(&entry->start, &old_date);
 		new_date.tm_hour = old_date.tm_hour;
 		new_date.tm_min  = old_date.tm_min;
 		entry->start = timegm(&new_date);
+		entry->end = entry->start + diff;
 	}
 
 	if(edit_mask & EDIT_TIME){
