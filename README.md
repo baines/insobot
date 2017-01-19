@@ -40,6 +40,8 @@ This table shows common modules & commands. Refer to the top of each module's
 |                  |                         | mon \<mod\>                 | Enables module \<mod\>            | WLIST      |
 |                  |                         | moff \<mod\>                | Disables module \<mod\>           | WLIST      |
 |                  |                         | minfo \<mod\>               | Show module's description         | WLIST      |
+| **mod_psa**      | Add periodic messages   | psa+ \<id\> [args]          | Add a new PSA                     | WLIST      |
+|                  |                         | psa- \<id\>                 | Remove a previously added PSA     | WLIST      |
 | **mod_quotes**   | Stores quotes           | q  [\#chan] \<n\>           | Shows quote n                     | NORMAL     |
 |                  |                         | q+ [\#chan] \<text\>        | Adds a new quote                  | WLIST      |
 |                  |                         | q- [\#chan] \<n\>           | Removes a quote                   | WLIST      |

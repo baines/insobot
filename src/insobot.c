@@ -943,6 +943,8 @@ static void core_part(const char* chan){
 }
 
 static void core_send_msg(const char* chan, const char* fmt, ...){
+	if(!chan || !fmt) return;
+
 	char buff[1024];
 	va_list v;
 
