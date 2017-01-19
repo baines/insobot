@@ -937,5 +937,23 @@ static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 		if(u){
 			msg->callback(u->created_at, msg->cb_arg);
 		}
+	} else if(strcmp(msg->cmd, "twitch_is_live") == 0){
+		const char* prev_p = (const char*)msg->arg;
+		const char* p;
+		bool live = false;
+
+		do {
+			p = strchrnul(prev_p, ' ');
+			char* chan = strndupa(prev_p, p - prev_p);
+			prev_p = p+1;
+
+			TwitchInfo* t = twitch_get_or_add(chan);
+			if(twitch_check_live(t - twitch_vals)){
+				live = true;
+				break;
+			}
+		} while(*p);
+
+		msg->callback(live, msg->cb_arg);
 	}
 }

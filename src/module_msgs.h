@@ -41,7 +41,7 @@
 
 //    module     |        msg id          | arg type  | ret type  | desc
 // --------------+------------------------+-----------+-----------+------
-// mod_alias     | "alias_exists"         | char* [L] | bool      | returns true if any of the given aliases exist
+// mod_alias     | "alias_exists"         | char*[2]  | bool      | returns true if any of the given aliases exist. arg[0] is the alias list, arg[1] is the channel.
 // mod_hmh       | "hmh_is_live"          | unused    | bool      | returns true if HMH is scheduled to be airing currently
 // mod_karma     | "karma_get"            | char*     | int       | returns the total karma for the given name
 // mod_markov    | "markov_gen"           | unused    | char* [F] | returns a malloc'd random markov sentence
@@ -49,6 +49,7 @@
 // mod_schedule  | "sched_get" [M]        | char*     | SchedMsg* | returns all the known schedules for a given user name
 // mod_schedule  | "sched_set" (TODO)     | SchedMsg* | bool      | sets the given schedule, or if start/end are 0, delete it. if sched_id < 0, use next available.
 // mod_twitch    | "twitch_get_user_date" | char*     | time_t    | returns the account creation date of the given twitch user
+// mod_twitch    | "twitch_is_live"       | char* [L] | bool      | returns true if any of the given channels are currently live
 // mod_whitelist | "check_admin"          | char*     | bool      | returns true if the given name is an admin
 // mod_whitelist | "check_whitelist"      | char*     | bool      | returns true if the given name is whitelisted
 
