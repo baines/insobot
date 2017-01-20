@@ -212,6 +212,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 		case PSA_ADD: {
 			if(*arg){
 				psa_add(chan, arg, false);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Usage: !psa+ <psa_name> [+live] [+trigger 'phrase'] <freq>m <message>", name);
 			}
@@ -224,6 +225,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 				for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
 					if(strcmp(p->channel, chan) == 0 && strcmp(p->id, arg) == 0){
 						free(p->channel);
+						free(p->message);
 						free(p->id);
 						free(p->trigger);
 						free(p->cmdline);
