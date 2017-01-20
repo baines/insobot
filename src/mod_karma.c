@@ -49,7 +49,7 @@ typedef struct KEntry_ {
 
 static KEntry* klist;
 
-static const int karma_cooldown = 600;
+static const int karma_cooldown = 0;
 
 static KEntry* karma_find(const char* name, bool adjust){
 	for(KEntry* k = klist; k < sb_end(klist); ++k){
@@ -168,6 +168,8 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 
 static const char ytmnd[] = "!ytmnd ";
 static const char ytwnd[] = "!ytwnd ";
+static const char yatmnd[] = "!yatmnd ";
+static const char non_name_chars[] = " ~!\"'$%&*()<>@;#.,/:?";
 
 static void karma_check(const char* chan, KEntry* actor, const char* msg){
 
@@ -177,26 +179,28 @@ static void karma_check(const char* chan, KEntry* actor, const char* msg){
 
 	if(now - actor->last_give < karma_cooldown) return;
 
-	const size_t dog_size = sizeof(ytmnd) - 1;
+	size_t dog_size = sizeof(ytmnd) - 1;
 	if(
 		strncasecmp(msg, ytmnd, dog_size) == 0 ||
-		strncasecmp(msg, ytwnd, dog_size) == 0
+		strncasecmp(msg, ytwnd, dog_size) == 0 ||
+		(++dog_size && strncasecmp(msg, yatmnd, dog_size) == 0)
 	){
 		const char* beg = msg + dog_size;
-		const char* end = strchrnul(msg + dog_size, ' ');
-		changes = karma_update(chan, actor, strndupa(beg, end - beg), true);
+		size_t len = strcspn(beg, non_name_chars);
+		changes = karma_update(chan, actor, strndupa(beg, len), true);
 	} else {
 		for(const char* p = msg; *p; ++p){
-			if(*p == ' ') delim = p + 1;
-
-			if((*p == '+' && *(p+1) == '+') || (*p == '-' && *(p+1) == '-')){
+			if(strchr(non_name_chars, *p)){
+				delim = p + 1;
+			} else if((*p == '+' && *(p+1) == '+') || (*p == '-' && *(p+1) == '-')){
 				char* target;
 
 				if(p == delim){
 					// ++name
 
-					char* end = strchrnul(p + 2, ' ');
-					target = strndupa(p + 2, end - (p + 2));
+					size_t len = strcspn(p + 2, non_name_chars);
+					target = strndupa(p + 2, len);
+
 				} else {
 					// name++
 
