@@ -604,6 +604,14 @@ function calc_schedule(table, e){
 		entries = entries.filter(function(e){
 			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (12*60*60*1000);
 		});
+
+		// sort entries by smallest duration first for slightly better layout
+		entries.sort(function(a, b){
+			var a_dur = get_duration(new Date(a.start), new Date(a.end));
+			var b_dur = get_duration(new Date(b.start), new Date(b.end));
+			return a_dur - b_dur;
+		});
+
 		gist_info = entries;
 
 		entries.forEach(function(e){
