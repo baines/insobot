@@ -1050,6 +1050,7 @@ int main(int argc, char** argv){
 
 	srand(time(0));
 	signal(SIGINT, &util_handle_sig);
+	signal(SIGPIPE, SIG_IGN);
 	assert(setlocale(LC_CTYPE, "C.UTF-8"));
 
 	// timestamp thread setup

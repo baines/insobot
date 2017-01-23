@@ -9,7 +9,6 @@
 static bool quotes_init     (const IRCCoreCtx*);
 static void quotes_modified (void);
 static void quotes_cmd      (const char*, const char*, const char*, int);
-static bool quotes_save     (FILE*);
 static void quotes_quit     (void);
 static void quotes_ipc      (int, const uint8_t*, size_t);
 
@@ -21,7 +20,6 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init     = &quotes_init,
 	.on_modified = &quotes_modified,
 	.on_cmd      = &quotes_cmd,
-	.on_save     = &quotes_save,
 	.on_quit     = &quotes_quit,
 	.on_ipc      = &quotes_ipc,
 	.commands    = DEFINE_CMDS (
@@ -49,11 +47,6 @@ typedef struct Quote_ {
 
 static char** channels;
 static Quote** chan_quotes;
-
-static bool quotes_dirty;
-
-// XXX: this is a bit of a hack
-static Quote* delete_chan_ptr;
 
 static char* gen_escaped_csv(Quote* quotes){
 	char* csv = NULL;
@@ -168,6 +161,34 @@ static void quotes_quit(void){
 	quotes_free();
 	inso_gist_close(gist);
 	free(gist_pub_url);
+}
+
+static void quotes_upload(int modified_index){
+	inso_gist_file* file = NULL;
+	inso_gist_file_add(&file, " Quote List", "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.");
+
+	if(modified_index == -1){ // full upload
+		for(int i = 0; i < sb_count(channels); ++i){
+			if(sb_count(chan_quotes[i]) == 0){
+				inso_gist_file_add(&file, channels[i], NULL);
+			} else {
+				char* csv = gen_escaped_csv(chan_quotes[i]);
+				inso_gist_file_add(&file, channels[i], csv);
+				sb_free(csv);
+			}
+		}
+	} else { // single file upload
+		if(sb_count(chan_quotes[modified_index]) == 0){
+			inso_gist_file_add(&file, channels[modified_index], NULL);
+		} else {
+			char* csv = gen_escaped_csv(chan_quotes[modified_index]);
+			inso_gist_file_add(&file, channels[modified_index], csv);
+			sb_free(csv);
+		}
+	}
+
+	inso_gist_save(gist, "IRC quotes", file);
+	inso_gist_file_free(file);
 }
 
 static bool quotes_reload(void){
@@ -391,8 +412,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			int ipc_len = snprintf(ipc_buf, sizeof(ipc_buf), "ADD %d %s %s", id, name, quote_chan);
 			ctx->send_ipc(0, ipc_buf, ipc_len + 1);
 
-			quotes_dirty = true;
-			ctx->save_me();
+			quotes_upload(quotes - chan_quotes);
 		} break;
 
 		case DEL_QUOTE: {
@@ -420,11 +440,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				int off = q - *quotes;
 				sb_erase(*quotes, off);
 				ctx->send_msg(chan, "%s: Deleted quote %d\n", name, id);
-				quotes_dirty = true;
-				if(sb_count(*quotes) == 0){
-					delete_chan_ptr = *quotes;
-				}
-				ctx->save_me();
+				quotes_upload(quotes - chan_quotes);
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
@@ -458,8 +474,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				free(q->text);
 				q->text = strdup(arg2 + 1);
 				ctx->send_msg(chan, "%s: Updated quote %d.", name, id);
-				quotes_dirty = true;
-				ctx->save_me();
+				quotes_upload(quotes - chan_quotes);
 			} else {
 				ctx->send_msg(chan, "%s: Can't find that quote.", name);
 			}
@@ -499,8 +514,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(ret){
 				q->timestamp = timegm(&timestamp);
 				ctx->send_msg(chan, "%s: Updated quote %d's timestamp successfully.", name, id);
-				quotes_dirty = true;
-				ctx->save_me();
+				quotes_upload(quotes - chan_quotes);
 			} else {
 				ctx->send_msg(chan, "%s: Sorry, I don't understand that timestamp. Use YYYY-MM-DD hh:mm:ss", name);
 			}
@@ -578,31 +592,6 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 	}
 
 	inso_gist_unlock(gist);
-}
-
-static bool quotes_save(FILE* _){
-	if(!quotes_dirty) return false;
-
-	inso_gist_file* file = NULL;
-	inso_gist_file_add(&file, " Quote List", "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.");
-
-	for(int i = 0; i < sb_count(channels); ++i){
-		if(sb_count(chan_quotes[i]) == 0){
-			if(chan_quotes[i] && chan_quotes[i] == delete_chan_ptr){
-				inso_gist_file_add(&file, channels[i], NULL);
-				delete_chan_ptr = NULL;
-			}
-		} else {
-			char* csv = gen_escaped_csv(chan_quotes[i]);
-			inso_gist_file_add(&file, channels[i], csv);
-			sb_free(csv);
-		}
-	}
-
-	inso_gist_save(gist, "IRC quotes", file);
-	inso_gist_file_free(file);
-
-	return true;
 }
 
 static void quotes_ipc(int sender, const uint8_t* data, size_t data_len){

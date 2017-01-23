@@ -46,7 +46,19 @@ struct inso_gist {
 	CURL* curl;
 	char* auth;
 	char* api_url;
+
+	// Unfortunately, GitHub's Gist ETags are pretty broken.
+	// The PATCH request gives an ETag that does not even match the new contents,
+	// and when using an 'If-Match' header in a PATCH request with an invalid Etag,
+	// their API returns 412 _BUT STILL MODIFIES THE CONTENTS_ which is super broken.
+	// I emailed them about this ages ago, but it seems they have no intention of fixing it.
+	// So for now, fall back to If-Modified-Since instead.
+#if GITHUB_FIXED_THEIR_API
 	char* etag;
+#else
+	time_t last_modified;
+#endif
+
 	int semaphore;
 };
 
@@ -84,11 +96,12 @@ inso_gist* inso_gist_open(const char* id, const char* user, const char* token){
 	return gist;
 }
 
+#if GITHUB_FIXED_THEIR_API
 static size_t inso_gist_header_cb(char* buffer, size_t size, size_t nelem, void* arg){
 	char* etag;
 	inso_gist* gist = arg;
 
-	if(buffer && sscanf(buffer, "ETag:%*[^\"]%m[^\r\n]", &etag) == 1){
+	if(buffer && sscanf(buffer, "ETag: %m[^\r\n]", &etag) == 1){
 		if(gist->etag){
 			free(gist->etag);
 		}
@@ -96,6 +109,23 @@ static size_t inso_gist_header_cb(char* buffer, size_t size, size_t nelem, void*
 		gist->etag = etag;
 	}
 
+	return size * nelem;
+}
+#else
+static size_t inso_gist_header_cb(char* buffer, size_t size, size_t nelem, void* arg){
+	struct tm date;
+	inso_gist* gist = arg;
+
+	if(buffer && strptime(buffer, "Date: %a, %d %b %Y %H:%M:%S GMT", &date)){
+		gist->last_modified = timegm(&date);
+		printf("inso_gist: Date: %ld\n", gist->last_modified);
+	}
+
+	return size * nelem;
+}
+#endif
+
+static size_t inso_gist_noop_cb(char* buffer, size_t size, size_t nelem, void* arg){
 	return size * nelem;
 }
 
@@ -107,14 +137,21 @@ int inso_gist_load(inso_gist* gist, inso_gist_file** out){
 	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
 	curl_easy_setopt(gist->curl, CURLOPT_HEADERFUNCTION, &inso_gist_header_cb);
 	curl_easy_setopt(gist->curl, CURLOPT_HEADERDATA, gist);
+	curl_easy_setopt(gist->curl, CURLOPT_TCP_KEEPALIVE, 1);
 
 	struct curl_slist* headers = NULL;
+
+#if GITHUB_FIXED_THEIR_API
 	if(gist->etag){
 		char buf[1024];
 		snprintf(buf, sizeof(buf), "If-None-Match: %s", gist->etag);
 		headers = curl_slist_append(NULL, buf);
 		curl_easy_setopt(gist->curl, CURLOPT_HTTPHEADER, headers);
 	}
+#else
+	curl_easy_setopt(gist->curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+	curl_easy_setopt(gist->curl, CURLOPT_TIMEVALUE, gist->last_modified);
+#endif
 
 	CURLcode ret = curl_easy_perform(gist->curl);
 
@@ -215,9 +252,13 @@ int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
 	yajl_gen_get_buf(json, &payload, &len);
 
 	char* data = NULL;
-	struct curl_slist* slist = curl_slist_append(NULL, "Content-Type: application/json");
+	struct curl_slist* slist = NULL;
+	slist = curl_slist_append(slist, "Content-Type: application/json");
+	slist = curl_slist_append(slist, "Expect:");
 
-	inso_curl_reset(gist->curl, gist->api_url, &data);
+	inso_curl_reset(gist->curl, gist->api_url, NULL);
+	curl_easy_setopt(gist->curl, CURLOPT_TCP_KEEPALIVE, 1);
+	curl_easy_setopt(gist->curl, CURLOPT_WRITEFUNCTION, &inso_gist_noop_cb);
 	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
 	curl_easy_setopt(gist->curl, CURLOPT_CUSTOMREQUEST, "PATCH");
 	curl_easy_setopt(gist->curl, CURLOPT_POST, 1);
@@ -228,6 +269,11 @@ int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
 	curl_easy_setopt(gist->curl, CURLOPT_HEADERDATA, gist);
 
 	CURLcode ret = curl_easy_perform(gist->curl);
+
+	double seconds = 0.;
+	curl_easy_getinfo(gist->curl, CURLINFO_TOTAL_TIME, &seconds);
+	printf("inso_gist: Upload took [%.2f] seconds.\n", seconds);
+
 	sb_free(data);
 	curl_slist_free_all(slist);
 	yajl_gen_free(json);
@@ -294,9 +340,11 @@ void inso_gist_close(inso_gist* gist){
 	free(gist->api_url);
 	free(gist->auth);
 
+#if GITHUB_FIXED_THEIR_API
 	if(gist->etag){
 		free(gist->etag);
 	}
+#endif
 
 	curl_easy_cleanup(gist->curl);
 
