@@ -12,16 +12,18 @@
 
 static bool sched_init (const IRCCoreCtx*);
 static void sched_cmd  (const char*, const char*, const char*, int);
+static void sched_tick (time_t);
 static void sched_quit (void);
 static void sched_mod_msg (const char*, const IRCModMsg*);
 
-enum { SCHED_ADD, SCHED_DEL, SCHED_EDIT, SCHED_SHOW, SCHED_LINK };
+enum { SCHED_ADD, SCHED_DEL, SCHED_EDIT, SCHED_SHOW, SCHED_LINK, SCHED_NEXT };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name        = "schedule",
 	.desc        = "Stores stream schedules",
 	.on_init     = &sched_init,
 	.on_cmd      = &sched_cmd,
+	.on_tick     = &sched_tick,
 	.on_quit     = &sched_quit,
 	.on_mod_msg  = &sched_mod_msg,
 	.commands    = DEFINE_CMDS (
@@ -29,12 +31,14 @@ const IRCModuleCtx irc_mod_ctx = {
 		[SCHED_DEL]  = CMD("sched-"),
 		[SCHED_EDIT] = CMD("schedit"),
 		[SCHED_SHOW] = CMD("sched") CMD("sched?"),
-		[SCHED_LINK] = CMD("schedlist")
+		[SCHED_LINK] = CMD("schedlist"),
+		[SCHED_NEXT] = CMD("next") CMD("snext")
 	)
 };
 
 static const IRCCoreCtx* ctx;
 
+// FIXME: this representation is pretty awkward
 typedef struct {
 	time_t start;
 	time_t end;
@@ -42,9 +46,18 @@ typedef struct {
 	uint8_t repeat;
 } SchedEntry;
 
+typedef struct {
+	time_t offset;
+	const char* user;
+	const SchedEntry* entry;
+} SchedOffset;
+
 static char**       sched_keys;
 static SchedEntry** sched_vals;
 static inso_gist*   gist;
+
+static SchedOffset* sched_offsets;
+static time_t       offset_expiry;
 
 enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
 
@@ -82,6 +95,55 @@ static int sched_get_add(const char* name){
 		i = sb_count(sched_vals) - 1;
 	}
 	return i;
+}
+
+static int sched_off_cmp(const void* a, const void* b){
+	return ((SchedOffset*)a)->offset - ((SchedOffset*)b)->offset;
+}
+
+static void sched_offsets_update(void){
+	sb_free(sched_offsets);
+
+	struct tm now_tm = {};
+	time_t now = time(0);
+
+	gmtime_r(&now, &now_tm);
+	now_tm.tm_mday -= get_dow(&now_tm);
+	now_tm.tm_hour = now_tm.tm_min = now_tm.tm_sec = 0;
+
+	time_t week_start = timegm(&now_tm);
+	now -= week_start;
+
+	for(int i = 0; i < sb_count(sched_vals); ++i){
+		const char* user = sched_keys[i];
+		const SchedEntry* scheds = sched_vals[i];
+
+		for(int j = 0; j < sb_count(scheds); ++j){
+			const SchedEntry* s = scheds + j;
+			time_t t = s->start - week_start;
+
+			if(!s->repeat && now - t < (12*60*60)){
+				SchedOffset so = { t, user, s };
+				sb_push(sched_offsets, so);
+			}
+
+			struct tm date = {};
+			gmtime_r(&s->start, &date);
+			int start_dow = get_dow(&date);
+
+			for(int k = 0; k < DAYS_IN_WEEK; ++k){
+				if(!(s->repeat & (1 << k))) continue;
+
+				date.tm_mday -= (start_dow - k);
+				t = timegm(&date) - week_start;
+				SchedOffset so = { t, user, s };
+				sb_push(sched_offsets, so);
+			}
+		}
+	}
+
+	offset_expiry = week_start + (7*24*60*60);
+	qsort(sched_offsets, sb_count(sched_offsets), sizeof(SchedOffset), &sched_off_cmp);
 }
 
 static bool sched_reload(void){
@@ -166,6 +228,7 @@ static bool sched_reload(void){
 
 	yajl_tree_free(root);
 	inso_gist_file_free(files);
+	sched_offsets_update();
 
 	return true;
 }
@@ -242,6 +305,8 @@ static void sched_upload(void){
 	printf("schedule.json: [%s]\n", file->content);
 #endif
 	inso_gist_file_free(file);
+
+	sched_offsets_update();
 }
 
 static bool sched_parse_chan(const char* in, const char* fallback, char* out, int out_len){
@@ -287,7 +352,7 @@ static bool sched_parse_id(const char* in, int* id_out, int* day_out){
 	}
 }
 
-static bool sched_parse_days(const char* _in, struct tm* date, int* day_mask){
+static bool sched_parse_days(const char* _in, struct tm* date, unsigned* day_mask){
 	time_t now = time(0);
 
 	char* in = strdupa(_in);
@@ -369,7 +434,7 @@ static bool sched_parse_days(const char* _in, struct tm* date, int* day_mask){
 	return false;
 }
 
-static bool sched_parse_time(const char* in, int* mins_start, int* mins_end, bool* got_duration){
+static bool sched_parse_time(const char* in, int* mins_start, int* mins_end, unsigned* day_mask, bool* got_duration){
 	int time_pieces[4] = {};
 	int read_count[2] = {};
 
@@ -386,6 +451,10 @@ static bool sched_parse_time(const char* in, int* mins_start, int* mins_end, boo
 
 	if(time_count < 2){
 		return false;
+	}
+
+	for(int i = 0; i < 4; ++i){
+		if(time_pieces[i] < 0) return false;
 	}
 
 	if(time_count == 2){
@@ -412,6 +481,16 @@ static bool sched_parse_time(const char* in, int* mins_start, int* mins_end, boo
 			*mins_start -= tz_offset;
 			*mins_end   -= tz_offset;
 		}
+	}
+
+	// adjust day mask if necessary
+	if(*mins_start < 0){
+		*day_mask |= ((*day_mask & 1) << 7);
+		*day_mask >>= 1;
+	} else if(*mins_start > (24*60)){
+		*day_mask <<= 1;
+		*day_mask |= (*day_mask >> 7);
+		*day_mask &= 0x7f;
 	}
 
 	return true;
@@ -444,7 +523,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	// parse days
 	struct tm date;
-	int day_mask;
+	unsigned day_mask;
 	if(sched_parse_days(arg, &date, &day_mask)){
 		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
 			goto fail;
@@ -453,7 +532,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	// parse time
 	int start_mins, end_mins;
-	if(!sched_parse_time(arg, &start_mins, &end_mins, NULL)){
+	if(!sched_parse_time(arg, &start_mins, &end_mins, &day_mask, NULL)){
 		goto fail;
 	}
 
@@ -569,7 +648,7 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 
 	// parse days
 	struct tm date;
-	int day_mask;
+	unsigned day_mask;
 	if(sched_parse_days(arg, &date, &day_mask)){
 		edit_mask |= EDIT_DATE;
 		arg = strtok_r(NULL, " \t", &arg_state);
@@ -578,7 +657,7 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 	// parse time
 	int start_mins, end_mins;
 	bool got_duration;
-	if(arg && sched_parse_time(arg, &start_mins, &end_mins, &got_duration)){
+	if(arg && sched_parse_time(arg, &start_mins, &end_mins, &day_mask, &got_duration)){
 		edit_mask |= EDIT_TIME;
 		arg = strtok_r(NULL, " \t", &arg_state);
 	}
@@ -696,6 +775,7 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 static void sched_show(const char* chan, const char* name, const char* arg){
 	const char* sched_user = name;
 
+	// TODO: fix lowercase issue
 	if(arg[0] == ' ' && arg[1] == '#'){
 		sched_user = arg + 2;
 	} else if(arg[0]){
@@ -726,6 +806,46 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 
 	ctx->send_msg(chan, "%s: %s's schedules: %s", name, sched_user, sched_buf);
 	sb_free(sched_buf);
+}
+
+// TODO: show live as well?
+static void sched_next(const char* chan){
+	time_t now = time(0);
+	struct tm tmp = {};
+	gmtime_r(&now, &tmp);
+
+	tmp.tm_mday -= get_dow(&tmp);
+	tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
+	time_t base = timegm(&tmp);
+
+	SchedOffset* next = NULL;
+	int diff = 0;
+
+	for(SchedOffset* s = sched_offsets; s < sb_end(sched_offsets); ++s){
+		if(now < base + s->offset){
+			next = s;
+			diff = (base + s->offset) - now;
+			break;
+		}
+	}
+
+	if(!next && sb_count(sched_offsets)){
+		next = sched_offsets;
+		diff = (base + next->offset + (7*24*60*60)) - now;
+	}
+
+	if(next){
+		int h = (diff / (60*60));
+		int m = (diff / 60) % 60;
+		int s = (diff % 60);
+		ctx->send_msg(
+			chan,
+			"Next scheduled stream: [%s - %s] in [%02d:%02d:%02d].",
+			next->user,
+			next->entry->title,
+			h, m, s
+		);
+	}
 }
 
 static void sched_cmd(const char* chan, const char* name, const char* arg, int cmd){
@@ -767,11 +887,22 @@ static void sched_cmd(const char* chan, const char* name, const char* arg, int c
 		case SCHED_LINK: {
 			ctx->send_msg(chan, "%s: You can view all known schedules here: https://abaines.me.uk/insobot/schedule/", name);
 		} break;
+
+		case SCHED_NEXT: {
+			sched_next(chan);
+		} break;
+	}
+}
+
+static void sched_tick(time_t now){
+	if(now >= offset_expiry){
+		sched_offsets_update();
 	}
 }
 
 static void sched_quit(void){
 	sched_free();
+	sb_free(sched_offsets);
 	inso_gist_close(gist);
 }
 
@@ -801,8 +932,9 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 
 	// TODO
 	if(strcmp(msg->cmd, "sched_set") == 0){
-		SchedMsg* request = (SchedMsg*)msg->arg;
+		//SchedMsg* request = (SchedMsg*)msg->arg;
 
 		return;
 	}
+
 }

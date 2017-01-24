@@ -1222,7 +1222,8 @@ int main(int argc, char** argv){
 			util_inotify_check(&core_ctx);
 
 			//TODO: check on_meta & better timing for on_tick?
-			IRC_MOD_CALL_ALL(on_tick, ());
+			time_t now = time(0);
+			IRC_MOD_CALL_ALL(on_tick, (now));
 
 			int max_fd = 0;
 			fd_set in, out;

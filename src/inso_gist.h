@@ -251,7 +251,6 @@ int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
 	const unsigned char* payload = NULL;
 	yajl_gen_get_buf(json, &payload, &len);
 
-	char* data = NULL;
 	struct curl_slist* slist = NULL;
 	slist = curl_slist_append(slist, "Content-Type: application/json");
 	slist = curl_slist_append(slist, "Expect:");
@@ -274,7 +273,6 @@ int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
 	curl_easy_getinfo(gist->curl, CURLINFO_TOTAL_TIME, &seconds);
 	printf("inso_gist: Upload took [%.2f] seconds.\n", seconds);
 
-	sb_free(data);
 	curl_slist_free_all(slist);
 	yajl_gen_free(json);
 

@@ -12,7 +12,7 @@ static void psa_add  (const char*, const char*, bool);
 static bool psa_init (const IRCCoreCtx*);
 static void psa_cmd  (const char*, const char*, const char*, int);
 static void psa_msg  (const char*, const char*, const char*);
-static void psa_tick (void);
+static void psa_tick (time_t);
 static bool psa_save (FILE*);
 static void psa_quit (void);
 
@@ -277,8 +277,7 @@ static void psa_msg(const char* chan, const char* name, const char* msg){
 
 }
 
-static void psa_tick(void){
-	time_t now = time(0);
+static void psa_tick(time_t now){
 	if(now - psa_last_update < 60) return;
 	psa_last_update = now;
 

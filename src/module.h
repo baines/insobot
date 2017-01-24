@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <time.h>
 #include "config.h"
 
 typedef struct IRCCoreCtx_ IRCCoreCtx;
@@ -45,7 +46,7 @@ typedef struct IRCModuleCtx_ {
 	void (*on_mod_msg) (const char* sender, const IRCModMsg* msg);
 
 	// called atleast once every ~250ms
-	void (*on_tick)    (void);
+	void (*on_tick)    (time_t now);
 
 	// called if something was written to stdin
 	void (*on_stdin)   (const char* text);

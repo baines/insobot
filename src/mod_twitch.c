@@ -8,7 +8,7 @@
 
 static bool twitch_init    (const IRCCoreCtx*);
 static void twitch_cmd     (const char*, const char*, const char*, int);
-static void twitch_tick    (void);
+static void twitch_tick    (time_t);
 static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
@@ -835,8 +835,7 @@ out:
 	if(root) yajl_tree_free(root);
 }
 
-static void twitch_tick(void){
-	time_t now = time(0);
+static void twitch_tick(time_t now){
 
 	if(now - last_tracker_update > tracker_update_interval){
 		puts("mod_twitch: tracker update...");
