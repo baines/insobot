@@ -39,6 +39,9 @@
 	#define __auto_type intptr_t
 #endif
 
+_Static_assert(sizeof(intptr_t) == sizeof(void*), "uh oh");
+_Static_assert(sizeof(void (*)) == sizeof(void*), "uh oh");
+
 /******************************
  * Types, global vars, macros *
  * ****************************/
@@ -103,6 +106,10 @@ static IPCAddress* ipc_peers;
 static sig_atomic_t running = 1;
 
 static bool send_msg_called;
+
+static char   irc_tag_buf[512];
+static char** irc_tag_ptrs;
+static bool   have_tag_hack;
 
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
@@ -270,6 +277,7 @@ static void util_process_pending_cmds(void){
 			} break;
 
 			case IRC_CMD_MSG: {
+				printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
 				irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
 				IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
 			} break;
@@ -378,12 +386,30 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
 
 		struct link_map* mod_info = m->lib_handle;
-		printf("Loading module %-20s [0x%lx]\n", mod_name, mod_info->l_addr);
+		printf("Loading module %-20s [0x%zx]\n", mod_name, (size_t)mod_info->l_addr);
 
 		const char* errmsg = "NULL lib handle";
 		if(m->lib_handle && !(errmsg = dlerror())){
 			m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
 			errmsg = dlerror();
+		}
+
+		if(!errmsg){
+			const ElfW(Sym)* sym = NULL;
+			Dl_info unused;
+			if(dladdr1(m->ctx, &unused, (void**)&sym, RTLD_DL_SYMENT) == 0){
+				errmsg = "dladdr1 failed.";
+			} else if(sym->st_size < sizeof(IRCModuleCtx)) {
+				// TODO: Use a table of which function pointers were present in the context
+				//       for each size, so that we can retain backwards binary compatibility.
+				//       (assuming new functions are only added to the end of the struct)
+				//
+				//       | sizeof(void*) | last field |
+				//       +---------------+------------+
+				//       |      x23      |   on_ipc   |
+
+				errmsg = "version mismatch (wrong size irc_mod_ctx)";
+			}
 		}
 
 		if(errmsg){
@@ -445,6 +471,7 @@ static void util_inotify_add(INotifyWatch* watch, const char* path, uint32_t fla
 static void util_inotify_check(const IRCCoreCtx* core_ctx){
 	struct inotify_event* ev;
 	char buff[sizeof(*ev) + NAME_MAX + 1];
+	bool reload = false;
 
 	ssize_t num_read = read(inotify.fd, &buff, sizeof(buff));
 
@@ -458,6 +485,7 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 			} else {
 				util_module_add(ev->name);
 			}
+			reload = true;
 		} else if(ev->wd == inotify.data.wd){
 			if(!memmem(ev->name, ev->len, ".data", 6)) continue;
 			fprintf(stderr, "%s was modified.\n", ev->name);
@@ -490,7 +518,9 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 		IRC_MOD_CALL(m, on_modified, ());
 	}
 
-	util_reload_modules(core_ctx);
+	if(reload){
+		util_reload_modules(core_ctx);
+	}
 }
 
 static void util_ipc_init(void){
@@ -651,6 +681,44 @@ static void util_trim_end_spaces(char* msg, size_t len){
 	}
 }
 
+static void util_update_tags(const char** params){
+	if(!have_tag_hack) return;
+	strncpy(irc_tag_buf, params[-1], sizeof(irc_tag_buf)-1);
+
+	if(irc_tag_ptrs){
+		stb__sbn(irc_tag_ptrs) = 0;
+	}
+
+	char* state;
+	char* k = strtok_r(irc_tag_buf, ";", &state);
+
+	for(; k; k = strtok_r(NULL, ";", &state)){
+		char* v = k;
+
+		while(*v && *v != '=') ++v;
+
+		if(*v == '='){
+			*v++ = '\0';
+
+			for(char* p = v; *p; ++p){
+				if(*p != '\\') continue;
+
+				if(p[1] == ':') *p = ';';
+				else if(p[1] == 's') *p = ' ';
+				else if(p[1] == 'r') *p = '\r';
+				else if(p[1] == 'n') *p = '\n';
+
+				for(char* q = p + 1; q; ++q){
+					q[0] = q[1];
+				}
+			}
+		}
+
+		sb_push(irc_tag_ptrs, k);
+		sb_push(irc_tag_ptrs, v);
+	}
+}
+
 /*****************
  * IRC Callbacks *
  *****************/
@@ -665,6 +733,8 @@ IRC_STR_CALLBACK(on_connect) {
 
 IRC_STR_CALLBACK(on_chat_msg) {
 	if(count < 2 || !params[0] || !params[1]) return;
+
+	util_update_tags(params);
 
 	const char *_chan = params[0], *_name = origin;
 	char* _msg = strdupa(params[1]);
@@ -686,6 +756,8 @@ IRC_STR_CALLBACK(on_chat_msg) {
 IRC_STR_CALLBACK(on_action) {
 	if(count < 2 || !params[0] || !params[1]) return;
 
+	util_update_tags(params);
+
 	const char *_chan = params[0], *_name = origin;
 	char* _msg = strdupa(params[1]);
 	util_trim_end_spaces(_msg, strlen(_msg));
@@ -695,6 +767,8 @@ IRC_STR_CALLBACK(on_action) {
 
 IRC_STR_CALLBACK(on_pm){
 	if(count < 2 || !params[1] || !origin) return;
+
+	util_update_tags(params);
 
 	const char* _name = origin;
 	char* _msg = strdupa(params[1]);
@@ -728,7 +802,7 @@ IRC_STR_CALLBACK(on_join) {
 
 IRC_STR_CALLBACK(on_part) {
 	if(count < 1 || !origin || !params[0]) return;
-	
+
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
 
@@ -755,6 +829,8 @@ IRC_STR_CALLBACK(on_part) {
 IRC_STR_CALLBACK(on_quit) {
 	if(!origin) return;
 
+	util_update_tags(params);
+
 	printf("QUIT: %s\n", origin);
 
 	for(int i = 0; i < sb_count(channels) - 1; ++i){
@@ -772,6 +848,9 @@ IRC_STR_CALLBACK(on_quit) {
 
 IRC_STR_CALLBACK(on_nick) {
 	if(count < 1 || !origin || !params[0]) return;
+
+	util_update_tags(params);
+
 	if(strcmp(origin, bot_nick) == 0){
 		printf("We changed nicks! new nick: %s\n", params[0]);
 		free(bot_nick);
@@ -832,6 +911,18 @@ IRC_NUM_CALLBACK(on_numeric) {
 /********************
  * IRCCoreCtx funcs *
  ********************/
+
+static intptr_t core_get_info(int id){
+	switch(id){
+		case IRC_INFO_CAN_PARSE_TAGS: {
+			return have_tag_hack;
+		} break;
+
+		default: {
+			return 0;
+		} break;
+	}
+}
 
 static const char* core_get_username(void){
 	return bot_nick;
@@ -1042,6 +1133,19 @@ static bool core_responded(void){
 	return send_msg_called;
 }
 
+static bool core_get_tag(size_t index, const char** k, const char** v){
+	index <<= 1;
+
+	if(index >= sb_count(irc_tag_ptrs)){
+		return false;
+	}
+
+	if(*k) *k = irc_tag_ptrs[index+0];
+	if(*v) *v = irc_tag_ptrs[index+1];
+
+	return true;
+}
+
 /***************
  * entry point *
  * *************/
@@ -1138,6 +1242,8 @@ int main(int argc, char** argv){
 	// modules init
 
 	const IRCCoreCtx core_ctx = {
+		.api_version  = INSO_CORE_API_VERSION,
+		.get_info     = &core_get_info,
 		.get_username = &core_get_username,
 		.get_datafile = &core_get_datafile,
 		.get_modules  = &core_get_modules,
@@ -1153,6 +1259,7 @@ int main(int argc, char** argv){
 		.log          = &core_log,
 		.strip_colors = &core_strip_colors,
 		.responded    = &core_responded,
+		.get_tag      = &core_get_tag,
 	};
 
 	sb_push(channels, 0);
@@ -1171,7 +1278,6 @@ int main(int argc, char** argv){
 	port = util_env_else("IRC_PORT", "6667");
 	bot_nick = strdup(user);
 
-	// TODO: .event_quit
 	irc_callbacks_t callbacks = {
 		.event_connect     = irc_on_connect,
 		.event_channel     = irc_on_chat_msg,
@@ -1184,6 +1290,13 @@ int main(int argc, char** argv){
 		.event_numeric     = irc_on_numeric,
 		.event_unknown     = irc_on_unknown,
 	};
+
+	// check for patched lib with ircv3 tag parsing hack
+	unsigned irc_maj = 0, irc_min = 0;
+	irc_get_version(&irc_maj, &irc_min);
+	if(irc_maj == 1 && irc_min == 0x1b07){
+		have_tag_hack = 1;
+	}
 
 	// outer main loop, (re)set irc state
 

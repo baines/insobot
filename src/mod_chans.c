@@ -144,6 +144,10 @@ static void chans_connect(const char* serv){
 
 	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_IS_TWITCH")){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
+
+		if(ctx->get_info(IRC_INFO_CAN_PARSE_TAGS)){
+			ctx->send_raw("CAP REQ :twitch.tv/tags");
+		}
 	}
 
 	char* nspass = getenv("IRC_NICKSERV_PASS");

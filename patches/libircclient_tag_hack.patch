@@ -1,0 +1,74 @@
+diff --git a/src/libircclient.c b/src/libircclient.c
+index 0a753b9..36f3a09 100644
+--- a/src/libircclient.c
++++ b/src/libircclient.c
+@@ -525,10 +525,13 @@ static void libirc_process_incoming_data (irc_session_t * session, size_t proces
+ {
+ 	#define MAX_PARAMS_ALLOWED 10
+ 	char buf[2*512], *p, *s;
+-	const char * command = 0, *prefix = 0, *params[MAX_PARAMS_ALLOWED+1];
++	const char * command = 0, *prefix = 0, *parambuf[MAX_PARAMS_ALLOWED+2];
++	const char ** params = parambuf + 1;
+ 	int code = 0, paramindex = 0;
+     char *buf_end = buf + process_length;
+ 
++	parambuf[0] = "";
++
+ 	if ( process_length > sizeof(buf) )
+ 		abort(); // should be impossible
+ 
+@@ -551,22 +554,33 @@ static void libirc_process_incoming_data (irc_session_t * session, size_t proces
+ 	 *                   NUL or CR or LF>
+  	 */
+ 
++	// parse tags
++	if ( buf[0] == '@' )
++	{
++		while ( *p && *p != ' ' )
++			p++;
++
++		*p++ = '\0';
++
++		parambuf[0] = buf + 1;
++	}
++
+ 	// Parse <prefix>
+-	if ( buf[0] == ':' )
++	if ( p[0] == ':' )
+ 	{
+-		while ( *p && *p != ' ')
+-			p++;
+-
+-		*p++ = '\0';
+-
+ 		// we use buf+1 to skip the leading colon
+-		prefix = buf + 1;
++		prefix = s = p + 1;
++
++		while ( *p && *p != ' ')
++			p++;
++
++		*p++ = '\0';
+ 
+ 		// If LIBIRC_OPTION_STRIPNICKS is set, we should 'clean up' nick 
+ 		// right here
+ 		if ( session->options & LIBIRC_OPTION_STRIPNICKS )
+ 		{
+-			for ( s = buf + 1; *s; s++ )
++			for (; *s; s++ )
+ 			{
+ 				if ( *s == '@' || *s == '!' )
+ 				{
+diff --git a/src/params.h b/src/params.h
+index 6f1541e..d9149f6 100644
+--- a/src/params.h
++++ b/src/params.h
+@@ -17,7 +17,7 @@
+ 
+ 
+ #define LIBIRC_VERSION_HIGH			1
+-#define LIBIRC_VERSION_LOW			9
++#define LIBIRC_VERSION_LOW			0x1b07
+ 
+ #define LIBIRC_BUFFER_SIZE			1024
+ #define LIBIRC_DCC_BUFFER_SIZE		1024
