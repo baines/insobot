@@ -708,7 +708,7 @@ static void util_update_tags(const char** params){
 				else if(p[1] == 'r') *p = '\r';
 				else if(p[1] == 'n') *p = '\n';
 
-				for(char* q = p + 1; q; ++q){
+				for(char* q = p + 1; *q; ++q){
 					q[0] = q[1];
 				}
 			}
@@ -1264,6 +1264,16 @@ int main(int argc, char** argv){
 
 	sb_push(channels, 0);
 
+	// check for patched lib with ircv3 tag parsing hack
+
+	unsigned irc_maj = 0, irc_min = 0;
+	irc_get_version(&irc_maj, &irc_min);
+	if(irc_maj == 1 && irc_min == 0x1b07){
+		have_tag_hack = 1;
+	}
+
+	// initial load of modules
+
 	util_reload_modules(&core_ctx);
 	
 	if(sb_count(irc_modules) == 0){
@@ -1290,13 +1300,6 @@ int main(int argc, char** argv){
 		.event_numeric     = irc_on_numeric,
 		.event_unknown     = irc_on_unknown,
 	};
-
-	// check for patched lib with ircv3 tag parsing hack
-	unsigned irc_maj = 0, irc_min = 0;
-	irc_get_version(&irc_maj, &irc_min);
-	if(irc_maj == 1 && irc_min == 0x1b07){
-		have_tag_hack = 1;
-	}
 
 	// outer main loop, (re)set irc state
 
@@ -1437,6 +1440,7 @@ int main(int argc, char** argv){
 	sb_free(global_mod_list);
 	sb_free(mod_call_stack);
 	sb_free(cmd_queue);
+	sb_free(irc_tag_ptrs);
 
 	curl_global_cleanup();
 

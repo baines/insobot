@@ -319,7 +319,7 @@ static bool sched_parse_chan(const char* in, const char* fallback, char* out, in
 			found = true;
 		}
 	} else {
-		*stpncpy(out, fallback, out_len) = '\0';
+		*stpncpy(out, fallback, out_len-1) = '\0';
 	}
 
 	for(int i = 0; i < out_len; ++i)
@@ -732,7 +732,7 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 	if(sscanf(arg, "#%63s ", sched_user) == 1){
 		arg += strlen(sched_user) + 2;
 	} else {
-		*stpncpy(sched_user, name, sizeof(sched_user)) = '\0';
+		*stpncpy(sched_user, name, sizeof(sched_user)-1) = '\0';
 	}
 
 	for(char* c = sched_user; *c; ++c){
