@@ -70,8 +70,14 @@ static int karma_sort(const void* _a, const void* _b){
 	return (b->up - b->down) - (a->up - a->down);
 }
 
+static void disp_name_cb(intptr_t result, intptr_t arg){
+	if(result) *(const char**)arg = (const char*)result;
+}
+
 static KEntry* karma_add_name(const char* name){
 	KEntry* ret = karma_find(name, true);
+
+	// TODO: add display name too?
 
 	if(!ret) {
 		KEntry k = {};
@@ -131,7 +137,6 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 				link = "https://youtu.be/0rYsPmVtHRM";
 			} break;
 
-			case 13 : link = "https://youtu.be/uPNBzvhNvSc"; break;
 			case 18 : link = "https://youtu.be/B-oU2xlViRQ"; break;
 			case 27 : link = "https://youtu.be/tLsQsirjmeo"; break;
 			case 40 : link = "https://youtu.be/QyQzDmnDriY"; break;
@@ -158,7 +163,12 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 			case 925: link = "https://youtu.be/UbxUSsFXYo4"; break;
 		}
 
-		if(link) ctx->send_msg(chan, "Happy birthday %s %s", target, link);
+		if(link){
+			const char* dispname = target;
+			MOD_MSG(ctx, "display_name", target, &disp_name_cb, &dispname);
+
+			ctx->send_msg(chan, "Happy birthday %s %s", target, link);
+		}
 
 		return true;
 	}
@@ -234,15 +244,18 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 
 	switch(cmd){
 		case KARMA_SHOW: {
+			const char* dispname = name;
+			MOD_MSG(ctx, "display_name", name, &disp_name_cb, &dispname);
+
 			if(!*arg++){
 				int total = actor->up - actor->down;
-				ctx->send_msg(chan, "%s: You have %d karma [+%d|-%d].", name, total, actor->up, actor->down);
+				ctx->send_msg(chan, "%s: You have %d karma [+%d|-%d].", dispname, total, actor->up, actor->down);
 			} else {
 				if(!wlist && strcmp(arg, name) != 0) return;
 				KEntry* k = karma_find(arg, false);
 				if(k){
 					int total = k->up - k->down;
-					ctx->send_msg(chan, "%s: %s has %d karma [+%d|-%d].", name, arg, total, k->up, k->down);
+					ctx->send_msg(chan, "%s: %s has %d karma [+%d|-%d].", dispname, arg, total, k->up, k->down);
 				}
 			}
 		} break;

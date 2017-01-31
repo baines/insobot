@@ -166,17 +166,52 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 
 		// box drawing glyphs
 		if(codepoint >= 0x2500 && codepoint < 0x2600){
-			bad_char_score += 10;
+			bad_char_score += 1;
 		}
 
 		// hexagrams
 		if(codepoint >= 0x4DC0 && codepoint < 0x4E00){
-			bad_char_score += 5;
+			bad_char_score += 1;
 		}
-		
+
+		// reserved (utf-16 implementation)
+		if(codepoint >= 0xD800 && codepoint < 0xE000){
+			bad_char_score += 1;
+		}
+
 		// private use
 		if(codepoint >= 0xE000 && codepoint < 0xF900){
-			bad_char_score += 2;
+			bad_char_score += 1;
+		}
+
+		// misc symbols / pictographs
+		if(codepoint >= 0x1F300 && codepoint < 0x1F600){
+			bad_char_score += 1;
+		}
+
+		// supplemental symbols / pictographs
+		if(codepoint >= 0x1F900 && codepoint < 0x1FA00){
+			bad_char_score += 1;
+		}
+
+		// emoticons
+		if(codepoint >= 0x1F600 && codepoint < 0x1F650){
+			bad_char_score += 1;
+		}
+
+		// transport / map symbols
+		if(codepoint >= 0x1F680 && codepoint < 0x1F700){
+			bad_char_score += 1;
+		}
+
+		// misc symbols
+		if(codepoint >= 0x2600 && codepoint < 0x2700){
+			bad_char_score += 1;
+		}
+
+		// dingbats
+		if(codepoint >= 0x2700 && codepoint < 0x27C0){
+			bad_char_score += 1;
 		}
 
 		if(ispunct(codepoint)){
@@ -185,6 +220,8 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 
 		ptr += ret;
 	}
+
+	bad_char_score *= 13;
 
 	// invalid sequences?
 	if(ret == -1){
@@ -260,186 +297,24 @@ static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 }
 #endif
 
-// only global twitch emotes for now
-static const char* emotes[] = {
-  "4Head",
-  "AMPEnergy",
-  "AMPEnergyCherry",
-  "AMPTropPunch",
-  "ANELE",
-  "ArgieB8",
-  "ArsonNoSexy",
-  "AsianGlow",
-  "AthenaPMS",
-  "BabyRage",
-  "BatChest",
-  "BCouch",
-  "BCWarrior",
-  "BibleThump",
-  "BigBrother",
-  "BlargNaut",
-  "bleedPurple",
-  "BloodTrail",
-  "BORT",
-  "BrainSlug",
-  "BrokeBack",
-  "BudBlast",
-  "BuddhaBar",
-  "BudStar",
-  "ChefFrank",
-  "cmonBruh",
-  "CoolCat",
-  "copyThis",
-  "CorgiDerp",
-  "CurseLit",
-  "DAESuppy",
-  "DansGame",
-  "DatSheffy",
-  "DBstyle",
-  "deIlluminati",
-  "DendiFace",
-  "DogFace",
-  "DoritosChip",
-  "duDudu",
-  "DxAbomb",
-  "DxCat",
-  "EagleEye",
-  "EleGiggle",
-  "FailFish",
-  "FPSMarksman",
-  "FrankerZ",
-  "FreakinStinkin",
-  "FUNgineer",
-  "FunRun",
-  "FutureMan",
-  "GingerPower",
-  "GivePLZ",
-  "GrammarKing",
-  "HassaanChop",
-  "HassanChop",
-  "HeyGuys",
-  "HotPokket",
-  "HumbleLife",
-  "imGlitch",
-  "ItsBoshyTime",
-  "Jebaited",
-  "JKanStyle",
-  "JonCarnage",
-  "KAPOW",
-  "Kappa",
-  "KappaClaus",
-  "KappaPride",
-  "KappaRoss",
-  "KappaWealth",
-  "Keepo",
-  "KevinTurtle",
-  "KingMe",
-  "Kippa",
-  "Kreygasm",
-  "Mau5",
-  "mcaT",
-  "MikeHogu",
-  "MingLee",
-  "MrDestructoid",
-  "MVGame",
-  "NervousMonkey",
-  "NinjaTroll",
-  "NomNom",
-  "NoNoSpot",
-  "NotATK",
-  "NotLikeThis",
-  "OhMyDog",
-  "OMGScoots",
-  "OneHand",
-  "OpieOP",
-  "OptimizePrime",
-  "OSfrog",
-  "OSkomodo",
-  "OSsloth",
-  "panicBasket",
-  "PanicVis",
-  "PartyTime",
-  "pastaThat",
-  "PeoplesChamp",
-  "PermaSmug",
-  "PeteZaroll",
-  "PeteZarollTie",
-  "PicoMause",
-  "PipeHype",
-  "PJSalt",
-  "PJSugar",
-  "PMSTwin",
-  "PogChamp",
-  "Poooound",
-  "PraiseIt",
-  "PRChase",
-  "PrimeMe",
-  "PunchTrees",
-  "PuppeyFace",
-  "RaccAttack",
-  "RalpherZ",
-  "RedCoat",
-  "ResidentSleeper",
-  "riPepperonis",
-  "RitzMitz",
-  "RuleFive",
-  "SeemsGood",
-  "ShadyLulu",
-  "ShazBotstix",
-  "SmoocherZ",
-  "SMOrc",
-  "SoBayed",
-  "SoonerLater",
-  "SSSsss",
-  "StinkyCheese",
-  "StoneLightning",
-  "StrawBeary",
-  "SuperVinlin",
-  "SwiftRage",
-  "TakeNRG",
-  "TBCheesePull",
-  "TBTacoLeft",
-  "TBTacoRight",
-  "TF2John",
-  "TheRinger",
-  "TheTarFu",
-  "TheThing",
-  "ThunBeast",
-  "TinyFace",
-  "TooSpicy",
-  "TriHard",
-  "TTours",
-  "twitchRaid",
-  "TwitchRPG",
-  "UleetBackup",
-  "UncleNox",
-  "UnSane",
-  "VoHiYo",
-  "VoteNay",
-  "VoteYea",
-  "WholeWheat",
-  "WTRuck",
-  "WutFace",
-  "YouWHY",
-  NULL
-};
-
 static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 	int emote_count = 0;
+	int i = 0;
+	const char *k, *v;
 
-	for(const char** e = emotes; *e; ++e){
-		const char* p = msg;
-		while((p = strstr(p, *e))){
-			++emote_count;
-			p += strlen(*e);
+	while(ctx->get_tag(i++, &k, &v)){
+		if(strcmp(k, "emotes") != 0) continue;
+		for(; *v; ++v){
+			if(*v == ':' || *v == ',') ++emote_count;
 		}
-
-		if(emote_count > 5){
-			break;
-		}
+		break;
 	}
 
-	return emote_count >= 5 ? 100 : emote_count * 5;
+	return emote_count >= 5 ? 100 : emote_count * 10;
+}
+
+static void disp_name_cb(intptr_t result, intptr_t arg){
+	if(result) *(const char**)arg = (const char*)result;
 }
 
 static void automod_discipline(Suspect* s, const char* chan, const char* reason){
@@ -456,8 +331,11 @@ static void automod_discipline(Suspect* s, const char* chan, const char* reason)
 			: (s->num_offences - 1) * (s->num_offences - 1) * 60
 			;
 
+		const char* dispname = s->name;
+		MOD_MSG(ctx, "display_name", s->name, &disp_name_cb, &dispname);
+
 		ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
-		ctx->send_msg(chan, "Timed out %s (%s)", s->name, reason);
+		ctx->send_msg(chan, "Timed out %s (%s)", dispname, reason);
 	} else {
 		char buf[512];
 		snprintf(buf, sizeof(buf), "KICK %s %s :%s", chan, s->name, reason);
@@ -480,7 +358,7 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 	int score = 0;
 
 #ifdef TRIGGER_HAPPY
-	const char* rules[] = { "caps", "ascii art", "flood", "emotes", "spambot?" };
+	const char* rules[] = { "caps", "symbol spam", "flood", "emotes", "spambot?" };
 
 	int (*score_fns[])(const Suspect*, const char*, size_t) = {
 		am_score_caps,
@@ -490,7 +368,7 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 		am_score_links
 	};
 #else
-	const char* rules[] = { "ascii art", "emotes", "spambot?" };
+	const char* rules[] = { "symbol spam", "emotes", "spambot?" };
 
 	int (*score_fns[])(const Suspect*, const char*, size_t) = {
 		am_score_ascii_art,

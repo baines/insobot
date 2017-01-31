@@ -52,6 +52,7 @@
 // mod_twitch    | "twitch_is_live"       | char* [L] | bool      | returns true if any of the given channels are currently live
 // mod_whitelist | "check_admin"          | char*     | bool      | returns true if the given name is an admin
 // mod_whitelist | "check_whitelist"      | char*     | bool      | returns true if the given name is whitelisted
+// mod_twitch    | "display_name"         | char*     | char*     | returns the display name of the given name (correct capitilzation or unicode variant) (needs tags support)
 
 
 // Types
