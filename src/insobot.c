@@ -1140,8 +1140,8 @@ static bool core_get_tag(size_t index, const char** k, const char** v){
 		return false;
 	}
 
-	if(*k) *k = irc_tag_ptrs[index+0];
-	if(*v) *v = irc_tag_ptrs[index+1];
+	if(k) *k = irc_tag_ptrs[index+0];
+	if(v) *v = irc_tag_ptrs[index+1];
 
 	return true;
 }

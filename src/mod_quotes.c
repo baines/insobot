@@ -352,6 +352,8 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 	const char* quote_chan = quotes_get_chan(chan, &arg, &quotes, &same_chan);
 
+	name = inso_dispname(ctx, name);
+
 	switch(cmd){
 		case GET_QUOTE: {
 			if(!empty_arg){
@@ -386,7 +388,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(!has_cmd_perms) break;
 
 			if(empty_arg){
-				ctx->send_msg(chan, "%s: Usage: \\qadd <text>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qadd <text>", name);
 				break;
 			}
 
@@ -409,7 +411,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 			// notify other instances so they can also send messages to the affected channel
 			char ipc_buf[256];
-			int ipc_len = snprintf(ipc_buf, sizeof(ipc_buf), "ADD %d %s %s", id, name, quote_chan);
+			int ipc_len = snprintf(ipc_buf, sizeof(ipc_buf), "ADD %d %s %s", id, quote_chan, name);
 			ctx->send_ipc(0, ipc_buf, ipc_len + 1);
 
 			quotes_upload(quotes - chan_quotes);
@@ -419,7 +421,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(!has_cmd_perms) break;
 
 			if(empty_arg){
-				ctx->send_msg(chan, "%s: Usage: \\qdel <id>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qdel <id>", name);
 				break;
 			}
 
@@ -450,7 +452,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(!has_cmd_perms) break;
 
 			if(empty_arg){
-				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qfix <id> <new_text>", name);
 				break;
 			}
 
@@ -465,7 +467,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 			if(arg2[0] != ' ' || !arg2[1]){
-				ctx->send_msg(chan, "%s: Usage: \\qfix <id> <new_text>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qfix <id> <new_text>", name);
 				break;
 			}
 
@@ -484,7 +486,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(!has_cmd_perms) break;
 
 			if(empty_arg){
-				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qft <id> <YYYY-MM-DD hh:mm:ss>", name);
 				break;
 			}
 
@@ -499,7 +501,7 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				break;
 			}
 			if(arg2[0] != ' ' || !arg2[1]){
-				ctx->send_msg(chan, "%s: Usage: \\qft <id> <YYYY-MM-DD hh:mm:ss>", name);
+				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "qft <id> <YYYY-MM-DD hh:mm:ss>", name);
 				break;
 			}
 
@@ -598,13 +600,13 @@ static void quotes_ipc(int sender, const uint8_t* data, size_t data_len){
 	if(!memchr(data, 0, data_len)) return;
 
 	int id;
-	char *name = NULL, *chan = NULL;
+	char* chan = NULL;
+	int name_offset = 0;
 
-	if(sscanf(data, "ADD %d %ms %ms", &id, &name, &chan) == 3){
+	if(sscanf(data, "ADD %d %ms %n", &id, &chan, &name_offset) == 2){
 		quotes_reload();
-		quotes_notify(chan, name, quote_get(chan, id));
+		quotes_notify(chan, data + name_offset, quote_get(chan, id));
 	}
 
-	free(name);
 	free(chan);
 }

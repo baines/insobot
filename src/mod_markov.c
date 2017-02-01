@@ -92,7 +92,7 @@ static struct random_data rng_state;
 static regex_t url_regex;
 
 static size_t max_chain_len = 16;
-static size_t msg_chance = 150;
+static size_t msg_chance = 300;
 
 static word_idx_t start_sym_idx;
 static word_idx_t end_sym_idx;
@@ -252,7 +252,7 @@ static void markov_add(word_idx_t indices[static 3]){
 
 		for(uint32_t i = key->val_idx; i != -1; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
-				if(chain_vals[i].count < UCHAR_MAX) ++chain_vals[i].count;
+				if(chain_vals[i].count < 255) ++chain_vals[i].count;
 				found = true;
 				break;
 			}
@@ -430,7 +430,7 @@ static void markov_send(const char* chan){
 static void markov_reply(const char* chan, const char* nick){
 	char buffer[256];
 	if(!markov_gen_formatted(buffer, sizeof(buffer))) return;
-	ctx->send_msg(chan, "@%s: %s", nick, buffer);
+	ctx->send_msg(chan, "@%s: %s", inso_dispname(ctx, nick), buffer);
 }
 
 static void markov_ask(const char* chan){

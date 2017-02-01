@@ -108,6 +108,20 @@ static inline bool inso_is_admin(const IRCCoreCtx* ctx, const char* name){
 	return result;
 }
 
+static inline void inso_dispname_cb(intptr_t result, intptr_t arg){
+	// TODO: think of a good way to chain the mod msgs,
+	// for example if more than one provides a display name.
+	*(const char**)arg = (const char*)result;
+}
+
+// XXX: taking a char* param is a bit misleading since this will only work
+//      on the name for the current message.
+static inline const char* inso_dispname(const IRCCoreCtx* ctx, const char* fallback){
+	const char* result = fallback;
+	MOD_MSG(ctx, "display_name", fallback, &inso_dispname_cb, &result);
+	return result;
+}
+
 #endif
 
 // implementation

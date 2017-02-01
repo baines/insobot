@@ -313,10 +313,6 @@ static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 	return emote_count >= 5 ? 100 : emote_count * 10;
 }
 
-static void disp_name_cb(intptr_t result, intptr_t arg){
-	if(result) *(const char**)arg = (const char*)result;
-}
-
 static void automod_discipline(Suspect* s, const char* chan, const char* reason){
 
 	s->num_offences += INSO_MIN(1, (s->score / 100));
@@ -331,11 +327,8 @@ static void automod_discipline(Suspect* s, const char* chan, const char* reason)
 			: (s->num_offences - 1) * (s->num_offences - 1) * 60
 			;
 
-		const char* dispname = s->name;
-		MOD_MSG(ctx, "display_name", s->name, &disp_name_cb, &dispname);
-
 		ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
-		ctx->send_msg(chan, "Timed out %s (%s)", dispname, reason);
+		ctx->send_msg(chan, "Timed out %s (%s)", inso_dispname(ctx, s->name), reason);
 	} else {
 		char buf[512];
 		snprintf(buf, sizeof(buf), "KICK %s %s :%s", chan, s->name, reason);

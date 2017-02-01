@@ -70,10 +70,6 @@ static int karma_sort(const void* _a, const void* _b){
 	return (b->up - b->down) - (a->up - a->down);
 }
 
-static void disp_name_cb(intptr_t result, intptr_t arg){
-	if(result) *(const char**)arg = (const char*)result;
-}
-
 static KEntry* karma_add_name(const char* name){
 	KEntry* ret = karma_find(name, true);
 
@@ -164,10 +160,7 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 		}
 
 		if(link){
-			const char* dispname = target;
-			MOD_MSG(ctx, "display_name", target, &disp_name_cb, &dispname);
-
-			ctx->send_msg(chan, "Happy birthday %s %s", target, link);
+			ctx->send_msg(chan, "Happy birthday %s %s", inso_dispname(ctx, target), link);
 		}
 
 		return true;
@@ -244,9 +237,7 @@ static void karma_cmd(const char* chan, const char* name, const char* arg, int c
 
 	switch(cmd){
 		case KARMA_SHOW: {
-			const char* dispname = name;
-			MOD_MSG(ctx, "display_name", name, &disp_name_cb, &dispname);
-
+			const char* dispname = inso_dispname(ctx, name);
 			if(!*arg++){
 				int total = actor->up - actor->down;
 				ctx->send_msg(chan, "%s: You have %d karma [+%d|-%d].", dispname, total, actor->up, actor->down);

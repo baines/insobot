@@ -309,7 +309,8 @@ static const char* twitch_display_name(const char* fallback){
 	const char *k, *v;
 	while(ctx->get_tag(i++, &k, &v)){
 		if(strcmp(k, "display-name") == 0){
-			return v;
+			if(*v) return v;
+			else return fallback;
 		}
 	}
 	return fallback;
