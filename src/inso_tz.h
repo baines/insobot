@@ -1,4 +1,4 @@
-#ifndef INSO_TZ_H
+#if !defined(INSO_TZ_H) && !defined(INSO_IMPL)
 #define INSO_TZ_H
 #include <stdlib.h>
 #include <stdbool.h>
@@ -239,11 +239,11 @@ const struct {
 	{ "Y", -720 },
 	{ "YAKT", 540 },
 	{ "YEKT", 300 },
-	{ "Z",  },
+	{ "Z", 0 },
 };
 
 bool tz_abbr2off(const char* abbr, int* offset){
-	for(int i = 0; i < ARRAY_SIZE(tz_abbrs); ++i){
+	for(size_t i = 0; i < ARRAY_SIZE(tz_abbrs); ++i){
 		if(strcasecmp(abbr, tz_abbrs[i].abbr) == 0){
 			if(offset) *offset = tz_abbrs[i].offset;
 			return true;

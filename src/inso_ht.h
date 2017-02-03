@@ -285,7 +285,7 @@ inso_htpriv_del_i(inso_ht* ht, intptr_t idx){
 
 		INSO_HT_DBG("hash=%zu, idx2=%zu, ", hash, idx2);
 
-		if(idx2 <= idx){
+		if(idx2 <= (size_t)idx){
 			INSO_HT_DBG("swapping.");
 			memcpy(
 				ht->memory + idx  * ht->elem_size,

@@ -24,7 +24,7 @@
 #define stb_sb_pop(a)          (--stb__sbn(a))
 #define stb_sb_erase(a,i)      ((a) ? memmove((a)+(i), (a)+(i)+1, sizeof(*(a))*((--stb__sbn(a))-(i))),0 : 0);
 
-#define stb__sbraw(a) ((int *) (a) - 2)
+#define stb__sbraw(a) ((size_t *) (a) - 2)
 #define stb__sbm(a)   stb__sbraw(a)[0]
 #define stb__sbn(a)   stb__sbraw(a)[1]
 
@@ -36,10 +36,10 @@
 
 static inline void * stb__sbgrowf(void *arr, int increment, int itemsize)
 {
-   int dbl_cur = arr ? 2*stb__sbm(arr) : 0;
-   int min_needed = stb_sb_count(arr) + increment;
-   int m = dbl_cur > min_needed ? dbl_cur : min_needed;
-   int *p = (int *) realloc(arr ? stb__sbraw(arr) : 0, itemsize * m + sizeof(int)*2);
+   size_t inc_cur = arr ? stb__sbm(arr) + (stb__sbm(arr) >> 1) : 0;
+   size_t min_needed = stb_sb_count(arr) + increment;
+   size_t m = inc_cur > min_needed ? inc_cur : min_needed;
+   size_t *p = (size_t *) realloc(arr ? stb__sbraw(arr) : 0, itemsize * m + sizeof(size_t)*2);
    if (p) {
       if (!arr)
          p[1] = 0;
@@ -49,7 +49,7 @@ static inline void * stb__sbgrowf(void *arr, int increment, int itemsize)
       #ifdef STRETCHY_BUFFER_OUT_OF_MEMORY
       STRETCHY_BUFFER_OUT_OF_MEMORY ;
       #endif
-      return (void *) (2*sizeof(int)); // try to force a NULL pointer exception later
+      return (void *) (2*sizeof(size_t)); // try to force a NULL pointer exception later
    }
 }
 
@@ -75,17 +75,17 @@ static inline void * stb__sbgrowf(void *arr, int increment, int itemsize)
 
 static inline void * stb__sbgrowf_mm(void *arr, int increment, int itemsize)
 {
-   int inc_cur = arr ? stb__sbm(arr) + SB_PAGE_SIZE : 0;
-   int min_needed = stb_sb_count(arr) + increment;
-   int m = inc_cur > min_needed ? inc_cur : min_needed;
+   size_t inc_cur = arr ? stb__sbm(arr) + SB_PAGE_SIZE : 0;
+   size_t min_needed = stb_sb_count(arr) + increment;
+   size_t m = inc_cur > min_needed ? inc_cur : min_needed;
 
-   size_t mem_needed = m * itemsize + sizeof(int) * 2;
+   size_t mem_needed = m * itemsize + sizeof(size_t) * 2;
    mem_needed = (mem_needed + (SB_PAGE_SIZE-1)) & ~(SB_PAGE_SIZE-1);
 
-   size_t mem_have = !arr ? 0 : stb__sbm(arr) * itemsize + sizeof(int) * 2;
+   size_t mem_have = !arr ? 0 : stb__sbm(arr) * itemsize + sizeof(size_t) * 2;
    mem_have = (mem_have + (SB_PAGE_SIZE-1)) & ~(SB_PAGE_SIZE-1);
 
-   int* p = 0;
+   size_t* p = 0;
    if(arr){
 	   p = mremap(
 		   stb__sbraw(arr),
@@ -119,7 +119,7 @@ static inline void * stb__sbgrowf_mm(void *arr, int increment, int itemsize)
       #ifdef STRETCHY_BUFFER_OUT_OF_MEMORY
       STRETCHY_BUFFER_OUT_OF_MEMORY ;
       #endif
-      return (void *) (2*sizeof(int)); // try to force a NULL pointer exception later
+      return (void *) (2*sizeof(size_t)); // try to force a NULL pointer exception later
    }
 }
 

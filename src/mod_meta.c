@@ -46,14 +46,14 @@ static char** channels;
 static char*** enabled_mods_for_chan;
 
 static char*** get_enabled_modules(const char* chan){
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		if(strcmp(channels[i], chan) == 0) return enabled_mods_for_chan + i;
 	}
 	return NULL;
 }
 
 static void free_all_strs(char** strs){
-	for(int i = 0; i < sb_count(strs); ++i){
+	for(size_t i = 0; i < sb_count(strs); ++i){
 		free(strs[i]);
 	}
 }
@@ -62,7 +62,7 @@ static void meta_quit(void){
 	free_all_strs(channels);
 	sb_free(channels);
 
-	for(int i = 0; i < sb_count(enabled_mods_for_chan); ++i){
+	for(size_t i = 0; i < sb_count(enabled_mods_for_chan); ++i){
 		free_all_strs(enabled_mods_for_chan[i]);
 		sb_free(enabled_mods_for_chan[i]);
 	}
@@ -119,7 +119,7 @@ static bool meta_init(const IRCCoreCtx* _ctx){
 }
 
 static char** mod_find(char** haystack, const char* needle){
-	for(int i = 0; i < sb_count(haystack); ++i){
+	for(size_t i = 0; i < sb_count(haystack); ++i){
 		if(strcmp(haystack[i], needle) == 0) return haystack + i;
 	}
 	return NULL;
@@ -248,9 +248,9 @@ static void meta_join(const char* chan, const char* name){
 }
 
 static bool meta_save(FILE* file){
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		fputs(channels[i], file);
-		for(int j = 0; j < sb_count(enabled_mods_for_chan[i]); ++j){
+		for(size_t j = 0; j < sb_count(enabled_mods_for_chan[i]); ++j){
 			fprintf(file, "\t%s", enabled_mods_for_chan[i][j]);
 		}
 		fputc('\n', file);

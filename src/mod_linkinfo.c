@@ -182,7 +182,7 @@ static void html_unescape(char* msg, size_t len){
 	char c[MB_LEN_MAX];
 
 	for(char* p = msg; *p; ++p){
-		for(int i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
+		for(size_t i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
 			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
 				const int sz = tags[i].from_len - tags[i].to_len;
 				assert(sz >= 0);
@@ -449,14 +449,14 @@ static int twitter_parse_entities(Replacement** out, yajl_val entity, bool is_me
 	int size = 0;
 	bool is_video = false;
 
-	for(int i = 0; i < entity->u.array.len; ++i){
+	for(size_t i = 0; i < entity->u.array.len; ++i){
 		yajl_val exp_url;
 
 		if(is_media && (exp_url = yajl_tree_get(entity->u.array.values[i], video_info_path, yajl_t_array))){
 			int best_bitrate = 0;
 			int best_index = 0;
 
-			for(int j = 0; j < exp_url->u.array.len; ++j){
+			for(size_t j = 0; j < exp_url->u.array.len; ++j){
 				yajl_val bitrate = yajl_tree_get(exp_url->u.array.values[j], bitrate_path, yajl_t_number);
 				if(bitrate && bitrate->u.number.i >= best_bitrate){
 					best_bitrate = bitrate->u.number.i;
@@ -570,7 +570,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 		int divisor;
 	} time_info[] = { { "s", 60, 1}, { "m", (60*60), 60 }, { "h", (60*60*24), (60*60) }, { "d", (60*60*24*365), (60*60*24) } };
 
-	for(int i = 0; i < ARRAY_SIZE(time_info); ++i){
+	for(size_t i = 0; i < ARRAY_SIZE(time_info); ++i){
 		if(time_diff < time_info[i].limit){
 			snprintf(time_buf, sizeof(time_buf), "%d%s ago", (int)time_diff / time_info[i].divisor, time_info[i].unit);
 			break;
@@ -594,7 +594,7 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 	const char* read_ptr = text->u.string;
 	char* write_ptr = fixed_text;
 
-	for(int i = 0; i < sb_count(url_replacements); ++i){
+	for(size_t i = 0; i < sb_count(url_replacements); ++i){
 		const char* p = strstr(read_ptr, url_replacements[i].from);
 		if(!p) continue;
 
@@ -668,7 +668,7 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 	}
 
 	char plat_str[16] = {};
-	for(int i = 0; i < plats->u.object.len; ++i){
+	for(size_t i = 0; i < plats->u.object.len; ++i){
 		if(!plats->u.object.values[i] || plats->u.object.values[i]->type != yajl_t_true){
 			continue;
 		}

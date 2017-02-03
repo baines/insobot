@@ -1,5 +1,5 @@
-#ifndef INSOBOT_UTILS_H_
-#define INSOBOT_UTILS_H_
+#if !defined(INSO_UTILS_H_) && !defined(INSO_IMPL)
+#define INSO_UTILS_H_
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -38,10 +38,10 @@
 	}                                \
 })
 
-typedef void CURL;
+#define isizeof(x) ((int)(sizeof(x)))
 
-void   inso_curl_reset (CURL* curl, const char* url, char** data);
-CURL*  inso_curl_init  (const char* url, char** data);
+void   inso_curl_reset (void* curl, const char* url, char** data);
+void*  inso_curl_init  (const char* url, char** data);
 
 // returns num bytes copied, or -(num reuired) and doesn't copy anything if not enough space.
 static inline int inso_strcat(char* buf, size_t sz, const char* str){
@@ -84,7 +84,7 @@ static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, .
 
 	int printed = vsnprintf(*bufp, *sizep, fmt, v);
 
-	if(printed != -1 && printed <= *sizep){
+	if(printed > 0 && (size_t)printed <= *sizep){
 		*sizep -= printed;
 		*bufp += printed;
 	}
@@ -129,6 +129,7 @@ static inline const char* inso_dispname(const IRCCoreCtx* ctx, const char* fallb
 #ifdef INSO_IMPL
 
 #include "stb_sb.h"
+#include <string.h>
 #include <curl/curl.h>
 
 size_t inso_curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){

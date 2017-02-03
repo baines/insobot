@@ -86,7 +86,7 @@ static void automod_connect(const char* serv){
 static Suspect* get_suspect(const char* chan, const char* name){
 
 	int index = -1;
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		if(strcmp(chan, channels[i]) == 0){
 			index = i;
 			break;
@@ -99,7 +99,7 @@ static Suspect* get_suspect(const char* chan, const char* name){
 		index = sb_count(channels) - 1;
 	}
 
-	for(int i = 0; i < sb_count(suspects[index]); ++i){
+	for(size_t i = 0; i < sb_count(suspects[index]); ++i){
 		if(strcmp(suspects[index][i].name, name) == 0){
 			return suspects[index] + i;
 		}
@@ -116,7 +116,7 @@ static Suspect* get_suspect(const char* chan, const char* name){
 static void automod_join(const char* chan, const char* name){
 
 	if(strcmp(name, ctx->get_username()) == 0){
-		for(int i = 0; i < sb_count(channels); ++i){
+		for(size_t i = 0; i < sb_count(channels); ++i){
 			if(strcmp(channels[i], chan)) return;
 		}
 

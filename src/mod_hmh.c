@@ -156,7 +156,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		}
 	}
 
-	const size_t lim = empty_sched ? 30 : 1800;
+	const long lim = empty_sched ? 30 : 1800;
 
 	if(now - last_schedule_update > lim && update_schedule()){
 		last_schedule_update = now;
@@ -186,9 +186,10 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		bool valid = false;
 		char timezone[64];
 
-		if (!strchr(arg, ':') &&
-			!strchr(arg, '.') &&
-			snprintf(timezone, sizeof(timezone), ":%s.", arg) < sizeof(timezone)){
+		int r;
+		if (!strchr(arg, ':') && !strchr(arg, '.') &&
+			(r = snprintf(timezone, sizeof(timezone), ":%s.", arg)) > 0 &&
+			r < isizeof(timezone)){
 
 			// hack for Etc/* zones having reversed symbols...
 			char* p;

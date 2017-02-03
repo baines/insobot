@@ -65,7 +65,7 @@ static void brainfuck_cmd(const char* chan, const char* name, const char* arg, i
 
 			case '.': {
 				BF_DBG("out [%d]\n", *p);
-				if(out_p - output < sizeof(output) - 1){
+				if(out_p - output < isizeof(output) - 1){
 					*out_p++ = *p;
 				}
 			} break;

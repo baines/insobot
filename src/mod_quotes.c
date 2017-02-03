@@ -85,7 +85,6 @@ static char* gen_escaped_csv(Quote* quotes){
 }
 
 static void load_csv(const char* content, Quote** qlist){
-
 	char* buffer = strdup(content);
 
 	char* line_state = NULL;
@@ -135,7 +134,6 @@ static void load_csv(const char* content, Quote** qlist){
 			}
 			*o++ = *i;
 		}
-		*o = 0;
 
 		q.text = strndup(text_buff, o - text_buff);
 
@@ -146,9 +144,9 @@ static void load_csv(const char* content, Quote** qlist){
 }
 
 static void quotes_free(void){
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		free(channels[i]);
-		for(int j = 0; j < sb_count(chan_quotes[i]); ++j){
+		for(size_t j = 0; j < sb_count(chan_quotes[i]); ++j){
 			free(chan_quotes[i][j].text);
 		}
 		sb_free(chan_quotes[i]);
@@ -168,7 +166,7 @@ static void quotes_upload(int modified_index){
 	inso_gist_file_add(&file, " Quote List", "Here are the quotes stored by insobot, in csv format, one file per channel. Times are UTC.");
 
 	if(modified_index == -1){ // full upload
-		for(int i = 0; i < sb_count(channels); ++i){
+		for(size_t i = 0; i < sb_count(channels); ++i){
 			if(sb_count(chan_quotes[i]) == 0){
 				inso_gist_file_add(&file, channels[i], NULL);
 			} else {
@@ -254,9 +252,9 @@ static void quotes_modified(void){
 	printf("RELOAD: %d\n", quotes_reload());
 }
 
-static Quote* quote_get(const char* chan, int id){
+static Quote* quote_get(const char* chan, unsigned int id){
 	int index = -1;
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		if(strcmp(chan, channels[i]) == 0){
 			index = i;
 			break;
@@ -296,7 +294,7 @@ static const char* quotes_get_chan(const char* default_chan, const char** arg, Q
 	}
 
 	bool found = false;
-	for(int i = 0; i < sb_count(channels); ++i){
+	for(size_t i = 0; i < sb_count(channels); ++i){
 		if(strcmp(channels[i], chan) == 0){
 			chan = channels[i];
 			if(qlist) *qlist = chan_quotes + i;

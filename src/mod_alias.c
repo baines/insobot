@@ -140,8 +140,8 @@ static bool alias_init(const IRCCoreCtx* _ctx){
 }
 
 static void alias_quit(void){
-	for(int i = 0; i < sb_count(alias_keys); ++i){
-		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+	for(size_t i = 0; i < sb_count(alias_keys); ++i){
+		for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
 			free(alias_keys[i][j]);
 		}
 		sb_free(alias_keys[i]);
@@ -169,8 +169,8 @@ static int alias_find(const char* chan, const char* key, int* idx, int* sub_idx)
 		char full_key[strlen(chan) + strlen(key) + 2];
 		snprintf(full_key, sizeof(full_key), "%s,%s", chan, key);
 
-		for(int i = 0; i < sb_count(alias_keys); ++i){
-			for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+		for(size_t i = 0; i < sb_count(alias_keys); ++i){
+			for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
 				if(strcasecmp(full_key, alias_keys[i][j]) == 0){
 					if(idx) *idx = i;
 					if(sub_idx) *sub_idx = j;
@@ -180,8 +180,8 @@ static int alias_find(const char* chan, const char* key, int* idx, int* sub_idx)
 		}
 	}
 	
-	for(int i = 0; i < sb_count(alias_keys); ++i){
-		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+	for(size_t i = 0; i < sb_count(alias_keys); ++i){
+		for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
 			if(strcasecmp(key, alias_keys[i][j]) == 0){
 				if(idx) *idx = i;
 				if(sub_idx) *sub_idx = j;
@@ -346,10 +346,10 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			const char** aliases_to_print = NULL;
 			const size_t total = sb_count(alias_keys);
 
-			for(int i = 0; i < total; ++i){
+			for(size_t i = 0; i < total; ++i){
 				const size_t subtotal = sb_count(alias_keys[i]);
 
-				for(int j = 0; j < subtotal; ++j){
+				for(size_t j = 0; j < subtotal; ++j){
 					const char* key = alias_keys[i][j];
 
 					// channel specific alias, only print if the channel matches
@@ -364,7 +364,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 
 					if(key){
 						bool already_printed = false;
-						for(int k = 0; k < sb_count(aliases_to_print); ++k){
+						for(size_t k = 0; k < sb_count(aliases_to_print); ++k){
 							if(strcmp(aliases_to_print[k], key) == 0){
 								already_printed = true;
 								break;
@@ -385,7 +385,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			if(sb_count(aliases_to_print) == 0){
 				strcpy(alias_buf, "<none>.");
 			} else {
-				for(int i = 0; i < sb_count(aliases_to_print); ++i){
+				for(size_t i = 0; i < sb_count(aliases_to_print); ++i){
 					const bool last = i == sb_count(aliases_to_print) - 1;
 					snprintf_chain(&ptr, &sz, "!%s%s", aliases_to_print[i], last ? "." : ", ");
 				}
@@ -520,8 +520,8 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 
 static bool alias_save(FILE* file){
 	fputs("VERSION 2\n", file);
-	for(int i = 0; i < sb_count(alias_keys); ++i){
-		for(int j = 0; j < sb_count(alias_keys[i]); ++j){
+	for(size_t i = 0; i < sb_count(alias_keys); ++i){
+		for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
 			fprintf(file, "%s ", alias_keys[i][j]);
 		}
 

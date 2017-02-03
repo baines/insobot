@@ -38,7 +38,7 @@ static void get_mod_cmds(IRCModuleCtx* mod, char* buf, size_t sz){
 	//XXX: only prints the first command alias, is that a good idea?
 	for(const char** cmd = mod->commands; *cmd; ++cmd){
 		const char* end = strchrnul(*cmd, ' ');
-		assert(end - *cmd < sizeof(cmd_buf));
+		assert(end - *cmd < isizeof(cmd_buf));
 		memcpy(cmd_buf, *cmd, end - *cmd);
 		cmd_buf[end - *cmd] = 0;
 

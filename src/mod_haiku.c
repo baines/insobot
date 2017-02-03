@@ -124,7 +124,7 @@ static void haiku_cmd (const char* chan, const char* name, const char* arg, int 
 
 	char* word = strtok_r(markov_sentence, " ", &state);
 
-	for(int i = 0; i < ARRAY_SIZE(syl_required); ++i){
+	for(size_t i = 0; i < ARRAY_SIZE(syl_required); ++i){
 		int syl = 0;
 		char buffer[256] = {};
 

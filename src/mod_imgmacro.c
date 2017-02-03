@@ -447,7 +447,7 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 				if(*c == ' ') word_count++;
 				*c = toupper(*c);
 			}
-			word_count = INSO_MIN(word_count, 12);
+			word_count = INSO_MIN(word_count, 12u);
 
 			size_t half_count = word_count / 2;
 			char *txt_top = markov_text, *txt_bot = NULL;

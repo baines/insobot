@@ -119,7 +119,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 				if(sscanf(p, " +%127s%n", token, &len) == 1){
 					bool got_opt = false;
 
-					for(int i = 0; i < ARRAY_SIZE(opts); ++i){
+					for(size_t i = 0; i < ARRAY_SIZE(opts); ++i){
 						if(strcmp(opts[i].name, token) == 0){
 							state = opts[i].state;
 							got_opt = true;

@@ -182,11 +182,11 @@ int inso_gist_load(inso_gist* gist, inso_gist_file** out){
 
 	sb_free(data);
 
+	inso_gist_file* file_list = NULL;
+
 	if(!root || !files){
 		goto json_error;
 	}
-
-	inso_gist_file* file_list = NULL;
 
 	for(size_t i = 0; i < files->u.object.len; ++i){
 		yajl_val file = files->u.object.values[i];

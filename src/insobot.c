@@ -385,13 +385,14 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		dlerror();
 		m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
 
-		struct link_map* mod_info = m->lib_handle;
-		printf("Loading module %-20s [0x%zx]\n", mod_name, (size_t)mod_info->l_addr);
+		printf("Loading module %-20s", mod_name);
 
-		const char* errmsg = "NULL lib handle";
-		if(m->lib_handle && !(errmsg = dlerror())){
+		const char* errmsg = dlerror();
+		if(!errmsg && m->lib_handle){
 			m->ctx = dlsym(m->lib_handle, "irc_mod_ctx");
 			errmsg = dlerror();
+		} else if(!errmsg && !m->lib_handle){
+			errmsg = "NULL lib handle.";
 		}
 
 		if(!errmsg){
@@ -413,7 +414,8 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		}
 
 		if(errmsg){
-			fprintf(stderr, "** Error loading module %s: %s\n", mod_name, errmsg);
+			puts("");
+			fprintf(stderr, "** Error loading module %s:\n  %s\n", mod_name, errmsg);
 			if(m->lib_handle){
 				dlclose(m->lib_handle);
 				m->lib_handle = NULL;
@@ -422,6 +424,9 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			sb_erase(irc_modules, m - irc_modules);
 			--m;
 			continue;
+		} else {
+			struct link_map* mod_info = m->lib_handle;
+			printf("[0x%zx]\n", (size_t)mod_info->l_addr);
 		}
 	}
 
@@ -442,11 +447,11 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			continue;
 		}
 
-		for(int i = 0; i < sb_count(channels) - 1; ++i){
+		for(size_t i = 0; i < sb_count(channels) - 1; ++i){
 			const char** c = (const char**)channels + i;
 
 			IRC_MOD_CALL(m, on_join, (*c, bot_nick));
-			for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+			for(size_t j = 0; j < sb_count(chan_nicks[i]); ++j){
 				IRC_MOD_CALL(m, on_join, (*c, chan_nicks[i][j]));
 			}
 		}
@@ -598,7 +603,7 @@ static void util_ipc_init(void){
 }
 
 static IPCAddress* util_ipc_add(const char* name){
-	for(int i = 0; i < sb_count(ipc_peers); ++i){
+	for(size_t i = 0; i < sb_count(ipc_peers); ++i){
 		if(strcmp(ipc_peers[i].addr.sun_path, name) == 0){
 			return ipc_peers + i;
 		}
@@ -620,7 +625,7 @@ static IPCAddress* util_ipc_add(const char* name){
 }
 
 static void util_ipc_del(const char* name){
-	for(int i = 0; i < sb_count(ipc_peers); ++i){
+	for(size_t i = 0; i < sb_count(ipc_peers); ++i){
 		if(strcmp(ipc_peers[i].addr.sun_path, name) == 0){
 			sb_erase(ipc_peers, i);
 			break;
@@ -657,12 +662,12 @@ static void util_find_chan_nick(const char* chan, const char* nick, int* chan_id
 	if(chan_idx) *chan_idx = -1;
 	if(nick_idx) *nick_idx = -1;
 
-	for(int i = 0; i < sb_count(channels) - 1; ++i){
+	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
 		if(strcasecmp(channels[i], chan) != 0) continue;
 
 		if(chan_idx) *chan_idx = i;
 
-		for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+		for(size_t j = 0; j < sb_count(chan_nicks[i]); ++j){
 			if(strcasecmp(chan_nicks[i][j], nick) == 0){
 				if(nick_idx) *nick_idx = j;
 				break;
@@ -812,7 +817,7 @@ IRC_STR_CALLBACK(on_part) {
 		free(channels[chan_i]);
 		sb_erase(channels, chan_i);
 
-		for(int i = 0; i < sb_count(chan_nicks[chan_i]); ++i){
+		for(size_t i = 0; i < sb_count(chan_nicks[chan_i]); ++i){
 			free(chan_nicks[chan_i][i]);
 		}
 		sb_free(chan_nicks[chan_i]);
@@ -833,8 +838,8 @@ IRC_STR_CALLBACK(on_quit) {
 
 	printf("QUIT: %s\n", origin);
 
-	for(int i = 0; i < sb_count(channels) - 1; ++i){
-		for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
+		for(size_t j = 0; j < sb_count(chan_nicks[i]); ++j){
 			if(strcmp(origin, chan_nicks[i][j]) == 0){
 				free(chan_nicks[i][j]);
 				sb_erase(chan_nicks[i], j);
@@ -857,8 +862,8 @@ IRC_STR_CALLBACK(on_nick) {
 		bot_nick = strdup(params[0]);
 	}
 
-	for(int i = 0; i < sb_count(channels) - 1; ++i){
-		for(int j = 0; j < sb_count(chan_nicks[i]); ++j){
+	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
+		for(size_t j = 0; j < sb_count(chan_nicks[i]); ++j){
 			if(strcasecmp(chan_nicks[i][j], origin) == 0){
 				free(chan_nicks[i][j]);
 				chan_nicks[i][j] = strdup(params[0]);
@@ -877,7 +882,7 @@ IRC_STR_CALLBACK(on_unknown) {
 		printf("Unknown event:\n:: %s :: %s", event, origin);
 	}
 
-	for(int i = 0; i < count; ++i){
+	for(size_t i = 0; i < count; ++i){
 		printf(" :: %s", params[i]);
 	}
 	puts("");
@@ -901,7 +906,7 @@ IRC_NUM_CALLBACK(on_numeric) {
 		free(names);
 	} else {
 		printf(":: [%03u] :: %s", event, origin);
-		for(int i = 0; i < count; ++i){
+		for(size_t i = 0; i < count; ++i){
 			printf(" :: %s", params[i]);
 		}
 		puts("");
@@ -985,7 +990,7 @@ static const char** core_get_nicks(const char* chan, int* count){
 	assert(count);
 
 	int index = -1;
-	for(int i = 0; i < sb_count(channels) - 1; ++i){
+	for(size_t i = 0; i < sb_count(channels) - 1; ++i){
 		if(strcasecmp(channels[i], chan) == 0){
 			index = i;
 			break;
@@ -1233,7 +1238,7 @@ int main(int argc, char** argv){
 
 	printf("Found %zu modules\n", glob_data.gl_pathc);
 
-	for(int i = 0; i < glob_data.gl_pathc; ++i){
+	for(size_t i = 0; i < glob_data.gl_pathc; ++i){
 		util_module_add(glob_data.gl_pathv[i]);
 	}
 

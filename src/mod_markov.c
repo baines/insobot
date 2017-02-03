@@ -108,7 +108,7 @@ static char** markov_nicks;
 
 static uint32_t markov_hash(const char* str, size_t len){
 	uint32_t hash = 6159;
-	for(int i = 0; i < len; ++i){
+	for(size_t i = 0; i < len; ++i){
 		hash = hash * 187 + str[i];
 	}
 	return hash;
@@ -121,7 +121,7 @@ static void markov_add_hash(const char* str, size_t len){
 
 static bool markov_check_dup(const char* str, size_t len){
 	uint32_t hash = markov_hash(str, len);
-	for(int i = 0; i < ARRAY_SIZE(recent_hashes); ++i){
+	for(size_t i = 0; i < ARRAY_SIZE(recent_hashes); ++i){
 		if(recent_hashes[i] == hash) return true;
 	}
 	return false;
@@ -178,7 +178,7 @@ static uint32_t markov_rand(uint32_t limit){
 
 	do {
 		random_r(&rng_state, &x);
-	} while (x >= (RAND_MAX - RAND_MAX % limit));
+	} while ((size_t)x >= (RAND_MAX - RAND_MAX % limit));
 
 	return x % limit;
 }
@@ -250,7 +250,7 @@ static void markov_add(word_idx_t indices[static 3]){
 		bool found = false;
 		ssize_t last_idx = -1;
 
-		for(uint32_t i = key->val_idx; i != -1; i = chain_vals[i].next){
+		for(uint32_t i = key->val_idx; i != UINT32_MAX; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
 				if(chain_vals[i].count < 255) ++chain_vals[i].count;
 				found = true;
@@ -328,7 +328,7 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		do {
 			if(val->word_idx == end_sym_idx) end_count = val->count;
 			total += val->count;
-		} while(val->next != -1 && (val = chain_vals + val->next));
+		} while(val->next != UINT32_MAX && (val = chain_vals + val->next));
 
 		assert(total);
 		ssize_t count = markov_rand(total);
@@ -455,7 +455,7 @@ static bool markov_load(){
 	uint32_t word_size = 0, val_size = 0, version = 0;
 	char fourcc[4];
 
-#define GZREAD(f, ptr, sz) if(gzread(f, ptr, sz) < sz) goto fail
+#define GZREAD(f, ptr, sz) if(gzread(f, ptr, sz) < (int)(sz)) goto fail
 
 	GZREAD(f, fourcc, 4);
 	if(memcmp(fourcc, "IBMK", 4) != 0){
@@ -510,7 +510,7 @@ static bool markov_save(FILE* file){
 
 	gzFile f = gzdopen(dup(fileno(file)), "wb");
 
-#define GZWRITE(f, ptr, sz) if(gzwrite(f, ptr, sz) < sz) goto fail
+#define GZWRITE(f, ptr, sz) if(gzwrite(f, ptr, sz) < (int)(sz)) goto fail
 
 	GZWRITE(f, "IBMK"  , 4);
 	GZWRITE(f, &version, 4);
@@ -594,7 +594,7 @@ static void markov_quit(void){
 	sbmm_free(word_mem);
 	sbmm_free(chain_vals);
 
-	for(int i = 0; i < sb_count(markov_nicks); ++i){
+	for(size_t i = 0; i < sb_count(markov_nicks); ++i){
 		free(markov_nicks[i]);
 	}
 	sb_free(markov_nicks);
@@ -657,7 +657,7 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 
 			ctx->send_msg(
 				chan,
-				"%s: markov status: [words: %zu/%.2fMB] [keys: %zu/%.2fMB] [vals: %d/%.2fMB]",
+				"%s: markov status: [words: %zu/%.2fMB] [keys: %zu/%.2fMB] [vals: %zu/%.2fMB]",
 				name,
 				word_ht.used / word_ht.elem_size,
 				(sbmm_count(word_mem) + word_ht.used) / (1024.f*1024.f),
@@ -820,7 +820,7 @@ static void markov_join(const char* chan, const char* name){
 
 	if(strcasecmp(name, ctx->get_username()) == 0) return;
 
-	for(int i = 0; i < sb_count(markov_nicks); ++i){
+	for(size_t i = 0; i < sb_count(markov_nicks); ++i){
 		if(strcasecmp(name, markov_nicks[i]) == 0){
 			return;
 		}

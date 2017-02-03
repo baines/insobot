@@ -57,7 +57,7 @@ static bool notes_init(const IRCCoreCtx* _ctx){
 }
 
 static void notes_quit(void){
-	for(int i = 0; i < ARRAY_SIZE(notes); ++i){
+	for(size_t i = 0; i < ARRAY_SIZE(notes); ++i){
 		free(notes[i].channel);
 		free(notes[i].author);
 		free(notes[i].content);
@@ -119,7 +119,7 @@ static void notes_mod_msg(const char* sender, const IRCModMsg* msg){
 			chan_end = strchrnul(chan_start, ' ');
 			const char* chan = strndupa(chan_start, chan_end - chan_start);
 
-			for(int i = 0; i < ARRAY_SIZE(notes); ++i){
+			for(size_t i = 0; i < ARRAY_SIZE(notes); ++i){
 				if(notes[i].type != NOTE_STREAM_START) continue;
 				if(strcmp(notes[i].channel, chan) != 0) continue;
 

@@ -35,7 +35,7 @@ static const char* paths[][2] = {
 	[P_REDIRECT] = { "Redirect"     , NULL },
 };
 
-static char* info_trim(const char* text, size_t maxlen){
+static char* info_trim(const char* text, int maxlen){
 	const char* p = text-1;
 	int len = 0;
 
@@ -114,7 +114,7 @@ static void info_cmd(const char* chan, const char* nick, const char* arg, int cm
 
 		case 'D': {
 			char choices[512] = {};
-			const int limit = INSO_MIN(5, related->u.array.len);
+			const int limit = INSO_MIN(5u, related->u.array.len);
 
 			for(int i = 0; i < limit; ++i){
 				yajl_val link = yajl_tree_get(related->u.array.values[i], paths[P_FIRSTURL], yajl_t_string);

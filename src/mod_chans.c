@@ -104,7 +104,7 @@ static void chans_cmd(const char* chan, const char* name, const char* arg, int c
 static void chans_join(const char* chan, const char* name){
 	if(strcmp(name, ctx->get_username()) != 0) return;
 
-	for(int i = 0; i < sb_count(join_list); ++i){
+	for(size_t i = 0; i < sb_count(join_list); ++i){
 		if(strcmp(join_list[i], chan) == 0){
 			free(join_list[i]);
 			sb_erase(join_list, i);
@@ -132,7 +132,7 @@ static bool chans_save(FILE* file){
 }
 
 static bool chans_find(const char* chan){
-	for(int i = 0; i < sb_count(join_list); ++i){
+	for(size_t i = 0; i < sb_count(join_list); ++i){
 		if(strcasecmp(chan, join_list[i]) == 0){
 			return true;
 		}

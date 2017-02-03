@@ -360,8 +360,8 @@ static bool karma_init(const IRCCoreCtx* _ctx){
 }
 
 static void karma_quit(void){
-	for(int i = 0; i < sb_count(klist); ++i){
-		for(int j = 0; j < sb_count(klist[i].names); ++j){
+	for(size_t i = 0; i < sb_count(klist); ++i){
+		for(size_t j = 0; j < sb_count(klist[i].names); ++j){
 			free(klist[i].names[j]);
 		}
 		sb_free(klist[i].names);

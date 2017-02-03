@@ -36,9 +36,9 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-static const size_t uptime_check_interval = 120;
-static const size_t follower_check_interval = 60;
-static const size_t tracker_update_interval = 60;
+static const long uptime_check_interval = 120;
+static const long follower_check_interval = 60;
+static const long tracker_update_interval = 60;
 
 static time_t last_uptime_check;
 static time_t last_follower_check;
@@ -242,7 +242,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 		const char* title_path[]   = { "channel", "status", NULL };
 		const char* created_path[] = { "created_at", NULL };
 
-		for(int i = 0; i < streams->u.array.len; ++i){
+		for(size_t i = 0; i < streams->u.array.len; ++i){
 			yajl_val obj = streams->u.array.values[i];
 
 			yajl_val name  = yajl_tree_get(obj, name_path, yajl_t_string);
@@ -286,7 +286,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 	return;
 
 unchanged:
-	for(int i = 0; i < count; ++i){
+	for(size_t i = 0; i < count; ++i){
 		twitch_vals[indices[i]].live_state_changed = 0;
 	}
 }
@@ -432,7 +432,7 @@ static void twitch_tracker_update(void){
 	size_t* track_indices = NULL;
 	size_t index_count = 0;
 
-	for(int i = 0; i < sb_count(twitch_keys); ++i){
+	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 		if(twitch_vals[i].is_tracked){
 			sb_push(track_indices, i);
 			index_count++;
@@ -442,7 +442,7 @@ static void twitch_tracker_update(void){
 	twitch_check_uptime(index_count, track_indices);
 	sb_free(track_indices);
 
-	for(int i = 0; i < sb_count(twitch_keys); ++i){
+	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 		if(!twitch_vals[i].is_tracked) continue;
 
 		const char* chan = twitch_keys[i];
@@ -581,11 +581,11 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
 				if(!t->is_tracked || !t->stream_start) continue;
 
-				size_t chan_len = strlen(twitch_keys[t - twitch_vals]) - 1;
+				int chan_len = strlen(twitch_keys[t - twitch_vals]) - 1;
 				max_chan_len = INSO_MAX(max_chan_len, chan_len);
 
 				if(t->tracked_name){
-					max_display_len = INSO_MAX(max_display_len, strlen(t->tracked_name));
+					max_display_len = INSO_MAX(max_display_len, (int)strlen(t->tracked_name));
 				} else {
 					max_display_len = INSO_MAX(max_display_len, chan_len);
 				}
@@ -723,7 +723,9 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 		} break;
 
-		case TWITCH_VOD1:
+		case TWITCH_VOD1: {
+			if(strcmp(CONTROL_CHAR, CONTROL_CHAR_2) == 0) break;
+		} // fall-through
 		case TWITCH_VOD2: {
 			TwitchInfo* t;
 
@@ -919,7 +921,7 @@ static void twitch_quit(void){
 
 static TwitchUser* twitch_get_user(const char* name){
 
-	for(int i = 0; i < sb_count(twitch_users); ++i){
+	for(size_t i = 0; i < sb_count(twitch_users); ++i){
 		if(strcasecmp(name, twitch_users[i].name) == 0){
 			return twitch_users + i;
 		}
