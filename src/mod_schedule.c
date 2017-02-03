@@ -60,6 +60,7 @@ static SchedOffset* sched_offsets;
 static time_t       offset_expiry;
 
 enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
+static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
 
 static int get_dow(struct tm* tm){
 	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
@@ -309,7 +310,7 @@ static void sched_upload(void){
 	sched_offsets_update();
 }
 
-static bool sched_parse_chan(const char* in, const char* fallback, char* out, int out_len){
+static bool sched_parse_user(const char* in, const char* fallback, char* out, int out_len){
 	bool found = false;
 
 	if(*in == '#'){
@@ -334,7 +335,6 @@ static bool sched_parse_id(const char* in, int* id_out, int* day_out){
 	int ret = sscanf(in, "%d%3s", &id, day);
 
 	if(ret == 2){
-		static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
 		for(int i = 0; i < ARRAY_SIZE(days); ++i){
 			if(strcasecmp(day, days[i]) == 0){
 				day_id = i;
@@ -388,7 +388,6 @@ static bool sched_parse_days(const char* _in, struct tm* date, unsigned* day_mas
 
 	// try comma separated days list
 	if(!found){
-		static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
 
 		char* day_state;
 		char* day = strtok_r(in, ",", &day_state);
@@ -515,7 +514,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	// parse channel
 	char sched_user[128];
-	if(sched_parse_chan(arg, name, sched_user, sizeof(sched_user))){
+	if(sched_parse_user(arg, name, sched_user, sizeof(sched_user))){
 		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
 			goto fail;
 		}
@@ -598,7 +597,7 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 
 	// parse channel
 	char sched_user[128];
-	if(sched_parse_chan(arg, name, sched_user, sizeof(sched_user))){
+	if(sched_parse_user(arg, name, sched_user, sizeof(sched_user))){
 		if(!(arg = strtok_r(NULL, " \t", &arg_state))){
 			ctx->send_msg(chan, "%s: Couldn't parse ID.", name);
 			return;
@@ -633,7 +632,7 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 		entry += id;
 	}
 
-	// FIXME
+	// TODO
 	if(day_id != -1){
 		ctx->send_msg(chan, "%s: Sorry, sub-ids NYI :(", name);
 		return;
@@ -720,23 +719,18 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 	);
 }
 
-static void sched_del(const char* chan, const char* name, const char* arg){
-	if(!*arg++){
+static void sched_del(const char* chan, const char* name, const char* _arg){
+	char* state;
+	char* arg = strtok_r(strdupa(_arg), " ", &state);
+
+	if(!arg){
 		ctx->send_msg(chan, "%s: usage: " CONTROL_CHAR "sched- [#chan] <schedule_id>", name);
 		return;
 	}
 
-	// TODO: use parse functions here, handle deleting single days like '0fri'
-
 	char sched_user[64];
-	if(sscanf(arg, "#%63s ", sched_user) == 1){
-		arg += strlen(sched_user) + 2;
-	} else {
-		*stpncpy(sched_user, name, sizeof(sched_user)-1) = '\0';
-	}
-
-	for(char* c = sched_user; *c; ++c){
-		*c = tolower(*c);
+	if(sched_parse_user(arg, name, sched_user, sizeof(sched_user))){
+		arg = strtok_r(NULL, " ", &state);
 	}
 
 	int index = sched_get(sched_user);
@@ -745,7 +739,18 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 		return;
 	}
 
-	int id = strtol(arg, NULL, 0);
+	int id, day_id;
+	if(!sched_parse_id(arg, &id, &day_id)){
+		ctx->send_msg(chan, "%s: I need an ID to remove", name);
+		return;
+	}
+
+	// TODO
+	if(day_id != -1){
+		ctx->send_msg(chan, "%s: Removing individual days NYI :(", name);
+		return;
+	}
+
 	if(id < 0 || id >= sb_count(sched_vals[index])){
 		ctx->send_msg(chan, "%s: %s has %d schedules. I can't delete number %d.", name, sched_user, sb_count(sched_vals[index]), id);
 		return;
@@ -773,14 +778,10 @@ static void sched_del(const char* chan, const char* name, const char* arg){
 }
 
 static void sched_show(const char* chan, const char* name, const char* arg){
-	const char* sched_user = name;
+	if(*arg) ++arg;
 
-	// TODO: fix lowercase issue
-	if(arg[0] == ' ' && arg[1] == '#'){
-		sched_user = arg + 2;
-	} else if(arg[0]){
-		sched_user = arg + 1;
-	}
+	char sched_user[64];
+	sched_parse_user(arg, name, sched_user, sizeof(sched_user));
 
 	int index = sched_get(sched_user);
 	if(index == -1){
@@ -794,9 +795,40 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 			sb_push(sched_buf, ' ');
 		}
 
-		// TODO: show the date & repeat days here.
+		SchedEntry* s = sched_vals[index] + i;
+		struct tm date;
+		gmtime_r(&s->start, &date);
+
+		char date_str[64];
+		switch(s->repeat){
+			case 0x7f: strcpy(date_str, "Daily"); break;
+			case 0x1f: strcpy(date_str, "Weekdays"); break;
+			case 0x60: strcpy(date_str, "Weekends"); break;
+			case 0x00: {
+				strftime(date_str, sizeof(date_str), "%Y", &date);
+			} break;
+
+			default: {
+				*date_str = 0;
+				char* p = date_str;
+
+				for(int i = 0; i < 7; ++i){
+					if(s->repeat & (1 << i)){
+						if(*date_str) *p++ = ',';
+						p = stpcpy(p, days[i]);
+					}
+				}
+			} break;
+		}
+
 		char tmp[256];
-		int len = snprintf(tmp, sizeof(tmp), "[%d: %s]", i, sched_vals[index][i].title);
+
+		int len = snprintf(
+			tmp, sizeof(tmp),
+			"[%d: %s • %s • %02d:%02d UTC]",
+			i, s->title, date_str, date.tm_hour, date.tm_min
+		);
+
 		if(len >= sizeof(tmp)){
 			len = sizeof(tmp) - 1;
 		}
