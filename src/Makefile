@@ -8,12 +8,12 @@ module_o = $(patsubst %.c,../modules/%.so,$(module_c))
 common_h := $(wildcard inso_*.h)
 common_o := $(patsubst %.h,../lib/%.o,$(common_h))
 
-lz     != pkg-config --libs zlib  2>/dev/null
-lyajl  != pkg-config --libs yajl  2>/dev/null
-lcairo != pkg-config --libs cairo 2>/dev/null
+lz     := $(shell pkg-config --libs zlib  2>/dev/null)
+lyajl  := $(shell pkg-config --libs yajl  2>/dev/null)
+lcairo := $(shell pkg-config --libs cairo 2>/dev/null)
 
 ifndef lyajl
-    $(error libyajl2 is required)
+    $(error libyajl2 is required for JSON parsing & generation. Please install it)
 endif
 
 ifndef lz

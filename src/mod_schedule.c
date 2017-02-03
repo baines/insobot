@@ -805,7 +805,7 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 			case 0x1f: strcpy(date_str, "Weekdays"); break;
 			case 0x60: strcpy(date_str, "Weekends"); break;
 			case 0x00: {
-				strftime(date_str, sizeof(date_str), "%Y", &date);
+				strftime(date_str, sizeof(date_str), "%F", &date);
 			} break;
 
 			default: {

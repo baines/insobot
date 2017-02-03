@@ -532,8 +532,8 @@ static void util_ipc_init(void){
 	const char* ipc_dir_prefix   = getenv("XDG_RUNTIME_DIR");
 	const char  ipc_dir_suffix[] = "/insobot/";
 
-	if(!ipc_dir_prefix || stat(ipc_dir_prefix, &st) == -1 || !S_ISDIR(st.st_mode)){
-		ipc_dir_prefix = "/tmp";
+	if(!ipc_dir_prefix || stat(ipc_dir_prefix, &st) == -1 || !S_ISDIR(st.st_mode) || access(ipc_dir_prefix, W_OK) == -1){
+		ipc_dir_prefix = "/run/shm";
 	}
 
 	if(strlen(ipc_dir_prefix) + sizeof(ipc_dir_suffix) + 8 > sizeof(ipc_self.addr.sun_path)){

@@ -409,12 +409,12 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				quotes_notify(quote_chan, name, &q);
 			}
 
+			quotes_upload(quotes - chan_quotes);
+
 			// notify other instances so they can also send messages to the affected channel
 			char ipc_buf[256];
 			int ipc_len = snprintf(ipc_buf, sizeof(ipc_buf), "ADD %d %s %s", id, quote_chan, name);
 			ctx->send_ipc(0, ipc_buf, ipc_len + 1);
-
-			quotes_upload(quotes - chan_quotes);
 		} break;
 
 		case DEL_QUOTE: {
