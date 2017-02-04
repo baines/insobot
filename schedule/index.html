@@ -227,7 +227,7 @@ function show_info(e){
 
 		var name = document.createElement("div");
 		name.id = "info-name";
-		name.innerText = u.name;
+		name.textContent = u.name;
 		name.style = "color: " + name_color(user) + ";";
 
 		name_a.appendChild(name);
@@ -236,7 +236,7 @@ function show_info(e){
 		if(u.bio && u.bio != "null"){
 			var bio = document.createElement("div");
 			bio.id = "info-bio";
-			bio.innerText = u.bio;
+			bio.textContent = u.bio;
 			info.appendChild(bio);
 		}
 
@@ -249,13 +249,13 @@ function show_info(e){
 				var row  = sched.insertRow();
 
 				cell = row.insertCell();
-				cell.innerText = get_sched_days_string(i);
+				cell.textContent = get_sched_days_string(i);
 
 				cell = row.insertCell();
-				cell.innerText = get_sched_time_string(i);
+				cell.textContent = get_sched_time_string(i);
 
 				cell = row.insertCell();
-				cell.innerText = i.title;
+				cell.textContent = i.title;
 			}
 		});
 
@@ -366,9 +366,9 @@ function update_next(){
 
 	if(live.length > 0){
 		var txt = document.createElement("div");
-		txt.innerText = "Now: ";
+		txt.textContent = "Now: ";
 		live.forEach(function(l){
-			txt.innerText += "[" + l.user + " — " + l.title + "] "
+			txt.textContent += "[" + l.user + " — " + l.title + "] "
 		});
 		div.appendChild(txt);
 		div.appendChild(document.createElement("hr"));
@@ -381,7 +381,7 @@ function update_next(){
 		var m = (Math.floor(diff / 60) % 60).toString();
 		var s = (diff % 60).toString();
 
-		txt.innerText = "Up Next: [" + next.user + " — " + next.title + "] in ["
+		txt.textContent = "Up Next: [" + next.user + " — " + next.title + "] in ["
 			+ h + ":" + left_pad(m, 2, '0') + ":" + left_pad(s, 2, '0') + "]";
 		div.appendChild(txt);
 	}
@@ -551,7 +551,7 @@ function calc_schedule(table, e){
 			} else {
 				cell.setAttribute("style", "background-color: " + name_color(e.user) + ";");
 				cell.setAttribute("user", e.user);
-				cell.innerText = e.user;
+				cell.textContent = e.user;
 				cell.addEventListener("mouseover", show_info);
 				cell.addEventListener("click", show_info);
 
@@ -563,7 +563,7 @@ function calc_schedule(table, e){
 }
 
 (function(){
-	document.getElementById("info").innerText = "Mouse over items for more info.";
+	document.getElementById("info").textContent = "Mouse over items for more info.";
 	document.getElementById("schedule").removeAttribute("style");
 	document.getElementById("next").removeAttribute("style");
 
@@ -627,7 +627,7 @@ function calc_schedule(table, e){
 	});
 	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
 	x.send();
-	document.getElementById("refresh").innerText = "Last refresh: " + new Date().toLocaleString();
+	document.getElementById("refresh").textContent = "Last refresh: " + new Date().toLocaleString();
 })();
 </script>
 </body>
