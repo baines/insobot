@@ -16,7 +16,7 @@ static void psa_tick (time_t);
 static bool psa_save (FILE*);
 static void psa_quit (void);
 
-enum { PSA_ADD, PSA_DEL };
+enum { PSA_ADD, PSA_DEL, PSA_LIST };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "psa",
@@ -28,8 +28,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save  = &psa_save,
 	.on_quit  = &psa_quit,
 	.commands = DEFINE_CMDS (
-		[PSA_ADD] = CMD("psa+"),
-		[PSA_DEL] = CMD("psa-")
+		[PSA_ADD]  = CMD("psa+"),
+		[PSA_DEL]  = CMD("psa-"),
+		[PSA_LIST] = CMD("psa")
 	)
 };
 
@@ -243,6 +244,28 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 			} else {
 				ctx->send_msg(chan, "%s: Usage: !psa- <psa_name>", name);
 			}
+		} break;
+
+		case PSA_LIST: {
+			char psa_buf[512] = "(none)";
+			char* psa_ptr = psa_buf;
+			size_t psa_sz = sizeof(psa_buf);
+
+			for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+				if(strcmp(p->channel, chan) != 0) continue;
+
+				char tbuf[128];
+				if(p->trigger){
+					snprintf(tbuf, sizeof(tbuf), "trigger='%s'", p->trigger);
+				} else {
+					*tbuf = '\0';
+				}
+
+				snprintf_chain(&psa_ptr, &psa_sz, "[%s: %dm %s%s] ", p->id, p->freq_mins, tbuf, p->when_live ? " (when live)" : "");
+			}
+
+			ctx->send_msg(chan, "Current PSAs: %s", psa_buf);
+
 		} break;
 	};
 }

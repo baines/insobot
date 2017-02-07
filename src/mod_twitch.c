@@ -155,9 +155,8 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static long twitch_curl(char**, long, const char*, ...) __attribute__((format(printf, 3, 4)));
-
-static long twitch_curl(char** data, long last_time, const char* fmt, ...){
+static long __attribute__((format(printf, 3, 4)))
+twitch_curl(char** data, long last_time, const char* fmt, ...){
 	va_list v;
 	va_start(v, fmt);
 
@@ -629,6 +628,24 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 	}
 }
 
+static void twitch_get_title(const char* chan, const char* name){
+	char* data = NULL;
+	static const char* status_path[] = { "status", NULL };
+
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/channels/%s", chan+1) == 200){
+		yajl_val root   = yajl_tree_parse(data, NULL, 0);
+		yajl_val status = yajl_tree_get(root, status_path, yajl_t_string);
+
+		if(status){
+			ctx->send_msg(chan, "%s: Current title for %s: [%s].", inso_dispname(ctx, name), chan, status->u.string);
+		}
+
+		yajl_tree_free(root);
+	}
+
+	sb_free(data);
+}
+
 static void twitch_set_title(const char* chan, const char* name, const char* msg){
 
 	char* title = curl_easy_escape(curl, msg, 0);
@@ -657,16 +674,16 @@ static void twitch_set_title(const char* chan, const char* name, const char* msg
 
 	const char* dispname = twitch_display_name(name);
 
-//	fprintf(stderr, "response: [%s]\n", response);
-	sb_free(response);
-
 	if(http_code == 200){
 		ctx->send_msg(chan, "%s: Title updated successfully.", dispname);
 	} else if(http_code == 403){
 		ctx->send_msg(chan, "%s: I don't have permission to update the title.", dispname);
 	} else {
 		ctx->send_msg(chan, "%s: Error updating title for channel \"%s\".", dispname, chan+1);
+		fprintf(stderr, "response: [%s]\n", response);
 	}
+
+	sb_free(response);
 }
 
 static void twitch_cmd(const char* chan, const char* name, const char* arg, int cmd){
@@ -700,9 +717,19 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case UPTIME: {
+			char chan_buf[64];
+			char* c = chan_buf;
+
+			if(is_wlist && *arg++){
+				if(*arg != '#') *c++ = '#';
+				*stpncpy(c, arg, sizeof(chan_buf)-2) = 0;
+			} else {
+				*stpncpy(c, chan, sizeof(chan_buf)-1) = 0;
+			}
+
 			time_t now = time(0);
 
-			TwitchInfo* t = twitch_get_or_add(chan);
+			TwitchInfo* t = twitch_get_or_add(c);
 
 			if(twitch_check_live(t - twitch_vals)){
 				int minutes = (now - t->stream_start) / 60;
@@ -751,8 +778,12 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case TWITCH_TITLE: {
-			if(is_admin && *arg++ == ' '){
+			bool have_arg = *arg++ == ' ';
+
+			if(is_admin && have_arg){
 				twitch_set_title(chan, name, arg);
+			} else if(is_wlist && !have_arg){
+				twitch_get_title(chan, name);
 			}
 		} break;
 	}
