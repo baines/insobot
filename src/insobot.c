@@ -742,8 +742,16 @@ IRC_STR_CALLBACK(on_chat_msg) {
 	util_update_tags(params);
 
 	const char *_chan = params[0], *_name = origin;
-	char* _msg = strdupa(params[1]);
-	util_trim_end_spaces(_msg, strlen(_msg));
+
+	size_t msglen = strlen(params[1]);
+	char*  msgbuf = alloca(msglen+2);
+	char*  _msg   = msgbuf + 1;
+
+	// null-prefix the msg, so that cmds can walk backwards to see the full msg
+	*msgbuf = 0;
+	memcpy(_msg, params[1], msglen+1);
+
+	util_trim_end_spaces(_msg, msglen);
 
 	send_msg_called = false;
 

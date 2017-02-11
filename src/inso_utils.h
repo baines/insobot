@@ -40,8 +40,9 @@
 
 #define isizeof(x) ((int)(sizeof(x)))
 
-void   inso_curl_reset (void* curl, const char* url, char** data);
-void*  inso_curl_init  (const char* url, char** data);
+void   inso_curl_reset   (void* curl, const char* url, char** data);
+void*  inso_curl_init    (const char* url, char** data);
+long   inso_curl_perform (void* curl, char** data);
 
 // returns num bytes copied, or -(num reuired) and doesn't copy anything if not enough space.
 static inline int inso_strcat(char* buf, size_t sz, const char* str){
@@ -158,6 +159,20 @@ CURL* inso_curl_init(const char* url, char** data){
 	CURL* curl = curl_easy_init();
 	inso_curl_reset(curl, url, data);
 	return curl;
+}
+
+long inso_curl_perform(CURL* curl, char** data){
+	CURLcode curl_ret = curl_easy_perform(curl);
+	sb_push(*data, 0);
+
+	long http_ret = 0;
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_ret);
+
+	if(curl_ret != 0){
+		return -curl_ret;
+	} else {
+		return http_ret;
+	}
 }
 
 

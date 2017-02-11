@@ -1,5 +1,6 @@
 #ifndef INSO_GIST_H
 #define INSO_GIST_H
+#include <stdbool.h>
 
 typedef struct inso_gist inso_gist;
 
@@ -16,7 +17,9 @@ enum {
 	INSO_GIST_304 = 304,
 };
 
-inso_gist* inso_gist_open   (const char* id, const char* user, const char* token);
+inso_gist* inso_gist_open   (const char* id  , const char* user, const char* token);
+inso_gist* inso_gist_find   (const char* desc, const char* user, const char* token);
+inso_gist* inso_gist_new    (const char* desc, const char* user, const char* token, const inso_gist_file* in, bool pub);
 int        inso_gist_load   (inso_gist*, inso_gist_file** out);
 int        inso_gist_save   (inso_gist*, const char* desc, const inso_gist_file* in);
 void       inso_gist_lock   (inso_gist*);
@@ -42,6 +45,9 @@ void inso_gist_file_free (inso_gist_file*);
 #include "stb_sb.h"
 #include "inso_utils.h"
 
+void inso_gistpriv_seminit (inso_gist*);
+int  inso_gistpriv_post    (inso_gist*, yajl_gen, const char*, const inso_gist_file*);
+
 struct inso_gist {
 	CURL* curl;
 	char* auth;
@@ -62,14 +68,9 @@ struct inso_gist {
 	int semaphore;
 };
 
-inso_gist* inso_gist_open(const char* id, const char* user, const char* token){
-	inso_gist* gist = calloc(1, sizeof(*gist));
-	assert(gist);
-
-	asprintf_check(&gist->auth   , "%s:%s", user, token);
-	asprintf_check(&gist->api_url, "https://api.github.com/gists/%s", id);
-
-	gist->curl = curl_easy_init();
+void inso_gistpriv_seminit(inso_gist* gist){
+	assert(strlen(gist->api_url) > (29+8));
+	const char* id = gist->api_url + 29;
 
 	char keybuf[9] = {};
 	memcpy(keybuf, id, 8);
@@ -92,8 +93,113 @@ inso_gist* inso_gist_open(const char* id, const char* user, const char* token){
 			perror("semctl");
 		}
 	}
+}
+
+inso_gist* inso_gist_open(const char* id, const char* user, const char* token){
+	inso_gist* gist = calloc(1, sizeof(*gist));
+	assert(gist);
+
+	asprintf_check(&gist->auth   , "%s:%s", user, token);
+	asprintf_check(&gist->api_url, "https://api.github.com/gists/%s", id);
+
+	gist->curl = curl_easy_init();
+
+	inso_gistpriv_seminit(gist);
 
 	return gist;
+}
+
+inso_gist* inso_gist_find(const char* find_desc, const char* user, const char* token){
+	inso_gist* gist = calloc(1, sizeof(*gist));
+	assert(gist);
+
+	asprintf_check(&gist->auth, "%s:%s", user, token);
+
+	char* data = NULL;
+	gist->curl = inso_curl_init("https://api.github.com/gists", &data);
+	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
+
+	long ret = inso_curl_perform(gist->curl, &data);
+	if(ret < 0){
+		printf("inso_gist_find: curl returned [%s]\n", curl_easy_strerror(-ret));
+		goto out;
+	} else if(ret != 200){
+		printf("inso_gist_find: unexpected http code [%ld]\n", ret);
+		goto out;
+	}
+
+	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	if(!root || !YAJL_IS_ARRAY(root)){
+		printf("inso_gist_find: json error.");
+		goto out;
+	}
+
+	static const char* url_path[]  = { "url", NULL };
+	static const char* desc_path[] = { "description", NULL };
+
+	for(size_t i = 0; i < root->u.array.len; ++i){
+		yajl_val obj  = root->u.array.values[i];
+		yajl_val url  = yajl_tree_get(obj, url_path , yajl_t_string);
+		yajl_val desc = yajl_tree_get(obj, desc_path, yajl_t_string);
+		if(!url || !desc) continue;
+
+		if(strcmp(desc->u.string, find_desc) == 0){
+			gist->api_url = strdup(url->u.string);
+			break;
+		}
+	}
+
+out:
+	sb_free(data);
+	yajl_tree_free(root);
+
+	if(gist->api_url){
+		inso_gistpriv_seminit(gist);
+		return gist;
+	} else {
+		inso_gist_close(gist);
+		return NULL;
+	}
+}
+
+inso_gist* inso_gist_new(const char* desc, const char* user, const char* token, const inso_gist_file* in, bool pub){
+	inso_gist* gist = calloc(1, sizeof(*gist));
+	assert(gist);
+
+	asprintf_check(&gist->auth, "%s:%s", user, token);
+
+	char* data = NULL;
+	gist->curl = inso_curl_init("https://api.github.com/gists", &data);
+
+	yajl_gen json = yajl_gen_alloc(NULL);
+	yajl_gen_map_open(json);
+
+	yajl_gen_string(json, "public", 6);
+	yajl_gen_bool(json, pub);
+
+	static const char* url_path[]  = { "url", NULL };
+
+	if(inso_gistpriv_post(gist, json, desc, in) == INSO_GIST_OK){
+		sb_push(data, 0);
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		yajl_val url  = yajl_tree_get(root, url_path , yajl_t_string);
+
+		if(url){
+			gist->api_url = strdup(url->u.string);
+		}
+
+		yajl_tree_free(root);
+	}
+
+	sb_free(data);
+
+	if(gist->api_url){
+		inso_gistpriv_seminit(gist);
+		return gist;
+	} else {
+		inso_gist_close(gist);
+		return NULL;
+	}
 }
 
 #if GITHUB_FIXED_THEIR_API
@@ -137,7 +243,6 @@ int inso_gist_load(inso_gist* gist, inso_gist_file** out){
 	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
 	curl_easy_setopt(gist->curl, CURLOPT_HEADERFUNCTION, &inso_gist_header_cb);
 	curl_easy_setopt(gist->curl, CURLOPT_HEADERDATA, gist);
-	curl_easy_setopt(gist->curl, CURLOPT_TCP_KEEPALIVE, 1);
 
 	struct curl_slist* headers = NULL;
 
@@ -218,15 +323,27 @@ json_error:
 }
 
 int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
-	assert(gist);
-
 	yajl_gen json = yajl_gen_alloc(NULL);
+	yajl_gen_map_open(json);
+
+	inso_curl_reset(gist->curl, gist->api_url, NULL);
+	curl_easy_setopt(gist->curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+	curl_easy_setopt(gist->curl, CURLOPT_WRITEFUNCTION, &inso_gist_noop_cb);
+
+	return inso_gistpriv_post(gist, json, desc, in);
+}
+
+int inso_gistpriv_post(inso_gist* gist, yajl_gen json, const char* desc, const inso_gist_file* in){
+	assert(gist);
+	assert(json);
 
 	static const char desc_key[]    = "description";
 	static const char files_key[]   = "files";
 	static const char content_key[] = "content";
 
-	yajl_gen_map_open(json);
+	// XXX: caller is expected to open the map to start with.
+	//      even though this func will close it and free the json
+
 	yajl_gen_string(json, desc_key , sizeof(desc_key)  - 1);
 	yajl_gen_string(json, desc     , strlen(desc));
 	yajl_gen_string(json, files_key, sizeof(files_key) - 1);
@@ -255,11 +372,7 @@ int inso_gist_save(inso_gist* gist, const char* desc, const inso_gist_file* in){
 	slist = curl_slist_append(slist, "Content-Type: application/json");
 	slist = curl_slist_append(slist, "Expect:");
 
-	inso_curl_reset(gist->curl, gist->api_url, NULL);
-	curl_easy_setopt(gist->curl, CURLOPT_TCP_KEEPALIVE, 1);
-	curl_easy_setopt(gist->curl, CURLOPT_WRITEFUNCTION, &inso_gist_noop_cb);
 	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
-	curl_easy_setopt(gist->curl, CURLOPT_CUSTOMREQUEST, "PATCH");
 	curl_easy_setopt(gist->curl, CURLOPT_POST, 1);
 	curl_easy_setopt(gist->curl, CURLOPT_POSTFIELDS, payload);
 	curl_easy_setopt(gist->curl, CURLOPT_POSTFIELDSIZE, len);

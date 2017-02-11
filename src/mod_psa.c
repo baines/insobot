@@ -238,6 +238,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 				if(found){
 					ctx->send_msg(chan, "%s: Deleted psa '%s'", name, arg);
+					ctx->save_me();
 				} else {
 					ctx->send_msg(chan, "%s: Can't find a PSA with id '%s' for this channel.", name, arg);
 				}
