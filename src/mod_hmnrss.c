@@ -45,7 +45,6 @@ static bool hmnrss_init(const IRCCoreCtx* _ctx){
 	curl = inso_curl_init("https://handmade.network/atom", &data);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &etag_cb);
 	last_check = latest_post = time(0);
-
 	return true;
 }
 
@@ -69,12 +68,15 @@ static void hmnrss_tick(time_t now){
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	}
 
-	time_t new_latest_post = 0;
+	time_t new_latest_post = latest_post;
 
-	if(inso_curl_perform(curl, &data) == 200){
+	long ret = inso_curl_perform(curl, &data);
 
+	if(ret == 200){
 		intptr_t tokens[0x2000];
 		if(ixt_tokenize(data, tokens, 0x2000) != IXTR_OK) return;
+
+		char *message = NULL, *url = NULL;
 
 		for(intptr_t* t = tokens; *t; ++t){
 
@@ -89,10 +91,27 @@ static void hmnrss_tick(time_t now){
 				if(c && *c == '.'){
 					if(pub <= latest_post){
 						break;
-					} else if(pub > new_latest_post){
-						new_latest_post = pub;
+					} else if(pub > latest_post){
+						if(message && url){
+							// FIXME: don't hard-code channel
+							ctx->send_msg("#random", "New HMN %s | %s", message, url);
+							message = url = NULL;
+						}
+
+						if(pub > new_latest_post){
+							new_latest_post = pub;
+						}
 					}
 				}
+			}
+
+			if (message &&
+				t[0] == IXT_ATTR_KEY &&
+				strcmp((char*)t[1], "href") == 0 &&
+				t[2] == IXT_ATTR_VAL &&	t[3]
+			){
+				url = (char*)t[3];
+				*strchrnul(url, '-') = 0;
 			}
 
 			if (t[0] == IXT_TAG_OPEN &&
@@ -100,10 +119,11 @@ static void hmnrss_tick(time_t now){
 				t[2] == IXT_CONTENT &&
 				strncmp((char*)t[3], "Blog Post:", 10) == 0
 			){
-				// FIXME: don't hard-code channel
-				ctx->send_msg("#random", "New HMN %s", (char*)t[3]);
+				message = (char*)t[3];
 			}
 		}
+	} else {
+		printf("mod_hmnrss: http %ld\n", ret);
 	}
 
 	latest_post = new_latest_post;
