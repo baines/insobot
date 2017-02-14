@@ -53,12 +53,15 @@ void ixt_unescape(char* msg, size_t len){
 
 	#define RTAG(x, y) { .from = (x), .to = (y), .from_len = sizeof(x) - 1, .to_len = sizeof(y) - 1 }
 	Replacement tags[] = {
+		// there are loads more, meh
 		RTAG("&amp;", "&"),
 		RTAG("&gt;", ">"),
 		RTAG("&lt;", "<"),
 		RTAG("&quot;", "\""),
 		RTAG("&apos;", "'"),
 		RTAG("&nbsp;", " "),
+		RTAG("&mdash;", "—"),
+		RTAG("&raquo;", "»"),
 
 		// not really html tags, but useful replacements
 		RTAG("\n", " "),
@@ -111,8 +114,9 @@ int ixt_tokenize(char* in, intptr_t* tokens, size_t count){
 	while((p = ixt_skip_ws(p)), *p){
 		if(state == IXTS_DEFAULT){
 			if(*p == '<'){
-				size_t n = 0;
+				size_t n;
 checktag:
+				n = 0;
 				if(p[1] == '/'){ // end tag
 					n = strcspn(++p, ">");
 					IXT_EMIT(IXT_TAG_CLOSE);
@@ -159,10 +163,10 @@ checktag:
 					IXT_EMIT(IXT_DOCTYPE);
 					IXT_EMIT(start);
 				} else { // start tag
-					n = strcspn(p, "/> \r\n\t");
+					n = strcspn(++p, "/> \r\n\t");
 
 					IXT_EMIT(IXT_TAG_OPEN);
-					IXT_EMIT(p + 1);
+					IXT_EMIT(p);
 
 					if(p[n] == '/'){
 						IXT_EMIT(IXT_TAG_CLOSE);
