@@ -1,4 +1,4 @@
-CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -Wno-pointer-sign -std=gnu99 -g -fsanitize=address
+CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -Wno-pointer-sign -std=gnu99 -g -Werror=implicit-function-declaration
 LDFLAGS := -Wl,--as-needed -Wl,--gc-sections
 
 headers  := $(wildcard *.h)

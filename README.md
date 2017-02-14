@@ -7,6 +7,8 @@ more info in [the wiki](https://github.com/baines/insobot/wiki).
 This table shows common modules & commands. Refer to the top of each module's
 .c file for a complete listing.
 
+NOTE: The insobot instance on twitch prefixes most of these commands with '\\' (backslash)
+
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
 | **mod_admin**    | Administrative commands | join       \<channel\>      | Force join a channel              | ADMIN      |
