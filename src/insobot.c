@@ -3,28 +3,34 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
+#include <locale.h>
 #include <ctype.h>
 #include <assert.h>
 #include <errno.h>
 #include <err.h>
 #include <time.h>
-#include <sys/time.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/inotify.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <signal.h>
 #include <unistd.h>
 #include <limits.h>
 #include <glob.h>
 #include <dlfcn.h>
 #include <link.h>
-#include <pthread.h>
+#include <execinfo.h>
+
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
+#include <sys/inotify.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
 #include <curl/curl.h>
-#include <locale.h>
+
 #include "config.h"
 #include "module.h"
 #include "stb_sb.h"
@@ -164,46 +170,33 @@ static void        util_ipc_del(const char* name);
  * Helper funcs *
  ****************/
 
-static void* util_log_thread_main(void* _arg){
-	int* fds = _arg;
-	int orig_stdout = fds[0];
-	int pipe_fd = fds[1];
-
+static void util_log_proc(int fd, pid_t pid){
+	char text_buf[1024];
 	char time_buf[64];
-	char c;
 
-	bool do_time = true;
+	FILE* f = fdopen(dup(fd), "r");
 
-	while(true){
-		do {
-			ssize_t result = read(pipe_fd, &c, 1);
-			if(result <= 0){
-				dprintf(orig_stdout, "read: %s\n", strerror(errno));
-				continue;
-			}
-
-			if(do_time){
-				time_t now = time(0);
-				size_t time_size = strftime(time_buf, sizeof(time_buf), "[%F %T] ", localtime(&now));
-				if(write(orig_stdout, time_buf, time_size) == -1){
-					perror("log_thread write");
-				}
-				do_time = false;
-			}
-
-			if(write(orig_stdout, &c, 1) == -1){
-				perror("log_thread write");
-			}
-		} while(c != '\n');
-
-		do_time = true;
+	while(running){
+		if(!fgets(text_buf, sizeof(text_buf), f)) break;
+		time_t now = time(0);
+		strftime(time_buf, sizeof(time_buf), "[%F %T]", localtime(&now));
+		printf("%s %s", time_buf, text_buf);
 	}
 
-	return NULL;
+	fclose(f);
 }
 
 static void util_handle_sig(int n){
-	running = 0;
+	if(n == SIGSEGV){
+		void* buf[32];
+		int size = backtrace(buf, 32);
+		fputs("########## SIGSEGV BACKTRACE ##########\n", stderr);
+		backtrace_symbols_fd(buf, size, STDERR_FILENO);
+		fputs("##########        END        ##########\n", stderr);
+		signal(SIGSEGV, SIG_DFL);
+	} else {
+		running = 0;
+	}
 }
 
 static inline const char* util_env_else(const char* env, const char* def){
@@ -599,6 +592,21 @@ static void util_ipc_init(void){
 		}
 
 		globfree(&glob_data);
+	}
+
+	// check for stale peers
+
+	for(IPCAddress* p = ipc_peers; p < sb_end(ipc_peers); ++p){
+		if(connect(ipc_socket, &p->addr, sizeof(p->addr)) == -1){
+			if(errno == ECONNREFUSED){
+				unlink(p->addr.sun_path);
+			}
+			sb_erase(ipc_peers, p - ipc_peers);
+			--p;
+		} else {
+			struct sockaddr sa = { .sa_family = AF_UNSPEC };
+			connect(ipc_socket, &sa, sizeof(sa));
+		}
 	}
 }
 
@@ -1118,7 +1126,7 @@ static void core_self_save(void){
 
 static void core_log(const char* fmt, ...){
 
-	if(getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
+	if(getenv("INSOBOT_NO_FORK")){
 		char time_buf[64];
 		time_t now = time(0);
 		struct tm* now_tm = localtime(&now);
@@ -1165,31 +1173,82 @@ static bool core_get_tag(size_t index, const char** k, const char** v){
 
 int main(int argc, char** argv){
 
+	// parent process setup
+
+	int pipe_fds[2] = {};
+	if(!getenv("INSOBOT_NO_FORK")){
+restart:;
+        if(pipe(pipe_fds) == -1){
+	        perror("pipe failed");
+	        exit(1);
+        }
+
+        pid_t pid = fork();
+        if(pid == -1){
+	        perror("fork failed");
+	        exit(1);
+        }
+
+        if(pid != 0){
+	        signal(SIGINT , SIG_IGN);
+	        signal(SIGPIPE, &util_handle_sig);
+
+	        close(pipe_fds[1]);
+	        prctl(PR_SET_NAME, "ib-parent");
+
+	        util_log_proc(pipe_fds[0], pid);
+	        close(pipe_fds[0]);
+
+	        int status;
+	        wait(&status);
+
+	        int exitnum = 0;
+
+	        if(WIFEXITED(status)){
+		        exitnum = WEXITSTATUS(status);
+		        printf("insobot exited. (%d)\n", exitnum);
+
+				// asan workaround
+		        if(exitnum > 1){ exitnum = 0; }
+	        } else if(WIFSIGNALED(status)){
+		        int sig = WTERMSIG(status);
+		        printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, sys_siglist[sig]);
+
+		        if(WCOREDUMP(status)){
+			        puts("On the bright side, we apparently dumped a core somewhere.");
+		        }
+
+				exitnum = (sig == SIGTERM) ? 0 : sig;
+	        }
+
+	        if(!getenv("INSOBOT_NO_AUTO_RESTART") && exitnum != 0){
+		        puts("Gonna try to auto restart...");
+		        signal(SIGINT , SIG_DFL);
+		        if(usleep(5000000) == -1){
+					exit(1);
+				}
+		        goto restart;
+	        }
+
+	        exit(exitnum);
+        }
+
+        prctl(PR_SET_NAME, "insobot");
+        prctl(PR_SET_PDEATHSIG, SIGINT);
+
+        close(pipe_fds[0]);
+        dup2(pipe_fds[1], STDOUT_FILENO);
+        dup2(pipe_fds[1], STDERR_FILENO);
+
+        setlinebuf(stdout);
+        setlinebuf(stderr);
+	}
+
 	srand(time(0));
-	signal(SIGINT, &util_handle_sig);
+	signal(SIGSEGV, &util_handle_sig);
+	signal(SIGINT , &util_handle_sig);
 	signal(SIGPIPE, SIG_IGN);
 	assert(setlocale(LC_CTYPE, "C.UTF-8"));
-
-	// timestamp thread setup
-
-	pthread_t log_thread;
-	
-	if(!getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
-		int fds[3] = { dup(STDOUT_FILENO) };
-
-		if(pipe(fds + 1) == -1){
-			perror("pipe");
-			abort();
-		}
-
-		dup2(fds[2], STDOUT_FILENO);
-		dup2(fds[2], STDERR_FILENO);
-
-		setlinebuf(stdout);
-		setlinebuf(stderr);
-
-		pthread_create(&log_thread, NULL, &util_log_thread_main, fds);
-	}
 
 	// path setup
 
@@ -1348,13 +1407,14 @@ int main(int argc, char** argv){
 
 			util_process_pending_cmds();
 
+			//TODO: why don't I put the inotify fd in select?
 			util_inotify_check(&core_ctx);
 
 			//TODO: check on_meta & better timing for on_tick?
 			time_t now = time(0);
 			IRC_MOD_CALL_ALL(on_tick, (now));
 
-			int max_fd = 0;
+			int max_fd = ipc_socket;
 			fd_set in, out;
 	
 			FD_ZERO(&in);
@@ -1479,9 +1539,8 @@ int main(int argc, char** argv){
 	}
 	sb_free(ipc_peers);
 
-	if(!getenv("INSOBOT_NO_CRAZY_TIMESTAMPS")){
-		pthread_cancel(log_thread);
-		pthread_join(log_thread, NULL);
+	if(pipe_fds[1]){
+		close(pipe_fds[1]);
 	}
 
 	return 0;
