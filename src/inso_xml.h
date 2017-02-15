@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // Tokens.
-//   "next = " signifies that the next token is a char* cast to intptr_t with additional data.
+//   "next = " signifies that the next token is a char* cast to uintptr_t with additional data.
 enum {
 	IXT_EOF = 0,
 	IXT_TAG_OPEN,  // next = tag name
@@ -28,7 +28,7 @@ enum {
 	IXTR_INVALID,
 };
 
-int ixt_tokenize(char* data_in, intptr_t* tokens_out, size_t token_count);
+int ixt_tokenize(char* data_in, uintptr_t* tokens_out, size_t token_count);
 
 #endif
 
@@ -95,10 +95,10 @@ void ixt_unescape(char* msg, size_t len){
 	}
 }
 
-int ixt_tokenize(char* in, intptr_t* tokens, size_t count){
+int ixt_tokenize(char* in, uintptr_t* tokens, size_t count){
 
 #define IXT_ASSERT(x) if(!(x)){ fputs("ixt assertion failure: " #x "\n", stderr); goto invalid; }
-#define IXT_EMIT(x) if(t - tokens < count-1){ *t++ = (intptr_t)(x); } else { goto truncated; }
+#define IXT_EMIT(x) if(t - tokens < count-1){ *t++ = (uintptr_t)(x); } else { goto truncated; }
 
 	IXT_ASSERT(count >= 1);
 
@@ -109,7 +109,7 @@ int ixt_tokenize(char* in, intptr_t* tokens, size_t count){
 	} state = IXTS_DEFAULT;
 
 	char* p = in;
-	intptr_t* t = tokens;
+	uintptr_t* t = tokens;
 
 	while((p = ixt_skip_ws(p)), *p){
 		if(state == IXTS_DEFAULT){
@@ -277,11 +277,11 @@ int main(int argc, char** argv){
 	fread(buf, sz, 1, f);
 	buf[sz] = 0;
 
-	intptr_t tokens[0x1000];
+	uintptr_t tokens[0x1000];
 	ixt_tokenize(buf, tokens, 0x1000);
 
 	int nesting = 5;
-	for(intptr_t* t = tokens; *t; ++t){
+	for(uintptr_t* t = tokens; *t; ++t){
 		if(*t < IXT_COUNT){
 			if(*t == IXT_TAG_CLOSE || *t == IXT_PI_CLOSE) nesting -= 2;
 			printf("%*s: %s\n", nesting, "TOKEN", tnames[(int)*t]);
