@@ -93,6 +93,15 @@ static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, .
 	va_end(v);
 }
 
+static inline bool inso_in_chan(const IRCCoreCtx* ctx, const char* chan){
+	const char** list = ctx->get_channels();
+	while(*list){
+		if(strcasecmp(*list, chan) == 0) return true;
+		++list;
+	}
+	return false;
+}
+
 static inline void inso_permission_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }

@@ -893,7 +893,8 @@ IRC_STR_CALLBACK(on_nick) {
 
 IRC_STR_CALLBACK(on_unknown) {
 	if(strcmp(event, "PONG") == 0){
-		printf(":: PONG");
+//		printf(":: PONG");
+		return;
 	} else {
 		printf("Unknown event:\n:: %s :: %s", event, origin);
 	}
@@ -1468,7 +1469,7 @@ restart:;
 				timeradd(&orig_tv, &idle_tv, &idle_tv);
 
 				if(!ping_sent && timercmp(&idle_tv, &ping_tv, >)){
-					puts("Reached idle time threshold, sending PING.");
+//					puts("Reached idle time threshold, sending PING.");
 					irc_send_raw(irc_ctx, "PING %s", serv);
 					ping_sent = 1;
 				}

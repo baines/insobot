@@ -890,13 +890,13 @@ out:
 static void twitch_tick(time_t now){
 
 	if(now - last_tracker_update > tracker_update_interval){
-		puts("mod_twitch: tracker update...");
+//		puts("mod_twitch: tracker update...");
 		twitch_tracker_update();
 		last_tracker_update = now;
 	}
 
 	if(sb_count(twitch_keys) && (now - last_follower_check > follower_check_interval)){
-		puts("mod_twitch: checking new followers...");
+//		puts("mod_twitch: checking new followers...");
 		twitch_check_followers();
 		last_follower_check = now;
 	}
