@@ -89,7 +89,7 @@ static void ixt_unescape(char* msg, size_t len){
 
 		wchar_t wc;
 		int old_len, new_len;
-		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1){
+		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len)){
 			if((new_len = wctomb(c, wc)) > 0 && old_len > new_len){
 				memmove(p, p + (old_len - new_len), len - (p - msg));
 				memcpy(p, c, new_len);
@@ -111,10 +111,10 @@ int ixt_tokenize(char* in, uintptr_t* tokens, size_t count){
 		IXTS_INPI,
 	} state = IXTS_DEFAULT;
 
-	char* p = in;
+	char* p = ixt_skip_ws(in);
 	uintptr_t* t = tokens;
 
-	while((p = ixt_skip_ws(p)), *p){
+	while(*p){
 		if(state == IXTS_DEFAULT){
 			if(*p == '<'){
 				size_t n;
@@ -185,15 +185,20 @@ checktag:
 			} else {
 				size_t n = strcspn(p, "<");
 				IXT_EMIT(IXT_CONTENT);
-				IXT_EMIT(p);
 
 				p[n] = 0;
 				ixt_unescape(p, n);
+
+				char* q = p;
+				while(q[0] == ' ' && q[1] == ' ') ++q;
+				IXT_EMIT(q);
+
 				p += n;
 
 				goto checktag;
 			}
 		} else { // intag / inpi
+			p = ixt_skip_ws(p);
 			if((state == IXTS_INTAG && *p == '/') || (state == IXTS_INPI && *p == '?')){
 				IXT_ASSERT(p[1] == '>');
 

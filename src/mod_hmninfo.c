@@ -34,7 +34,8 @@ static const IRCCoreCtx* ctx;
 typedef struct {
 	char* info;
 	char* name;
-	int   name_len;
+	char* slug;
+	int   slug_len;
 } HMNProject;
 
 static HMNProject* projects;
@@ -58,7 +59,8 @@ static void hmninfo_update(void){
 		} state = S_H3_FIND;
 
 		regmatch_t m[2];
-		char* url = NULL;
+		char* url  = NULL;
+		char* name = NULL;
 
 		for(uintptr_t* t = tokens; *t; ++t){
 			switch(state){
@@ -85,8 +87,9 @@ static void hmninfo_update(void){
 				} break;
 
 				case S_LI_HREF: {
-					if(ixt_match(t, IXT_ATTR_KEY, "href", IXT_ATTR_VAL, NULL)){
-						url = (char*)t[3];
+					if(ixt_match(t, IXT_ATTR_KEY, "href", IXT_ATTR_VAL, NULL) && t[4] == IXT_CONTENT){
+						url  = (char*)t[3];
+						name = (char*)t[5];
 						state = S_LI_CONTENT;
 					}
 				} break;
@@ -100,12 +103,12 @@ static void hmninfo_update(void){
 						while(*p == ' ') *p-- = 0;
 
 						if(regexec(&hmn_proj_regex, url, 2, m, 0) == 0 && m[1].rm_so != -1){
-							HMNProject proj = {};
-							asprintf_check(&proj.name, "~%.*s%n", m[1].rm_eo - m[1].rm_so, url + m[1].rm_so, &proj.name_len);
-							asprintf_check(&proj.info, "%s %s", url, desc);
+							HMNProject proj = { .name = strdup(name) };
+							asprintf_check(&proj.slug, "~%.*s%n", m[1].rm_eo - m[1].rm_so, url + m[1].rm_so, &proj.slug_len);
+							asprintf_check(&proj.info, "%s%s", url, desc);
 							sb_push(projects, proj);
 
-							printf("hmninfo: got project %s\n", proj.name);
+							printf("hmninfo: got project %s = %s\n", proj.name, proj.slug);
 						}
 						state = S_LI_FIND;
 					}
@@ -129,6 +132,7 @@ static void hmninfo_quit(void){
 	for(HMNProject* p = projects; p < sb_end(projects); ++p){
 		free(p->name);
 		free(p->info);
+		free(p->slug);
 	}
 	sb_free(projects);
 	regfree(&hmn_proj_regex);
@@ -136,9 +140,9 @@ static void hmninfo_quit(void){
 
 static void hmninfo_msg(const char* chan, const char* name, const char* msg){
 	for(HMNProject* p = projects; p < sb_end(projects); ++p){
-		const char* s = strcasestr(msg, p->name);
-		if(s && (s[p->name_len] == ' ' || s[p->name_len] == 0)){
-			ctx->send_msg(chan, "↑ HMN Project: %s", p->info);
+		const char* s = strcasestr(msg, p->slug);
+		if(s && (s[p->slug_len] == ' ' || s[p->slug_len] == 0)){
+			ctx->send_msg(chan, "↑ %s: %s", p->name, p->info);
 			break;
 		}
 	}
@@ -148,6 +152,7 @@ static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int
 	for(HMNProject* p = projects; p < sb_end(projects); ++p){
 		free(p->name);
 		free(p->info);
+		free(p->slug);
 	}
 	sb_free(projects);
 	hmninfo_update();
