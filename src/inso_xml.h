@@ -2,6 +2,7 @@
 #define INSO_XML_H
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 // Tokens.
 //   "next = " signifies that the next token is a char* cast to uintptr_t with additional data.
@@ -28,7 +29,8 @@ enum {
 	IXTR_INVALID,
 };
 
-int ixt_tokenize(char* data_in, uintptr_t* tokens_out, size_t token_count);
+int  ixt_tokenize (char* data_in, uintptr_t* tokens_out, size_t token_count);
+bool ixt_match    (uintptr_t* tokens, ...) __attribute__((sentinel));
 
 #endif
 
@@ -38,13 +40,14 @@ int ixt_tokenize(char* data_in, uintptr_t* tokens_out, size_t token_count);
 #include <limits.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
-char* ixt_skip_ws(char* p){
+static char* ixt_skip_ws(char* p){
 	while(*p && (*p <= ' ')) ++p;
 	return p;
 }
 
-void ixt_unescape(char* msg, size_t len){
+static void ixt_unescape(char* msg, size_t len){
 
 	typedef struct {
 		char *from, *to;
@@ -244,6 +247,33 @@ invalid:
 truncated:
 	*t++ = IXT_EOF;
 	return IXTR_TRUNCATED;
+}
+
+bool ixt_match(uintptr_t* tokens, ...){
+	va_list v;
+	va_start(v, tokens);
+
+	bool result = true;
+	int index = 0;
+	uintptr_t t;
+
+	while((t = va_arg(v, uintptr_t))){
+		if(t < IXT_COUNT){
+			if(t != tokens[index]){
+				result = false;
+				break;
+			}
+		} else {
+			if(strcmp((char*)tokens[index], (char*)t) != 0){
+				result = false;
+				break;
+			}
+		}
+		++index;
+	}
+
+	va_end(v);
+	return result;
 }
 
 #endif

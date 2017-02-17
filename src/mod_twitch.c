@@ -146,6 +146,7 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 			if(arg){
 				size_t len = strlen(arg);
 				memcpy(sb_add(tag.tag_list, len), arg, len);
+				free(arg);
 			}
 			sb_push(twitch_tracker_tags, tag);
 		}
@@ -587,8 +588,9 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 
 			const char* tag_chans = arg + 6;
 			if(*tag_chans == ' '){
-				size_t sz = strlen(tag_chans + 1);
-				memcpy(sb_add(tag->tag_list, sz), tag_chans + 1, sz);
+				size_t sz = strlen(tag_chans);
+				memcpy(sb_add(tag->tag_list, sz), tag_chans, sz);
+				sb_push(tag->tag_list, ' ');
 				ctx->send_msg(chan, "%s: You'll now be tagged when those specific streams go live!", dispname);
 			} else {
 				ctx->send_msg(chan, "%s: You'll now be tagged when any streams go live!", dispname);

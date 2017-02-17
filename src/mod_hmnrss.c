@@ -48,7 +48,7 @@ static bool hmnrss_init(const IRCCoreCtx* _ctx){
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &etag_cb);
 	last_check = latest_post = time(0);
 
-	regcomp(&url_regex, "https://([^\\.]+)\\.handmade\\.network/.*/[0-9]+", REG_ICASE | REG_EXTENDED);
+	regcomp(&url_regex, "https://([^\\.]*)\\.?handmade\\.network/.*/[0-9]+", REG_ICASE | REG_EXTENDED);
 
 	return true;
 }
@@ -56,6 +56,7 @@ static bool hmnrss_init(const IRCCoreCtx* _ctx){
 static void hmnrss_quit(void){
 	curl_easy_cleanup(curl);
 	free(etag);
+	regfree(&url_regex);
 }
 
 static void hmnrss_tick(time_t now){
@@ -76,8 +77,8 @@ static void hmnrss_tick(time_t now){
 	long ret = inso_curl_perform(curl, &data);
 
 	if(ret == 200){
-		uintptr_t tokens[0x2000];
-		if(ixt_tokenize(data, tokens, 0x2000) != IXTR_OK) return;
+		uintptr_t tokens[0x1000];
+		if(ixt_tokenize(data, tokens, 0x1000) != IXTR_OK) return;
 
 		char *message = NULL, *url = NULL;
 
@@ -117,21 +118,13 @@ static void hmnrss_tick(time_t now){
 				}
 			}
 
-			if (message &&
-				t[0] == IXT_ATTR_KEY &&
-				strcmp((char*)t[1], "href") == 0 &&
-				t[2] == IXT_ATTR_VAL &&	t[3]
-			){
+			if(message && ixt_match(t, IXT_ATTR_KEY, "href", IXT_ATTR_VAL, NULL) && t[3]){
 				url = (char*)t[3];
 			}
 
-			if (t[0] == IXT_TAG_OPEN &&
-				strcmp((char*)t[1], "title") == 0 &&
-				t[2] == IXT_CONTENT && (
+			if(ixt_match(t, IXT_TAG_OPEN, "title", IXT_CONTENT, NULL) && (
 					strncmp((char*)t[3], "Blog Post:", 10) == 0 ||
-					strncmp((char*)t[3], "Forum Thread:", 13) == 0
-				)
-			){
+					strncmp((char*)t[3], "Forum Thread:", 13) == 0)){
 				message = (char*)t[3];
 			}
 		}
