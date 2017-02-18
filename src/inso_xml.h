@@ -89,7 +89,7 @@ static void ixt_unescape(char* msg, size_t len){
 
 		wchar_t wc;
 		int old_len, new_len;
-		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len)){
+		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len) == 1){
 			if((new_len = wctomb(c, wc)) > 0 && old_len > new_len){
 				memmove(p, p + (old_len - new_len), len - (p - msg));
 				memcpy(p, c, new_len);
@@ -184,18 +184,22 @@ checktag:
 				p += n + 1;
 			} else {
 				size_t n = strcspn(p, "<");
-				IXT_EMIT(IXT_CONTENT);
+				if(p[n]){
+					IXT_EMIT(IXT_CONTENT);
 
-				p[n] = 0;
-				ixt_unescape(p, n);
+					p[n] = 0;
+					ixt_unescape(p, n);
 
-				char* q = p;
-				while(q[0] == ' ' && q[1] == ' ') ++q;
-				IXT_EMIT(q);
+					char* q = p;
+					while(q[0] == ' ' && q[1] == ' ') ++q;
+					IXT_EMIT(q);
 
-				p += n;
+					p += n;
 
-				goto checktag;
+					goto checktag;
+				} else {
+					break;
+				}
 			}
 		} else { // intag / inpi
 			p = ixt_skip_ws(p);

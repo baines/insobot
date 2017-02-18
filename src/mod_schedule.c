@@ -130,12 +130,13 @@ static void sched_offsets_update(void){
 
 			struct tm date = {};
 			gmtime_r(&s->start, &date);
-			int start_dow = get_dow(&date);
+			date.tm_year = now_tm.tm_year;
+			date.tm_mon = now_tm.tm_mon;
 
 			for(int k = 0; k < DAYS_IN_WEEK; ++k){
 				if(!(s->repeat & (1 << k))) continue;
 
-				date.tm_mday -= (start_dow - k);
+				date.tm_mday = now_tm.tm_mday + k;
 				t = timegm(&date) - week_start;
 				SchedOffset so = { t, user, s };
 				sb_push(sched_offsets, so);

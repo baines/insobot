@@ -271,7 +271,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 				int idx, sub_idx;
 				if(alias_find(chan, key, &idx, &sub_idx) == ALIAS_FOUND_CHAN){
 					if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
-						ctx->send_msg("%s: You don't have permission to change %s.\n", name, key);
+						ctx->send_msg("%s: You don't have permission to change %s.", name, key);
 						break;
 					} else {
 						alias_del(idx, sub_idx);
@@ -317,11 +317,11 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 
 			if(found == ALIAS_FOUND_CHAN){
 				if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
-					ctx->send_msg("%s: You don't have permission to delete %s.\n", name, arg);
+					ctx->send_msg("%s: You don't have permission to delete %s.", name, arg);
 					break;
 				} else {
 					alias_del(idx, sub_idx);
-					ctx->send_msg(chan, "%s: Removed alias %s.\n", name, arg);
+					ctx->send_msg(chan, "%s: Removed alias %s.", name, arg);
 				}
 			} else if(found == ALIAS_FOUND_GLOBAL){
 				//TODO: create a blank alias for this channel to disable the global one only here.
@@ -337,11 +337,11 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			int idx, sub_idx;
 			if(alias_find(NULL, arg, &idx, &sub_idx)){
 				if(alias_vals[idx].permission == AP_ADMINONLY && !is_admin){
-					ctx->send_msg("%s: You don't have permission to change %s.\n", name, arg);
+					ctx->send_msg("%s: You don't have permission to change %s.", name, arg);
 					break;
 				} else {
 					alias_del(idx, sub_idx);
-					ctx->send_msg(chan, "%s: Removed global alias %s.\n", name, arg);
+					ctx->send_msg(chan, "%s: Removed global alias %s.", name, arg);
 				}
 			} else {
 				ctx->send_msg(chan, "%s: That global alias doesn't exist.", name);
