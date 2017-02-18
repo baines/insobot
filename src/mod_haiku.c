@@ -123,6 +123,8 @@ static void haiku_cmd (const char* chan, const char* name, const char* arg, int 
 	}
 
 	char* word = strtok_r(markov_sentence, " ", &state);
+	int loops = 0;
+	bool multiline = getenv("INSOBOT_MULTILINE_HAIKU");
 
 	for(size_t i = 0; i < ARRAY_SIZE(syl_required); ++i){
 		int syl = 0;
@@ -133,11 +135,12 @@ static void haiku_cmd (const char* chan, const char* name, const char* arg, int 
 		}
 
 		while(true){
+
 			while(!word){
 				free(markov_sentence);
 				markov_sentence = NULL;
 
-				MOD_MSG(ctx, "markov_gen", 0, &haiku_markov_cb, &markov_sentence);
+				MOD_MSG(ctx, "markov_gen", 30, &haiku_markov_cb, &markov_sentence);
 				if(!markov_sentence){
 					puts("mod_haiku: null markov gen?");
 					return;
@@ -156,23 +159,35 @@ static void haiku_cmd (const char* chan, const char* name, const char* arg, int 
 			}
 			
 			syl += n;
-			if(syl + n >= syl_required[i]){
+			if(syl >= syl_required[i]){
 				break;
 			}
 		}
 
 		if(syl == syl_required[i]){
-			inso_strcat(output, sizeof(output), buffer);
-			if(i != ARRAY_SIZE(syl_required) - 1){
-				inso_strcat(output, sizeof(output), " / ");
+			bool last_line = i == 2;
+			if(multiline){
+				ctx->send_msg(chan, "%s%s", buffer, last_line ? "." : "");
+			} else {
+				inso_strcat(output, sizeof(output), buffer);
+				if(!last_line){
+					inso_strcat(output, sizeof(output), " / ");
+				}
 			}
+		} else if(loops++ > 50){
+			ctx->send_msg(chan, "I got nothin'.");
+			goto out;
 		} else {
 			--i;
 		}
 	}
 
+	if(!multiline){
+		ctx->send_msg(chan, "%s.", output);
+	}
+
+out:
 	free(markov_sentence);
-	ctx->send_msg(chan, "%s.", output);
 }
 
 static bool haiku_init(const IRCCoreCtx* _ctx){

@@ -10,6 +10,7 @@ enum { BRAINFUCK_EXEC };
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "brainfuck",
 	.desc     = "Brainfuck interpreter",
+	.flags    = IRC_MOD_GLOBAL,
 	.on_init  = brainfuck_init,
 	.on_cmd   = &brainfuck_cmd,
 	.commands = DEFINE_CMDS (

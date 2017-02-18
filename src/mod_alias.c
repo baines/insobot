@@ -2,6 +2,7 @@
 #include "stb_sb.h"
 #include <string.h>
 #include <ctype.h>
+#include <curl/curl.h>
 #include "inso_utils.h"
 
 static void alias_msg      (const char*, const char*, const char*);
@@ -453,7 +454,6 @@ usage_setperm:
 }
 
 static void alias_msg(const char* chan, const char* name, const char* msg){
-
 	if(*msg != ALIAS_CHAR || !alias_valid_1st_char(msg[1])) return;
 
 	const char* key = strndupa(msg+1, strchrnul(msg, ' ') - (msg+1));
@@ -496,17 +496,31 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 	if(!has_cmd_perms) return;
 
+	char*  urlenc_arg;
+	size_t urlenc_arg_len;
+	{
+		CURL* why_do_i_need_this = curl_easy_init();
+		urlenc_arg = curl_easy_escape(why_do_i_need_this, arg, arg_len);
+		urlenc_arg_len = urlenc_arg ? strlen(urlenc_arg) : 0;
+		curl_easy_cleanup(why_do_i_need_this);
+	}
+
 	for(const char* str = value->msg + (value->me_action ? 3 : 0); *str; ++str){
-		if(*str == '%' && *(str + 1) == 't'){
+		if(str[0] == '%' && str[1] == 't'){
 			memcpy(sb_add(msg_buf, name_len), name, name_len);
 			++str;
-		} else if(*str == '%' && *(str + 1) == 'a'){
-			if(arg && *arg && arg_len){
+		} else if(str[0] == '%' && str[1] == 'a'){
+			if(*arg){
 				memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
 			}
 			++str;
-		} else if(*str == '%' && *(str + 1) == 'n'){
-			if(arg && *arg && arg_len){
+		} else if(str[0] == '%' && str[1] == 'u'){
+			if(urlenc_arg && *urlenc_arg){
+				memcpy(sb_add(msg_buf, urlenc_arg_len), urlenc_arg, urlenc_arg_len);
+			}
+			++str;
+		} else if(str[0] == '%' && str[1] == 'n'){
+			if(*arg){
 				memcpy(sb_add(msg_buf, arg_len), arg, arg_len);
 			} else {
 				memcpy(sb_add(msg_buf, name_len), name, name_len);
@@ -529,6 +543,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 
 	sb_free(msg_buf);
+	curl_free(urlenc_arg);
 }
 
 static bool alias_save(FILE* file){

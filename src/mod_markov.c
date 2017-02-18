@@ -830,6 +830,10 @@ static void markov_join(const char* chan, const char* name){
 
 static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "markov_gen") == 0){
+		size_t prev_len = max_chain_len;
+		if(msg->arg != 0){
+			max_chain_len = msg->arg;
+		}
 
 		char* buffer = malloc(256);
 		if(!markov_gen(buffer, 256)){
@@ -838,6 +842,8 @@ static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 		}
 
 		msg->callback((intptr_t)buffer, msg->cb_arg);
+
+		max_chain_len = prev_len;
 	}
 }
 

@@ -13,7 +13,7 @@ static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 
-enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD1, TWITCH_VOD2, TWITCH_TRACKER, TWITCH_TITLE };
+enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "twitch",
@@ -27,8 +27,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY]  = CMD("fnotify"),
 		[UPTIME]         = CMD("uptime" ),
-		[TWITCH_VOD1]    = CMD1("vod"   ),
-		[TWITCH_VOD2]    = CMD2("vod"   ),
+		[TWITCH_VOD]     = CMD("vod"   ),
 		[TWITCH_TRACKER] = CMD("tracker") CMD("streams"),
 		[TWITCH_TITLE]   = CMD("title"  )
 	)
@@ -72,7 +71,7 @@ static TwitchInfo* twitch_vals;
 
 typedef struct {
 	char* name;
-	char* tag_list; // space separated sb, not null-terminated
+	char* tag_list;
 } TwitchTag;
 
 static char**      twitch_tracker_chans;
@@ -141,12 +140,10 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 		} else if(sscanf(line, "OUTPUT %s", buffer) == 1){
 			sb_push(twitch_tracker_chans, strdup(buffer));
-		} else if(sscanf(line, "TAG %s %m[^\n]", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TAG %s :%m[^\n]", buffer, &arg) >= 1){
 			TwitchTag tag = { .name = strdup(buffer) };
 			if(arg){
-				size_t len = strlen(arg);
-				memcpy(sb_add(tag.tag_list, len), arg, len);
-				free(arg);
+				tag.tag_list = arg;
 			}
 			sb_push(twitch_tracker_tags, tag);
 		}
@@ -336,7 +333,7 @@ static void check_alias_cb(intptr_t result, intptr_t arg){
 	*(int*)arg = result;
 }
 
-static void twitch_print_vod(size_t index, const char* send_chan, const char* name, int cmd){
+static void twitch_print_vod(size_t index, const char* send_chan, const char* name, bool check_alias){
 
 	char* chan    = twitch_keys[index];
 	TwitchInfo* t = twitch_vals + index;
@@ -371,8 +368,7 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 	if(videos->u.array.len == 0){
 		int alias_exists = 0;
 
-		if((cmd == TWITCH_VOD1 && strcmp(CONTROL_CHAR  , "!") == 0) ||
-		   (cmd == TWITCH_VOD2 && strcmp(CONTROL_CHAR_2, "!") == 0)) {
+		if(check_alias){
 			const char* args[] = { "vod", send_chan };
 			MOD_MSG(ctx, "alias_exists", args, &check_alias_cb, &alias_exists);
 		}
@@ -425,8 +421,11 @@ static void twitch_print_tags(const char* prefix, const char* stream){
 		int nick_count;
 		const char** nicks = ctx->get_nicks(*chan, &nick_count);
 
+		printf("spaced stream: [%s]\n", spaced_stream);
+
 		for(TwitchTag* tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
-			if(tag->tag_list && !memmem(tag->tag_list, sb_count(tag->tag_list), spaced_stream, stream_len + 2)){
+			printf("tag: [%s] [%s]\n", tag->name, tag->tag_list);
+			if(tag->tag_list && !strcasestr(tag->tag_list, spaced_stream)){
 				continue;
 			}
 
@@ -466,6 +465,12 @@ static void twitch_tracker_update(void){
 	twitch_check_uptime(index_count, track_indices);
 	sb_free(track_indices);
 
+	// don't output on the first update, to avoid duplication in case the bot has been restarted.
+	if(first_update){
+		first_update = false;
+		return;
+	}
+
 	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
 		if(!twitch_vals[i].is_tracked) continue;
 
@@ -499,7 +504,9 @@ static void twitch_tracker_update(void){
 		}
 	}
 
-	if(!any_changed && !first_update) return;
+	if(!any_changed){
+		return;
+	}
 
 	char topic_cmd[1024];
 	for(char** c = twitch_tracker_chans; c < sb_end(twitch_tracker_chans); ++c){
@@ -510,8 +517,6 @@ static void twitch_tracker_update(void){
 		}
 		ctx->send_raw(topic_cmd);
 	}
-
-	first_update = false;
 }
 
 static void twitch_tracker_cmd(const char* chan, const char* name, const char* arg, bool wlist){
@@ -580,7 +585,8 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		if(strncasecmp(arg, " tagme", 6) == 0){
 
 			if(tag){
-				sb_free(tag->tag_list);
+				free(tag->tag_list);
+				tag->tag_list = NULL;
 			} else {
 				TwitchTag newtag = { .name = strdup(name) };
 				sb_push(twitch_tracker_tags, newtag);
@@ -590,8 +596,9 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			const char* tag_chans = arg + 6;
 			if(*tag_chans == ' '){
 				size_t sz = strlen(tag_chans);
-				memcpy(sb_add(tag->tag_list, sz), tag_chans, sz);
-				sb_push(tag->tag_list, ' ');
+				tag->tag_list = malloc(sz + 2);
+				memcpy(tag->tag_list, tag_chans, sz);
+				memcpy(tag->tag_list + sz, " ", 2);
 				ctx->send_msg(chan, "%s: You'll now be tagged when those specific streams go live!", dispname);
 			} else {
 				ctx->send_msg(chan, "%s: You'll now be tagged when any streams go live!", dispname);
@@ -603,7 +610,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 
 			if(tag){
 				free(tag->name);
-				sb_free(tag->tag_list);
+				free(tag->tag_list);
 				sb_erase(twitch_tracker_tags, tag - twitch_tracker_tags);
 				ctx->send_msg(chan, "%s: OK, I've untagged you.", dispname);
 				ctx->save_me();
@@ -789,11 +796,9 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 			}
 		} break;
 
-		case TWITCH_VOD1: {
-			if(strcmp(CONTROL_CHAR, CONTROL_CHAR_2) == 0) break;
-		} // fall-through
-		case TWITCH_VOD2: {
+		case TWITCH_VOD: {
 			TwitchInfo* t;
+			const char* c = arg;
 
 			if(*arg++){
 				if(!is_wlist) break;
@@ -809,7 +814,8 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 				t = twitch_get_or_add(chan);
 			}
 
-			twitch_print_vod(t - twitch_vals, chan, name, cmd);
+			while(*--c);
+			twitch_print_vod(t - twitch_vals, chan, name, c[1] == '!');
 		} break;
 
 		case TWITCH_TRACKER: {
@@ -959,7 +965,7 @@ static bool twitch_save(FILE* f){
 
 	for(TwitchTag* tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
 		if(tag->tag_list){
-			fprintf(f, "TAG\t%s\t%.*s\n", tag->name, (int)sb_count(tag->tag_list), tag->tag_list);
+			fprintf(f, "TAG\t%s :%s\n", tag->name, tag->tag_list);
 		} else {
 			fprintf(f, "TAG\t%s\n", tag->name);
 		}
@@ -983,7 +989,7 @@ static void twitch_quit(void){
 
 	for(TwitchTag* t = twitch_tracker_tags; t < sb_end(twitch_tracker_tags); ++t){
 		free(t->name);
-		sb_free(t->tag_list);
+		free(t->tag_list);
 	}
 	sb_free(twitch_tracker_tags);
 

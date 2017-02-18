@@ -14,7 +14,7 @@ enum { INFO_GET };
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "info",
 	.desc     = "Gets information about stuff from the internet",
-	.flags    = IRC_MOD_DEFAULT,
+	.flags    = IRC_MOD_GLOBAL,
 	.on_cmd   = &info_cmd,
 	.on_init  = &info_init,
 	.commands = DEFINE_CMDS(
@@ -36,6 +36,20 @@ static const char* paths[][2] = {
 	[P_ANSWER]   = { "Answer"       , NULL },
 	[P_REDIRECT] = { "Redirect"     , NULL },
 };
+
+static char* info_trim(const char* text, int maxlen){
+	const char* p = text-1;
+	int len = 0;
+
+	do {
+		p = strchrnul(p+1, '.');
+		if(!len || p - text < maxlen){
+			len = p - text;
+		}
+	} while(*p && p - text < maxlen);
+
+	return strndup(text, len);
+}
 
 static void info_fallback(const char* chan, const char* arg, CURL* curl){
 	char* data = NULL;
@@ -77,24 +91,12 @@ static void info_fallback(const char* chan, const char* arg, CURL* curl){
 	free(tokens);
 
 	if(url){
-		ctx->send_msg(chan, "%s %s", url, desc);
+		char* d = info_trim(desc, 175);
+		ctx->send_msg(chan, "%s %s", url, d);
+		free(d);
 	} else {
 		ctx->send_msg(chan, "Sorry, no information found for '%s'.", arg);
 	}
-}
-
-static char* info_trim(const char* text, int maxlen){
-	const char* p = text-1;
-	int len = 0;
-
-	do {
-		p = strchrnul(p+1, '.');
-		if(!len || p - text < maxlen){
-			len = p - text;
-		}
-	} while(*p && p - text < maxlen);
-
-	return strndup(text, len);
 }
 
 static const char* info_top_result(yajl_val results){
