@@ -584,6 +584,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			} else {
 				TwitchTag newtag = { .name = strdup(name) };
 				sb_push(twitch_tracker_tags, newtag);
+				tag = &sb_last(twitch_tracker_tags);
 			}
 
 			const char* tag_chans = arg + 6;
