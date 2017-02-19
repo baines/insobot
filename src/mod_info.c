@@ -67,7 +67,7 @@ static void info_fallback(const char* chan, const char* arg, CURL* curl){
 	url = NULL;
 
 	uintptr_t* tokens = calloc(0x2000, sizeof(*tokens));
-	ixt_tokenize(data, tokens, 0x2000);
+	ixt_tokenize(data, tokens, 0x2000, 0);
 
 	char desc[512];
 	bool get_content = false;

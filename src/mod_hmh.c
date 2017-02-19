@@ -157,7 +157,6 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	}
 
 	const long lim = empty_sched ? 30 : 1800;
-
 	if(now - last_schedule_update > lim && update_schedule()){
 		last_schedule_update = now;
 	}
@@ -332,7 +331,16 @@ static void note_callback(intptr_t result, intptr_t arg){
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
-	if(now - last_schedule_update > 1800 && update_schedule()){
+	bool empty_sched = true;
+	for(int i = 0; i < DAYS_IN_WEEK; ++i){
+		if(schedule[i] != 0){
+			empty_sched = false;
+			break;
+		}
+	}
+
+	const long lim = empty_sched ? 30 : 1800;
+	if(now - last_schedule_update > lim && update_schedule()){
 		last_schedule_update = now;
 	}
 

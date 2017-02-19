@@ -1219,7 +1219,7 @@ restart:;
 			        puts("On the bright side, we apparently dumped a core somewhere.");
 		        }
 
-				exitnum = (sig == SIGTERM) ? 0 : sig;
+				exitnum = (sig == SIGTERM || sig == SIGKILL) ? 0 : sig;
 	        }
 
 	        if(!getenv("INSOBOT_NO_AUTO_RESTART") && exitnum != 0){

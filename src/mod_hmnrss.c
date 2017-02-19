@@ -78,16 +78,12 @@ static void hmnrss_tick(time_t now){
 
 	if(ret == 200){
 		uintptr_t tokens[0x1000];
-		if(ixt_tokenize(data, tokens, 0x1000) != IXTR_OK) return;
+		if(ixt_tokenize(data, tokens, 0x1000, IXTF_SKIP_BLANK | IXTF_TRIM) != IXTR_OK) return;
 
 		char *message = NULL, *url = NULL;
 
 		for(uintptr_t* t = tokens; *t; ++t){
-
-			if (t[0] == IXT_TAG_OPEN &&
-				strcmp((char*)t[1], "published") == 0 &&
-				t[2] == IXT_CONTENT
-			){
+			if(ixt_match(t, IXT_TAG_OPEN, "published", IXT_CONTENT, NULL)){
 				struct tm pub_tm = {};
 				char* c = strptime((char*)t[3], "%Y-%m-%dT%H:%M:%S", &pub_tm);
 				time_t pub = mktime(&pub_tm);

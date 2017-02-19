@@ -29,7 +29,14 @@ enum {
 	IXTR_INVALID,
 };
 
-int  ixt_tokenize (char* data_in, uintptr_t* tokens_out, size_t token_count);
+// Flags for ixt_tokenize
+enum {
+	IXTF_NONE = 0,
+	IXTF_SKIP_BLANK = (1 << 0), // don't create content tags that are only whitespace
+	IXTF_TRIM       = (1 << 1), // remove whitespace at start/end of content
+};
+
+int  ixt_tokenize (char* data_in, uintptr_t* tokens_out, size_t token_count, int flags);
 bool ixt_match    (uintptr_t* tokens, ...) __attribute__((sentinel));
 
 #endif
@@ -43,7 +50,7 @@ bool ixt_match    (uintptr_t* tokens, ...) __attribute__((sentinel));
 #include <stdarg.h>
 
 static char* ixt_skip_ws(char* p){
-	while(*p && (*p <= ' ')) ++p;
+	while(*p && ((uint8_t)*p <= ' ')) ++p;
 	return p;
 }
 
@@ -76,6 +83,8 @@ static void ixt_unescape(char* msg, size_t len){
 	char c[MB_LEN_MAX];
 
 	for(char* p = msg; *p; ++p){
+
+		// named replacements
 		for(size_t i = 0; i < sizeof(tags) / sizeof(*tags); ++i){
 			if(strncmp(p, tags[i].from, tags[i].from_len) == 0){
 				const int sz = tags[i].from_len - tags[i].to_len;
@@ -87,18 +96,21 @@ static void ixt_unescape(char* msg, size_t len){
 			}
 		}
 
+		// numeric replacements
 		wchar_t wc;
 		int old_len, new_len;
-		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len) == 1){
-			if((new_len = wctomb(c, wc)) > 0 && old_len > new_len){
-				memmove(p, p + (old_len - new_len), len - (p - msg));
-				memcpy(p, c, new_len);
-			}
+		if(*p == '&' &&
+			(sscanf(p, "&#%u;%n" , &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len) == 1) &&
+			(new_len = wctomb(c, wc)) > 0 &&
+			old_len > new_len
+		){
+			memmove(p, p + (old_len - new_len), len - (p - msg));
+			memcpy(p, c, new_len);
 		}
 	}
 }
 
-int ixt_tokenize(char* in, uintptr_t* tokens, size_t count){
+int ixt_tokenize(char* in, uintptr_t* tokens, size_t count, int flags){
 
 #define IXT_ASSERT(x) if(!(x)){ fputs("ixt assertion failure: " #x "\n", stderr); goto invalid; }
 #define IXT_EMIT(x) if(t - tokens < count-1){ *t++ = (uintptr_t)(x); } else { goto truncated; }
@@ -113,6 +125,9 @@ int ixt_tokenize(char* in, uintptr_t* tokens, size_t count){
 
 	char* p = ixt_skip_ws(in);
 	uintptr_t* t = tokens;
+
+	const bool skip_blank_content = flags & IXTF_SKIP_BLANK;
+	const bool trim_content       = flags & IXTF_TRIM;
 
 	while(*p){
 		if(state == IXTS_DEFAULT){
@@ -136,7 +151,7 @@ checktag:
 					}
 				} else if(p[1] == '!' && p[2] == '-' && p[3] == '-'){ // comment
 					char* end = strstr(p+3, "-->");
-					if(!end) break;
+					IXT_ASSERT(end && "Missing comment end marker.");
 					*end = 0;
 
 					IXT_EMIT(IXT_COMMENT);
@@ -145,14 +160,14 @@ checktag:
 					p = end + 2;
 				} else if(strncmp(p+1, "![CDATA[", 8) == 0){ // cdata
 					char* end = strstr(p+9, "]]>");
-					if(!end) break;
+					IXT_ASSERT(end && "Missing CDATA end marker.");
 					*end = 0;
 
 					IXT_EMIT(IXT_CDATA);
 					IXT_EMIT(p+10);
 
 					p = end + 2;
-				} else if(strncmp(p+1, "!DOCTYPE", 8) == 0){ // doctype
+				} else if(strncasecmp(p+1, "!DOCTYPE", 8) == 0){ // doctype
 					// XXX: doesn't parse the element / attrlist stuff because i don't care
 					char* start = p + 10;
 
@@ -182,34 +197,51 @@ checktag:
 
 				p[n] = 0;
 				p += n + 1;
-			} else {
+			} else { // content between tags
 				size_t n = strcspn(p, "<");
-				if(p[n]){
-					IXT_EMIT(IXT_CONTENT);
 
-					p[n] = 0;
-					ixt_unescape(p, n);
-
-					char* q = p;
-					while(q[0] == ' ' && q[1] == ' ') ++q;
-					IXT_EMIT(q);
-
+				if(skip_blank_content && p + n == ixt_skip_ws(p)){
 					p += n;
+					continue;
+				}
 
-					goto checktag;
-				} else {
+				IXT_EMIT(IXT_CONTENT);
+
+				const bool eof = !p[n];
+				p[n] = 0;
+				ixt_unescape(p, n);
+
+				char* q = p;
+				if(trim_content){
+					q = ixt_skip_ws(p);
+				}
+
+				IXT_EMIT(q);
+
+				if(trim_content){
+					q += strlen(q) - 1;
+					while(q >= p && (uint8_t)(*q) <= ' '){
+						*q-- = 0;
+					}
+				}
+
+				p += n;
+
+				if(eof){
 					break;
+				} else {
+					goto checktag;
 				}
 			}
 		} else { // intag / inpi
 			p = ixt_skip_ws(p);
-			if((state == IXTS_INTAG && *p == '/') || (state == IXTS_INPI && *p == '?')){
+			if((state == IXTS_INTAG && *p == '/') || (state == IXTS_INPI && *p == '?')){ // end of self-closing tag
 				IXT_ASSERT(p[1] == '>');
 
 				IXT_EMIT(state == IXTS_INTAG ? IXT_TAG_CLOSE : IXT_PI_CLOSE);
 				state = IXTS_DEFAULT;
 				p += 2;
-			} else if(*p == '>'){
+			} else if(*p == '>'){ // end of opening tag
 				state = IXTS_DEFAULT;
 				++p;
 			} else { // attr
@@ -287,7 +319,7 @@ bool ixt_match(uintptr_t* tokens, ...){
 
 #endif
 
-#if 0
+#if INSO_TEST
 int main(int argc, char** argv){
 	const char* fname = argc >= 2 ? argv[1] : "feed.xml";
 	
@@ -316,14 +348,14 @@ int main(int argc, char** argv){
 	fread(buf, sz, 1, f);
 	buf[sz] = 0;
 
-	uintptr_t tokens[0x1000];
-	ixt_tokenize(buf, tokens, 0x1000);
+	uintptr_t tokens[0x2000];
+	ixt_tokenize(buf, tokens, 0x2000, IXTF_SKIP_BLANK | IXTF_TRIM);
 
 	int nesting = 5;
 	for(uintptr_t* t = tokens; *t; ++t){
 		if(*t < IXT_COUNT){
 			if(*t == IXT_TAG_CLOSE || *t == IXT_PI_CLOSE) nesting -= 2;
-			printf("%*s: %s\n", nesting, "TOKEN", tnames[(int)*t]);
+			printf("%*s: %s\n", nesting, "TOKEN", tnames[*t]);
 			if(*t == IXT_TAG_OPEN || *t == IXT_PI_OPEN) nesting += 2;
 		} else {
 			printf("%*s: %s\n", nesting, "  VAL", (char*)(*t));

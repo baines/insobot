@@ -48,7 +48,7 @@ static void hmninfo_update(void){
 	if(inso_curl_perform(curl, &data) == 200){
 
 		uintptr_t* tokens = calloc(0x2000, sizeof(*tokens));
-		ixt_tokenize(data, tokens, 0x2000);
+		ixt_tokenize(data, tokens, 0x2000, IXTF_SKIP_BLANK | IXTF_TRIM);
 
 		enum {
 			S_H3_FIND,
@@ -97,15 +97,11 @@ static void hmninfo_update(void){
 				case S_LI_CONTENT: {
 					if(*t == IXT_CONTENT && ixt_match(t+2, IXT_TAG_OPEN, "div", NULL)){
 						char* desc = (char*)t[1];
-						size_t n = strlen(desc);
-
-						char* p = desc + n - 1;
-						while(*p == ' ') *p-- = 0;
 
 						if(regexec(&hmn_proj_regex, url, 2, m, 0) == 0 && m[1].rm_so != -1){
 							HMNProject proj = { .name = strdup(name) };
 							asprintf_check(&proj.slug, "~%.*s%n", m[1].rm_eo - m[1].rm_so, url + m[1].rm_so, &proj.slug_len);
-							asprintf_check(&proj.info, "%s%s", url, desc);
+							asprintf_check(&proj.info, "%s %s", url, desc);
 							sb_push(projects, proj);
 
 							printf("hmninfo: got project %s = %s\n", proj.name, proj.slug);
