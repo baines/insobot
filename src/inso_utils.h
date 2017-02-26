@@ -62,14 +62,19 @@ static inline int inso_strcat(char* buf, size_t sz, const char* str){
 }
 
 static inline bool inso_mkdir_p(const char* path){
-	char* buf = strdupa(path);
-	char* prev_p = buf;
-	char* p;
+	char* buf = alloca(strlen(path)+2);
+	char* p   = stpcpy(buf, path);
 
+	if(p > buf && p[-1] != '/'){
+		p[0] = '/';
+		p[1] = '\0';
+	}
+
+	char* prev_p = buf;
 	while((p = strchr(prev_p, '/'))){
 		*p = 0;
-		if(access(buf, F_OK) != 0 && mkdir(buf, 00755) == -1){
-			perror(__func__);
+		if(*buf && access(buf, F_OK) != 0 && mkdir(buf, 00755) == -1){
+			fprintf(stderr, "%s: error: %m (buf=[%s])\n", __func__, buf);
 			return false;
 		}
 		*p = '/';
@@ -100,6 +105,34 @@ static inline bool inso_in_chan(const IRCCoreCtx* ctx, const char* chan){
 		++list;
 	}
 	return false;
+}
+
+static inline int inso_match_cmd(const char* msg, const char* cmd, bool skip_control){
+
+	do {
+		if(skip_control){
+			if(strncmp(cmd, CONTROL_CHAR, sizeof(CONTROL_CHAR)-1) == 0){
+				cmd += sizeof(CONTROL_CHAR)-1;
+			} else if(strncmp(cmd, CONTROL_CHAR_2, sizeof(CONTROL_CHAR_2)-1) == 0){
+				cmd += sizeof(CONTROL_CHAR_2)-1;
+			}
+		}
+
+		const char* cmd_end = strchrnul(cmd, ' ');
+		const size_t sz = cmd_end - cmd;
+
+		if(strncasecmp(msg, cmd, sz) == 0 && (msg[sz] == ' ' || msg[sz] == '\0')){
+			return sz;
+		}
+
+		while(*cmd_end == ' '){
+			++cmd_end;
+		}
+
+		cmd = cmd_end;
+	} while(*cmd);
+
+	return -1;
 }
 
 static inline void inso_permission_cb(intptr_t result, intptr_t arg){

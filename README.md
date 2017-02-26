@@ -1,13 +1,24 @@
 # insobot
 Module based IRC bot written in C with markov chains and stuff.
 
-See insobot.sh.example and src/config.h for configuration. There's also
-more info in [the wiki](https://github.com/baines/insobot/wiki).
+## Running it
+To run your own insobot instance, see [this quickstart guide](https://github.com/baines/insobot/wiki/quickstart)
+, other pages in [the wiki](https://github.com/baines/insobot/wiki), and the
+files 'insobot.sh.example' and 'src/config.h'.
 
+I should also be available in [#botdev](ircs://irc.handmade.network:7777/#botdev)
+on irc.handmade.network/7777 (ssl) if you need help.
+
+## Contributing
+Any contributions of new modules, improvements to existing modules, or raising
+issues here on github is welcome.
+
+## Commands
 This table shows common modules & commands. Refer to the top of each module's
 .c file for a complete listing.
 
-NOTE: The insobot instance on twitch prefixes most of these commands with '\\' (backslash)
+NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
+(backslash), the default prefix (set in config.h) is '!' (exclamation mark) however.
 
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
@@ -64,4 +75,5 @@ NOTE: The insobot instance on twitch prefixes most of these commands with '\\' (
 |                  |                         | wl \<user\>                 | Shows if \<user\> is whitelisted  | WLIST      |
 |                  |                         | wl+ \<user\>                | Whitelists \<user\>               | ADMIN      |
 |                  |                         | wl- \<user\>                | Unwhitelists \<user\>             | ADMIN      |
+
 

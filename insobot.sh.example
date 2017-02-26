@@ -19,6 +19,8 @@ export IRC_CHAN="#achannel,#anotherchannel"
 # mod_twitch needs this from 8th aug 2016
 # https://www.twitch.tv/settings/connections
 # export INSOBOT_TWITCH_CLIENT_ID="something"
+# if you want !title to work, it'll also need a twitch OAuth token set in this:
+# export INSOBOT_TWITCH_TOKEN="something"
 
 # mod_quotes needs these 3 vars
 # export INSOBOT_GIST_USER="github username to store the quote list gist as"
@@ -29,8 +31,22 @@ export IRC_CHAN="#achannel,#anotherchannel"
 # it's a PITA to set up, see https://dev.twitter.com/oauth/application-only
 # export INSOBOT_TWITTER_TOKEN="twitter bearer token"
 
+# it also needs this to expand youtube playlists, or normal youtube links if you
+# enable the "legit api" option in mod_linkinfo.c.
+# get one from  https://developers.google.com/youtube/registering_an_application
+# export INSOBOT_YT_API_KEY="youtube api key"
+
+# mod_schedule uses the same gist user/token as above, as well as this:
+# export INSOBOT_SCHED_GIST_ID="gist id for schedule data"
+
+# you can make mod_haiku look fancier with this
+# export INSOBOT_MULTILINE_HAIKU=1
+
 # uncomment to disable the auto-restarting + timestamp prepending via parent process
+# export INSOBOT_NO_AUTO_RESTART=1
 # export INSOBOT_NO_FORK=1
+
+# see the github wiki for a full list of insobot environment variables.
 
 # also see src/config.h to change the bot owner, default name + default pass
 

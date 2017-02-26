@@ -12,6 +12,15 @@ lz     := $(shell pkg-config --libs zlib  2>/dev/null)
 lyajl  := $(shell pkg-config --libs yajl  2>/dev/null)
 lcairo := $(shell pkg-config --libs cairo 2>/dev/null)
 
+# Use this to only build certain modules
+# MODULES := meta admin chans whitelist markov linkinfo
+# And put it (and other stuff) in here that you don't want overridden by a git pull
+-include config.mk
+
+ifdef MODULES
+    module_c := $(filter $(patsubst %,mod_%.c,$(MODULES)),$(module_c))
+endif
+
 ifndef lyajl
     $(error libyajl2 is required for JSON parsing & generation. Please install it)
 endif

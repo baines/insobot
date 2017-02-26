@@ -30,4 +30,5 @@
 ircbot
 insobot
 modules/data/
-start*.sh
+*.sh
+src/config.mk

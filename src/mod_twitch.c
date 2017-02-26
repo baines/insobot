@@ -421,10 +421,7 @@ static void twitch_print_tags(const char* prefix, const char* stream){
 		int nick_count;
 		const char** nicks = ctx->get_nicks(*chan, &nick_count);
 
-		printf("spaced stream: [%s]\n", spaced_stream);
-
 		for(TwitchTag* tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
-			printf("tag: [%s] [%s]\n", tag->name, tag->tag_list);
 			if(tag->tag_list && !strcasestr(tag->tag_list, spaced_stream)){
 				continue;
 			}

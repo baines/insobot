@@ -41,6 +41,7 @@ typedef struct IMEntry_ {
 	char* url;
 	char* text;
 	char* del;
+	bool from_album;
 } IMEntry;
 
 static IMEntry* im_entries;
@@ -49,6 +50,7 @@ static const char* imgur_client_id;
 static const char* imgur_album_id;
 static const char* imgur_album_hash;
 static struct curl_slist* imgur_curl_headers;
+static CURL* curl;
 
 static char* im_base_dir;
 
@@ -106,41 +108,39 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 	struct curl_httppost *form = NULL, *last = NULL;
 
 	curl_formadd(&form, &last,
-				 CURLFORM_PTRNAME, "image",
-				 CURLFORM_BUFFER, "image.png",
-				 CURLFORM_BUFFERPTR, png,
-				 CURLFORM_BUFFERLENGTH, png_len,
-				 CURLFORM_END);
+	             CURLFORM_PTRNAME, "image",
+	             CURLFORM_BUFFER, "image.png",
+	             CURLFORM_BUFFERPTR, png,
+	             CURLFORM_BUFFERLENGTH, png_len,
+	             CURLFORM_END);
 
 	curl_formadd(&form, &last,
-				 CURLFORM_PTRNAME, "title",
-				 CURLFORM_PTRCONTENTS, title,
-				 CURLFORM_END);
+	             CURLFORM_PTRNAME, "title",
+	             CURLFORM_PTRCONTENTS, title,
+	             CURLFORM_END);
 
 	curl_formadd(&form, &last,
-				 CURLFORM_PTRNAME, "description",
-				 CURLFORM_PTRCONTENTS, e->text,
-				 CURLFORM_END);
+	             CURLFORM_PTRNAME, "description",
+	             CURLFORM_PTRCONTENTS, e->text,
+	             CURLFORM_END);
 
-#if 0
-	curl_formadd(&form, &last,
-				 CURLFORM_PTRNAME, "album",
-				 CURLFORM_PTRCONTENTS, imgur_album_hash,
-				 CURLFORM_END);
-#endif
+	if(imgur_album_hash){
+		curl_formadd(&form, &last,
+		             CURLFORM_PTRNAME, "album",
+		             CURLFORM_PTRCONTENTS, imgur_album_hash,
+		             CURLFORM_END);
+	}
 
 	char* data = NULL;
-	CURL* curl = inso_curl_init("https://api.imgur.com/3/image", &data);
+	inso_curl_reset(curl, "https://api.imgur.com/3/image", &data);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, imgur_curl_headers);
 	curl_easy_setopt(curl, CURLOPT_HTTPPOST, form);
-	CURLcode c = curl_easy_perform(curl);
-	if(c != CURLE_OK) printf("mod_imgmacro: curl error: %s\n", curl_easy_strerror(c));
-	sb_push(data, 0);
 
-	long http_code = 0;
-	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
+	long result = inso_curl_perform(curl, &data);
+	if(result < 0){
+		printf("mod_imgmacro: curl error: %s\n", curl_easy_strerror(-result));
+	}
 
-	curl_easy_cleanup(curl);
 	curl_formfree(form);
 
 	static const char* id_path[]  = { "data", "id", NULL };
@@ -157,13 +157,13 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 		ctx->save_me();
 	} else {
 		printf("mod_imgmacro: root/id/del null\n");
-		http_code = 0;
+		result = 0;
 	}
 
 	yajl_tree_free(root);
 	sb_free(data);
 
-	return http_code == 200;
+	return result == 200;
 }
 
 static cairo_status_t im_png_write(void* arg, const uint8_t* data, unsigned int data_len){
@@ -204,7 +204,7 @@ static void im_draw_text(cairo_t* cairo, double w, double h, const char* text, i
 		-(te.width / 2 + te.x_bearing),
 		-(te.height / 2 + te.y_bearing) + offset
 	);
-	
+
 	cairo_text_path(cairo, text);
 	cairo_set_source_rgb(cairo, 1, 1, 1);
 	cairo_fill_preserve(cairo);
@@ -215,7 +215,7 @@ static void im_draw_text(cairo_t* cairo, double w, double h, const char* text, i
 }
 
 static IMEntry* im_create(const char* template, const char* top, const char* bot){
-	
+
 	// TODO: check if one already exists first, cmp top / bot with IMEntry.text
 
 	cairo_surface_t* img = cairo_image_surface_create_from_png(template);
@@ -228,7 +228,7 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 
 	double font_sz = img_w < img_h ? img_w / 8.0 : img_h / 8.0;
 	cairo_set_font_size(cairo, font_sz);
-	
+
 	cairo_set_line_width(cairo, font_sz / 24.0);
 	cairo_set_line_cap  (cairo, CAIRO_LINE_CAP_SQUARE);
 	cairo_set_line_join (cairo, CAIRO_LINE_JOIN_BEVEL);
@@ -265,6 +265,7 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 	if(ok){
 		ctx->send_ipc(0, "update", 7);
 		sb_push(im_entries, e);
+		ctx->save_me();
 	} else {
 		free(full_text);
 	}
@@ -274,26 +275,26 @@ static IMEntry* im_create(const char* template, const char* top, const char* bot
 	return ok ? &sb_last(im_entries) : NULL;
 }
 
-// TODO
-#if 0
-static void im_update(void){
-
-	for(IMEntry* i = im_entries; i < sb_end(im_entries); ++i){
-		free(i->text);
-		free(i->url);
+static bool im_find_url(const char* url){
+	for(IMEntry* e = im_entries; e < sb_end(im_entries); ++e){
+		if(strcmp(e->url, url) == 0) return true;
 	}
-	sb_free(im_entries);
+	return false;
+}
+
+static void im_load_album(void){
+
+	if(!imgur_album_id){
+		return;
+	}
 
 	char url[256];
 	snprintf(url, sizeof(url), "https://api.imgur.com/3/album/%s/images", imgur_album_id);
 
 	char* data = NULL;
-	CURL* curl = inso_curl_init(url, &data);
+	inso_curl_reset(curl, url, &data);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, imgur_curl_headers);
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
-	curl_easy_perform(curl);
-	curl_easy_cleanup(curl);
-	sb_push(data, 0);
+	inso_curl_perform(curl, &data);
 
 	static const char* data_path[]  = { "data", NULL };
 	static const char* id_path[]    = { "id", NULL };
@@ -309,40 +310,52 @@ static void im_update(void){
 
 			yajl_val img_id    = yajl_tree_get(key, id_path   , yajl_t_string);
 			yajl_val img_title = yajl_tree_get(key, title_path, yajl_t_string);
-			yajl_val img_desc  = yajl_tree_get(key, desc_path , yajl_t_string);
-
+			yajl_val img_desc  = yajl_tree_get(key, desc_path , yajl_t_string); 
 			if(!img_id || !img_title || !img_desc) continue;
+
+			snprintf(url, sizeof(url), "https://i.imgur.com/%s.png", img_id->u.string);
+
+			// don't add dups
+			if(im_find_url(url)){
+				continue;
+			}
 
 			IMEntry e = {
 				.id = atoi(img_title->u.string),
-				.text = strdup(img_desc->u.string)
+				.url  = strdup(url),
+				.text = strdup(img_desc->u.string),
+				.del  = strdup("???"),
 			};
-			asprintf_check(&e.url, "https://i.imgur.com/%s.png", img_id->u.string);
 
 			sb_push(im_entries, e);
 		}
 	}
 
+	ctx->save_me();
+
 	yajl_tree_free(root);
 	sb_free(data);
 }
-#endif
 
 static bool im_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
-	
-	imgur_client_id  = getenv("INSOBOT_IMGUR_CLIENT_ID");
-	imgur_album_id   = getenv("INSOBOT_IMGMACRO_ALBUM_ID");
-	imgur_album_hash = getenv("INSOBOT_IMGMACRO_ALBUM_HASH");
 
-	if(!imgur_client_id || !imgur_album_id || !imgur_album_hash){
+	imgur_client_id  = getenv("INSOBOT_IMGUR_CLIENT_ID");     // Required: imgur api key / client id.
+	imgur_album_id   = getenv("INSOBOT_IMGMACRO_ALBUM_ID");   // Optional: Album ID to retrieve images from.
+	imgur_album_hash = getenv("INSOBOT_IMGMACRO_ALBUM_HASH"); // Optional: Album hash, to add new images to.
+
+	if(!imgur_client_id){
+		puts("mod_imgmacro: No imgur client id, init failed.");
 		return false;
 	}
 
+	// curl setup
 	char header_buf[256];
 	snprintf(header_buf, sizeof(header_buf), "Authorization: Client-ID %s", imgur_client_id);
 	imgur_curl_headers = curl_slist_append(NULL, header_buf);
+	curl = curl_easy_init();
 
+	// template dir setup
 	const char* data_dir = getenv("XDG_DATA_HOME");
 
 	struct stat st;
@@ -354,7 +367,9 @@ static bool im_init(const IRCCoreCtx* _ctx){
 	} else {
 		asprintf_check(&im_base_dir, "%s/insobot/imgmacro/", data_dir);
 	}
+	inso_mkdir_p(im_base_dir);
 
+	// load entries from data file
 	IMEntry e;
 	FILE* f = fopen(ctx->get_datafile(), "r");
 	while(fscanf(f, "%d %ms %ms %m[^\n]", &e.id, &e.url, &e.del, &e.text) == 4){
@@ -362,7 +377,8 @@ static bool im_init(const IRCCoreCtx* _ctx){
 	}
 	fclose(f);
 
-//	inso_mkdir_p(im_base_dir);
+	// load more entries from album, if set
+	im_load_album();
 
 	return true;
 }
@@ -381,7 +397,7 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 	switch(cmd){
 		case IM_CREATE: {
 			char template[64], txt_top[128], txt_bot[128];
-			
+
 			int i = sscanf(arg, " %63s \"%127[^\"]\" \"%127[^\"]\"", template, txt_top, txt_bot);
 
 			if(i < 2){
@@ -419,6 +435,7 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 				int total = sb_count(im_entries);
 				if(total == 0){
 					ctx->send_msg(chan, "%s: None here :(", name);
+					break;
 				} else {
 					link = im_entries[rand() % total].url;
 				}
@@ -486,11 +503,9 @@ static void im_cmd(const char* chan, const char* name, const char* arg, int cmd)
 }
 
 static void im_pm(const char* name, const char* msg){
-	if(*msg == '\\' || *msg == '!') ++msg;
-
-	// FIXME: avoid repetition of the stuff in the DEFINE_CMDS here somehow
-	if(strncasecmp(msg, "newimg", 6) == 0 || strncasecmp(msg, "mkmeme", 6) == 0){
-		im_cmd(name, name, msg + 6, IM_CREATE);
+	int len = inso_match_cmd(msg, irc_mod_ctx.commands[IM_CREATE], true);
+	if(len > 0){
+		im_cmd(name, name, msg + len, IM_CREATE);
 	}
 }
 
@@ -511,9 +526,12 @@ static void im_quit(void){
 
 	free(im_base_dir);
 	curl_slist_free_all(imgur_curl_headers);
+	curl_easy_cleanup(curl);
 	cairo_debug_reset_static_data();
 }
 
 static void im_ipc(int sender_id, const uint8_t* data, size_t data_len){
-//	im_update(); TODO
+	if(data_len == 7 && memcmp(data, "update", 7) == 0){
+		im_load_album();
+	}
 }
