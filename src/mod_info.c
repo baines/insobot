@@ -75,7 +75,7 @@ static void info_fallback(const char* chan, const char* arg, CURL* curl){
 
 	for(uintptr_t* t = tokens; *t; ++t){
 		if(!get_content){
-			if(ixt_match(t, IXT_ATTR_KEY, "class", IXT_ATTR_VAL, "result__snippet", IXT_ATTR_KEY, "href", NULL)){
+			if(ixt_match(t, IXT_ATTR_KEY, "class", IXT_ATTR_VAL, "result__snippet", IXT_ATTR_KEY, "href", NULL) && strlen((char*)t[7]) < 80){
 				url = (char*)t[7];
 				get_content = true;
 			}
