@@ -46,6 +46,9 @@ export IRC_CHAN="#achannel,#anotherchannel"
 # export INSOBOT_NO_AUTO_RESTART=1
 # export INSOBOT_NO_FORK=1
 
+# uncomment this to set a 'debug channel', currently only used for crash reports
+# export INSOBOT_DEBUG_CHAN="#somewhere"
+
 # see the github wiki for a full list of insobot environment variables.
 
 # also see src/config.h to change the bot owner, default name + default pass

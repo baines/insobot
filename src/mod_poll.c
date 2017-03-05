@@ -169,6 +169,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 				}
 
 				ctx->send_msg(chan, "New poll (#%d): [%s] Use !vote N to vote for: %s", poll->id, poll->question, opt_buf);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Usage: " CONTROL_CHAR "poll+ <question>? opt0 | opt1 | ... | optn", name);
 			}
@@ -187,6 +188,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 
 			if(poll && poll->open){
 				poll->open = false;
+				poll->modified = time(0);
 
 				PollOpt* ranking = alloca(sb_count(poll->options) * sizeof(*ranking));
 				memcpy(ranking, poll->options, sb_count(poll->options) * sizeof(*ranking));
@@ -201,6 +203,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 					snprintf_chain(&p, &sz, "[#%d = %s (%d)] ", i+1, ranking[i].text, ranking[i].votes);
 				}
 				ctx->send_msg(chan, "Poll [%s] closed. Results: %s", poll->question, opt_buf);
+				ctx->save_me();
 			} else {
 				ctx->send_msg(chan, "%s: Poll not found.", name);
 			}
@@ -231,6 +234,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 				if(can_vote){
 					poll->options[vote].votes++;
 					sb_push(poll->voters, strdup(name));
+					ctx->save_me();
 				}
 			}
 		} break;

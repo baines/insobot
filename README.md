@@ -53,6 +53,11 @@ NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
 |                  |                         | mon \<mod\>                 | Enables module \<mod\>            | WLIST      |
 |                  |                         | moff \<mod\>                | Disables module \<mod\>           | WLIST      |
 |                  |                         | minfo \<mod\>               | Show module's description         | WLIST      |
+| **mod_poll**     | Create polls            | poll+ q? opt0 \| .. \| optn | Create a new poll                 | WLIST      |
+|                  |                         | poll- [\#id]                | Close a poll by id (or latest)    | WLIST      |
+|                  |                         | poll [\#id]                 | Show poll status                  | WLIST      |
+|                  |                         | pall / popen                | Show open polls                   | WLIST      |
+|                  |                         | vote [\#id] n               | Vote for option n of a poll       | NORMAL     |
 | **mod_psa**      | Add periodic messages   | psa+ \<id\> [args]          | Add a new PSA                     | WLIST      |
 |                  |                         | psa- \<id\>                 | Remove a previously added PSA     | WLIST      |
 | **mod_quotes**   | Stores quotes           | q  [\#chan] \<n\>           | Shows quote n                     | NORMAL     |

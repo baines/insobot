@@ -117,6 +117,9 @@ static char   irc_tag_buf[512];
 static char** irc_tag_ptrs;
 static bool   have_tag_hack;
 
+static int debug_pipe[2];
+static const char* debug_chan;
+
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
 	event_type     event,   \
@@ -193,7 +196,13 @@ static void util_handle_sig(int n){
 		fputs("########## SIGSEGV BACKTRACE ##########\n", stderr);
 		backtrace_symbols_fd(buf, size, STDERR_FILENO);
 		fputs("##########        END        ##########\n", stderr);
+
 		signal(SIGSEGV, SIG_DFL);
+
+		// notify our future self about how we died... 🤔
+		if(getenv("INSOBOT_DEBUG_CHAN") && size > 2){
+			backtrace_symbols_fd(buf + 2, 1, debug_pipe[1]);
+		}
 	} else {
 		running = 0;
 	}
@@ -261,12 +270,12 @@ static void util_process_pending_cmds(void){
 
 			case IRC_CMD_JOIN: {
 				irc_cmd_join(irc_ctx, cmd.chan, cmd.data);
-				irc_on_join(irc_ctx, "join", cmd.data, (const char**)&cmd.chan, 1);
+//				irc_on_join(irc_ctx, "join", cmd.data, (const char**)&cmd.chan, 1);
 			} break;
 
 			case IRC_CMD_PART: {
 				irc_cmd_part(irc_ctx, cmd.chan);
-				irc_on_part(irc_ctx, "part", cmd.data, (const char**)&cmd.chan, 1);
+//				irc_on_part(irc_ctx, "part", cmd.data, (const char**)&cmd.chan, 1);
 			} break;
 
 			case IRC_CMD_MSG: {
@@ -817,6 +826,12 @@ IRC_STR_CALLBACK(on_join) {
 		sb_push(chan_nicks[chan_i], strdup(origin));
 	}
 
+	// if we're joining the debug channel, set the global so we know we can now send stuff
+	const char* c = getenv("INSOBOT_DEBUG_CHAN");
+	if(c && strcmp(origin, bot_nick) == 0 && strcmp(params[0], c) == 0){
+		debug_chan = c;
+	}
+
 	//XXX: can't use CHECK here unless our own name bypasses it FIXME
 	IRC_MOD_CALL_ALL(on_join, (params[0], origin));
 }
@@ -1178,61 +1193,69 @@ int main(int argc, char** argv){
 
 	int pipe_fds[2] = {};
 	if(!getenv("INSOBOT_NO_FORK")){
-restart:;
-        if(pipe(pipe_fds) == -1){
-	        perror("pipe failed");
-	        exit(1);
-        }
 
-        pid_t pid = fork();
-        if(pid == -1){
-	        perror("fork failed");
-	        exit(1);
-        }
+		if(getenv("INSOBOT_DEBUG_CHAN")){
+			if(pipe(debug_pipe) == -1){
+				perror("pipe failed");
+				exit(1);
+			}
+		}
 
-        if(pid != 0){
-	        signal(SIGINT , SIG_IGN);
-	        signal(SIGPIPE, &util_handle_sig);
+restart:
+		if(pipe(pipe_fds) == -1){
+			perror("pipe failed");
+			exit(1);
+		}
 
-	        close(pipe_fds[1]);
-	        prctl(PR_SET_NAME, "ib-parent");
+		pid_t pid = fork();
+		if(pid == -1){
+			perror("fork failed");
+			exit(1);
+		}
 
-	        util_log_proc(pipe_fds[0], pid);
-	        close(pipe_fds[0]);
+		if(pid != 0){
+			signal(SIGINT , SIG_IGN);
+			signal(SIGPIPE, &util_handle_sig);
 
-	        int status;
-	        wait(&status);
+			close(pipe_fds[1]);
+			prctl(PR_SET_NAME, "ib-parent");
 
-	        int exitnum = 0;
+			util_log_proc(pipe_fds[0], pid);
+			close(pipe_fds[0]);
 
-	        if(WIFEXITED(status)){
-		        exitnum = WEXITSTATUS(status);
-		        printf("insobot exited. (%d)\n", exitnum);
+			int status;
+			wait(&status);
+
+			int exitnum = 0;
+
+			if(WIFEXITED(status)){
+				exitnum = WEXITSTATUS(status);
+				printf("insobot exited. (%d)\n", exitnum);
 
 				// asan workaround
-		        if(exitnum > 1){ exitnum = 0; }
-	        } else if(WIFSIGNALED(status)){
-		        int sig = WTERMSIG(status);
-		        printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, sys_siglist[sig]);
+				if(exitnum > 1){ exitnum = 0; }
+			} else if(WIFSIGNALED(status)){
+				int sig = WTERMSIG(status);
+				printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, sys_siglist[sig]);
 
-		        if(WCOREDUMP(status)){
-			        puts("On the bright side, we apparently dumped a core somewhere.");
-		        }
+				if(WCOREDUMP(status)){
+					puts("On the bright side, we apparently dumped a core somewhere.");
+				}
 
 				exitnum = (sig == SIGTERM || sig == SIGKILL) ? 0 : sig;
-	        }
+			}
 
-	        if(!getenv("INSOBOT_NO_AUTO_RESTART") && exitnum != 0){
-		        puts("Gonna try to auto restart...");
-		        signal(SIGINT , SIG_DFL);
-		        if(usleep(5000000) == -1){
+			if(!getenv("INSOBOT_NO_AUTO_RESTART") && exitnum != 0){
+				puts("Gonna try to auto restart...");
+				signal(SIGINT , SIG_DFL);
+				if(usleep(5000000) == -1){
 					exit(1);
 				}
-		        goto restart;
-	        }
+				goto restart;
+			}
 
-	        exit(exitnum);
-        }
+			exit(exitnum);
+		}
 
         prctl(PR_SET_NAME, "insobot");
         prctl(PR_SET_PDEATHSIG, SIGINT);
@@ -1415,13 +1438,17 @@ restart:;
 			time_t now = time(0);
 			IRC_MOD_CALL_ALL(on_tick, (now));
 
-			int max_fd = ipc_socket;
+			int max_fd = INSO_MAX(ipc_socket, debug_pipe[0]);
 			fd_set in, out;
 	
 			FD_ZERO(&in);
 			FD_ZERO(&out);
 			FD_SET(STDIN_FILENO, &in);
 			FD_SET(ipc_socket, &in);
+
+			if(debug_chan && debug_pipe[0]){
+				FD_SET(debug_pipe[0], &in);
+			}
 
 			if(irc_add_select_descriptors(irc_ctx, &in, &out, &max_fd) != 0){
 				fprintf(stderr, "Error adding select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
@@ -1451,6 +1478,20 @@ restart:;
 
 				if(FD_ISSET(ipc_socket, &in)){
 					util_ipc_recv();
+				}
+
+				if(FD_ISSET(debug_pipe[0], &in)){
+					char buf[256] = {};
+					size_t n = read(debug_pipe[0], buf, sizeof(buf)-1);
+					if(n > 0){
+						buf[n-1] = 0;
+						char* fname;
+						int off;
+						if(sscanf(buf, "%m[^(]%n", &fname, &off) == 1){
+							core_send_msg(debug_chan, "Recovered from crash: %s%s", basename(fname), buf + off);
+							free(fname);
+						}
+					}
 				}
 
 				for(int i = 0; i < max_fd + 1; ++i){
