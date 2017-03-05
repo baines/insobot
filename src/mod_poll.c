@@ -314,6 +314,12 @@ static bool poll_load(void){
 	size_t buf_sz = ftell(f);
 	fseek(f, 0, SEEK_SET);
 
+	// succeed on empty config file
+	if(buf_sz <= 1){
+		fclose(f);
+		return true;
+	}
+
 	char* buf = malloc(buf_sz + 1);
 	fread(buf, buf_sz, 1, f);
 	fclose(f);
