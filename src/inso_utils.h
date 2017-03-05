@@ -135,6 +135,35 @@ static inline int inso_match_cmd(const char* msg, const char* cmd, bool skip_con
 	return -1;
 }
 
+static inline void time_diff_string(time_t start, time_t end, char* buf, size_t buf_sz){
+
+	time_t time_diff = end - start;
+
+	static const struct {
+		const char* unit;
+		int limit;
+		int divisor;
+	} time_info[] = {
+		{ "s", 60, 1},
+		{ "m", (60*60), 60 },
+		{ "h", (60*60*24), (60*60) },
+		{ "d", (60*60*24*365), (60*60*24) }
+	};
+
+	for(size_t i = 0; i < ARRAY_SIZE(time_info); ++i){
+		if(time_diff < time_info[i].limit){
+			snprintf(buf, buf_sz, "%d%s ago", (int)time_diff / time_info[i].divisor, time_info[i].unit);
+			break;
+		}
+	}
+
+	if(!*buf){
+		struct tm tm = {};
+		gmtime_r(&start, &tm);
+		strftime(buf, buf_sz, "%F", &tm);
+	}
+}
+
 static inline void inso_permission_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
 }

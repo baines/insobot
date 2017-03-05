@@ -558,28 +558,9 @@ static void do_twitter_info(const char* chan, const char* msg, regmatch_t* match
 
 	struct tm tweet_tm = {};
 	strptime(date->u.string, "%a %b %d %T %z %Y", &tweet_tm);
-	time_t time_diff = time(0) - timegm(&tweet_tm);
+
 	char time_buf[32] = {};
-
-	// TODO: make a general version of this duration-to-string stuff and put it in utils.h
-	// since i end up doing this differently everywhere...
-
-	struct {
-		const char* unit;
-		int limit;
-		int divisor;
-	} time_info[] = { { "s", 60, 1}, { "m", (60*60), 60 }, { "h", (60*60*24), (60*60) }, { "d", (60*60*24*365), (60*60*24) } };
-
-	for(size_t i = 0; i < ARRAY_SIZE(time_info); ++i){
-		if(time_diff < time_info[i].limit){
-			snprintf(time_buf, sizeof(time_buf), "%d%s ago", (int)time_diff / time_info[i].divisor, time_info[i].unit);
-			break;
-		}
-	}
-
-	if(!*time_buf){
-		strftime(time_buf, sizeof(time_buf), "%F", &tweet_tm);
-	}
+	time_diff_string(timegm(&tweet_tm), time(0), time_buf, sizeof(time_buf));
 
 	Replacement* url_replacements = NULL;
 

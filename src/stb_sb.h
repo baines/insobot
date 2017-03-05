@@ -13,6 +13,7 @@
 #define sb_end    stb_sb_end
 #define sb_pop    stb_sb_pop
 #define sb_erase  stb_sb_erase
+#define sb_each   stb_sb_each
 #endif
 
 #define stb_sb_free(a)         ((a) ? free(stb__sbraw(a)),(a)=0,0 : 0)
@@ -23,6 +24,8 @@
 #define stb_sb_end(a)          ((a) ? (a) + stb__sbn(a) : 0)
 #define stb_sb_pop(a)          (--stb__sbn(a))
 #define stb_sb_erase(a,i)      ((a) ? memmove((a)+(i), (a)+(i)+1, sizeof(*(a))*((--stb__sbn(a))-(i))),0 : 0);
+
+#define stb_sb_each(n,h)       for(typeof(h) n = h; n < sb_end(h); ++n)
 
 #define stb__sbraw(a) ((size_t *) (a) - 2)
 #define stb__sbm(a)   stb__sbraw(a)[0]
