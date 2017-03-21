@@ -6,6 +6,7 @@
 #include "stb_sb.h"
 #include <curl/curl.h>
 #include <regex.h>
+#include <ctype.h>
 
 // TODO: perhaps this should be merged with mod_linkinfo or mod_hmnrss (with altered name)
 
@@ -137,7 +138,7 @@ static void hmninfo_quit(void){
 static void hmninfo_msg(const char* chan, const char* name, const char* msg){
 	for(HMNProject* p = projects; p < sb_end(projects); ++p){
 		const char* s = strcasestr(msg, p->slug);
-		if(s && (s[p->slug_len] == ' ' || s[p->slug_len] == 0)){
+		if(s && (s[p->slug_len] == ' ' || s[p->slug_len] == 0 || ispunct(s[p->slug_len]))){
 			ctx->send_msg(chan, "↑ %s: %s", p->name, p->info);
 			break;
 		}
