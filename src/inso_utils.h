@@ -164,8 +164,9 @@ static inline void time_diff_string(time_t start, time_t end, char* buf, size_t 
 	}
 }
 
-static inline void inso_permission_cb(intptr_t result, intptr_t arg){
+static inline intptr_t inso_permission_cb(intptr_t result, intptr_t arg){
 	if(result) *(bool*)arg = true;
+	return 0;
 }
 
 static inline bool inso_is_wlist(const IRCCoreCtx* ctx, const char* name){
@@ -180,10 +181,11 @@ static inline bool inso_is_admin(const IRCCoreCtx* ctx, const char* name){
 	return result;
 }
 
-static inline void inso_dispname_cb(intptr_t result, intptr_t arg){
+static inline intptr_t inso_dispname_cb(intptr_t result, intptr_t arg){
 	// TODO: think of a good way to chain the mod msgs,
 	// for example if more than one provides a display name.
 	*(const char**)arg = (const char*)result;
+	return 0;
 }
 
 // XXX: taking a char* param is a bit misleading since this will only work

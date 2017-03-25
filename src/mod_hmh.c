@@ -14,8 +14,9 @@ static bool hmh_init    (const IRCCoreCtx*);
 static void hmh_quit    (void);
 static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
 static void hmh_ipc     (int who, const uint8_t* ptr, size_t sz);
+static void hmh_tick    (time_t);
 
-enum { CMD_SCHEDULE, CMD_TIME, CMD_QA };
+enum { CMD_SCHEDULE, CMD_TIME, CMD_OWLBOT, CMD_OWL_Y, CMD_OWL_N, CMD_QA };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "hmh",
@@ -25,9 +26,13 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit    = &hmh_quit,
 	.on_mod_msg = &hmh_mod_msg,
 	.on_ipc     = &hmh_ipc,
+	.on_tick    = &hmh_tick,
 	.commands = DEFINE_CMDS (
 		[CMD_SCHEDULE] = CMD1("schedule"),
 		[CMD_TIME]     = CMD1("tm") CMD1("time") CMD1("when"),
+		[CMD_OWLBOT]   = CMD1("owlbot"),
+		[CMD_OWL_Y]    = "!owly !owlyes !owlyea",
+		[CMD_OWL_N]    = "!owln !owlno  !owlnay",
 		[CMD_QA]       = "!qa"
 	)
 };
@@ -44,6 +49,15 @@ static time_t schedule[DAYS_IN_WEEK];
 static time_t schedule_week;
 
 static char* tz_buf;
+
+static time_t owlbot_timer;
+static char** owlbot_voters;
+static int    owlbot_yea;
+static int    owlbot_nay;
+
+// TODO: factor this into main insobot
+enum { SERV_UNKNOWN, SERV_TWITCH, SERV_HMN };
+static int irc_server;
 
 #if 0
 static bool is_upcoming_stream(void){
@@ -141,8 +155,9 @@ static bool update_schedule(void){
 	return true;
 }
 
-static void check_alias_cb(intptr_t result, intptr_t arg){
+static intptr_t check_alias_cb(intptr_t result, intptr_t arg){
 	*(int*)arg = result;
+	return 0;
 }
 
 static void print_schedule(const char* chan, const char* name, const char* arg){
@@ -324,8 +339,9 @@ static bool is_during_stream(void){
 	return live;
 }
 
-static void note_callback(intptr_t result, intptr_t arg){
+static intptr_t note_callback(intptr_t result, intptr_t arg){
 	if(result) *(time_t*)arg = result;
+	return 0;
 }
 
 static void print_time(const char* chan, const char* name){
@@ -456,7 +472,17 @@ static bool check_for_alias(const char* keys, const char* chan, const char* cc){
 	}
 }
 
+#define HMH_MSG(...) ({ ctx->send_msg(irc_server == SERV_TWITCH ? "#handmade_hero" : "#hero", __VA_ARGS__); })
+
+static void hmh_owlbot_start(void){
+	owlbot_timer = time(0);
+	owlbot_yea = owlbot_nay = 0;
+	HMH_MSG("(/o.o): Owl vote started. Use !owly or !owln to vote whether or not to light The Owl and notify Casey of something important.");
+}
+
 static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd){
+
+	int* owl_vote = &owlbot_nay;
 
 	switch(cmd){
 		case CMD_SCHEDULE: {
@@ -471,10 +497,61 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 			}
 		} break;
 
+		case CMD_OWLBOT: {
+			if(owlbot_timer || !inso_is_wlist(ctx, name)) break;
+			if(irc_server == SERV_UNKNOWN) break;
+			if(irc_server == SERV_TWITCH && strcmp(chan, "#handmade_hero") != 0) break;
+			if(irc_server == SERV_HMN && strcmp(chan, "#hero") != 0) break;
+
+			ctx->send_ipc(0, "owl !", 6);
+			hmh_owlbot_start();
+		} break;
+
+		case CMD_OWL_Y:
+			owl_vote = &owlbot_yea;
+		case CMD_OWL_N:	{
+			if(!owlbot_timer) break;
+
+			sb_each(v, owlbot_voters){
+				if(strcmp(*v, name) == 0) return;
+			}
+
+			ctx->send_ipc(0, owl_vote == &owlbot_yea ? "owl y" : "owl n", 6);
+			++*owl_vote;
+			sb_push(owlbot_voters, strdup(name));
+		} break;
+
 		case CMD_QA: {
-			if(getenv("IRC_IS_TWITCH") || !inso_is_wlist(ctx, name)) return;
 			//ctx->send_ipc(0, &cmd, sizeof(cmd));
 		} break;
+	}
+}
+
+static void hmh_tick(time_t now){
+	if(owlbot_timer && now > owlbot_timer + 60){
+		if((owlbot_nay + owlbot_yea) >= 3){
+			if(owlbot_yea > owlbot_nay){
+				HMH_MSG("(/o.o): The owl will now be signalled. (votes: [Yea: %d, Nay: %d])", owlbot_yea, owlbot_nay);
+
+				if(irc_server == SERV_HMN){
+					size_t id = ctx->send_msg("#hero", "@Owlbot: By popular demand, please become illuminated.");
+					MOD_MSG(ctx, "filter_permit", id, NULL, NULL);
+				}
+
+			} else if(owlbot_nay > owlbot_yea){
+				HMH_MSG("(/x.x): The owl will not be lit. (votes: [Yea: %d, Nay: %d])", owlbot_yea, owlbot_nay);
+			} else {
+				HMH_MSG("(/o.o): It's a tie (%d votes each). The owl will remain unlit.", owlbot_yea);
+			}
+		} else {
+			HMH_MSG("(/x.x): Not enough votes after 60 seconds. Owl signal cancelled.");
+		}
+
+		sb_each(v, owlbot_voters){
+			free(*v);
+		}
+		sb_free(owlbot_voters);
+		owlbot_timer = 0;
 	}
 }
 
@@ -495,6 +572,14 @@ static bool hmh_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	ftw("/usr/share/zoneinfo/posix/", &ftw_cb, 10);
 	sb_push(tz_buf, 0);
+
+	char* id = getenv("INSOBOT_ID");
+	if(id && strcmp(id, "twitch") == 0){
+		irc_server = SERV_TWITCH;
+	} else if(id && strcmp(id, "hmn") == 0){
+		irc_server = SERV_HMN;
+	}
+
 	return true;
 }
 
@@ -509,6 +594,11 @@ static void hmh_mod_msg(const char* sender, const IRCModMsg* msg){
 }
 
 static void hmh_ipc(int who, const uint8_t* ptr, size_t sz){
-	if(!getenv("IRC_IS_TWITCH")) return;
-	//ctx->send_msg("#handmade_hero", "!qa");
+	if(sz == 6 && memcmp(ptr, "owl", 3) == 0){
+		switch(ptr[4]){
+			case '!': hmh_owlbot_start(); break;
+			case 'y': owlbot_yea++; break;
+			case 'n': owlbot_nay++; break;
+		}
+	}
 }

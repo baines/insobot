@@ -720,6 +720,23 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 	);
 }
 
+static bool sched_del_i(int index, int id){
+	free(sched_vals[index][id].title);
+	sb_erase(sched_vals[index], id);
+
+	if(sb_count(sched_vals[index]) == 0){
+		free(sched_keys[index]);
+		sb_free(sched_vals[index]);
+
+		sb_erase(sched_keys, index);
+		sb_erase(sched_vals, index);
+
+		return true;
+	} else {
+		return false;
+	}
+}
+
 static void sched_del(const char* chan, const char* name, const char* _arg){
 	char* state;
 	char* arg = strtok_r(strdupa(_arg), " ", &state);
@@ -757,16 +774,7 @@ static void sched_del(const char* chan, const char* name, const char* _arg){
 		return;
 	}
 
-	free(sched_vals[index][id].title);
-	sb_erase(sched_vals[index], id);
-	if(sb_count(sched_vals[index]) == 0){
-		free(sched_keys[index]);
-		sb_free(sched_vals[index]);
-
-		sb_erase(sched_keys, index);
-		sb_erase(sched_vals, index);
-	}
-
+	sched_del_i(index, id);
 	sched_upload();
 
 	ctx->send_msg(
@@ -941,11 +949,20 @@ static void sched_quit(void){
 }
 
 static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
-	if(strcmp(msg->cmd, "sched_get") == 0){
-		const char* name = (const char*)msg->arg;
-		int index = sched_get(name);
 
-		if(index != -1){
+	if(strcmp(msg->cmd, "sched_iter") == 0){
+		const char* name = (const char*)msg->arg;
+		bool iter_all = true;
+		int index = 0;
+
+		if(name){
+			iter_all = false;
+			if((index = sched_get(name)) == -1){
+				return;
+			}
+		}
+
+		for(; index < sb_count(sched_keys); ++index){
 			SchedMsg result = {
 				.user = sched_keys[index],
 			};
@@ -957,18 +974,56 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 				result.title  = sched_vals[index][i].title;
 				result.repeat = sched_vals[index][i].repeat;
 
-				msg->callback((intptr_t)&result, msg->cb_arg);
+				SchedIterCmd cmd = msg->callback((intptr_t)&result, msg->cb_arg);
+
+				if(cmd == SCHED_ITER_DELETE){
+					if(sched_del_i(index, i)){
+						--index;
+					}
+					--i;
+				} else if(cmd == SCHED_ITER_STOP){
+					break;
+				}
 			}
+
+			if(!iter_all) break;
 		}
 
 		return;
 	}
 
-	// TODO
-	if(strcmp(msg->cmd, "sched_set") == 0){
-		//SchedMsg* request = (SchedMsg*)msg->arg;
+	if(strcmp(msg->cmd, "sched_add") == 0){
+		SchedMsg* request = (SchedMsg*)msg->arg;
+		SchedEntry sched = {};
+
+		if(!request->user || !request->start || !request->end || request->start > request->end){
+			if(msg->callback){
+				msg->callback(false, msg->cb_arg);
+			}
+			return;
+		}
+
+		char* user = strdup(request->user);
+		for(char* c = user; *c; ++c) *c = tolower(*c);
+
+		sched.start  = request->start;
+		sched.end    = request->end;
+		sched.repeat = request->repeat & 0x7f;
+
+		if(request->title){
+			sched.title = strdup(request->title);
+		} else {
+			sched.title = strdup("Untitled Stream");
+		}
+
+		int index = sched_get_add(user);
+		sb_push(sched_vals[index], sched);
 
 		return;
 	}
 
+	if(strcmp(msg->cmd, "sched_save") == 0){
+		sched_upload();
+		return;
+	}
 }

@@ -271,8 +271,9 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 	};
 }
 
-static void psa_twitch_cb(intptr_t result, intptr_t arg){
+static intptr_t psa_twitch_cb(intptr_t result, intptr_t arg){
 	*(bool*)arg = result;
+	return 0;
 }
 
 static void psa_msg(const char* chan, const char* name, const char* msg){

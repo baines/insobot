@@ -56,10 +56,19 @@ typedef struct IRCModuleCtx_ {
 
 	// called on receipt of an inter-process message
 	void (*on_ipc)     (int sender_id, const uint8_t* data, size_t data_len);
+
+	// called before a message is sent out, to allow filtering
+	void (*on_filter)  (size_t msg_id, const char* chan, char* msg, size_t msg_len);
+
 } IRCModuleCtx;
 
 // incremented when new functions are added to IRCCoreCtx
-#define INSO_CORE_API_VERSION 1
+#define INSO_CORE_API_VERSION 2
+
+// API version history:
+// 1: Initial version.
+// 2: send_msg and send_raw now return an ID for the message.
+//    This will be passed to the filter function of IRCModuleCtx.
 
 // passed to modules to provide functions for them to use.
 struct IRCCoreCtx_ {
@@ -74,8 +83,8 @@ struct IRCCoreCtx_ {
 	const char**   (*get_nicks)    (const char* chan, int* count_out);
 	void           (*join)         (const char* chan);
 	void           (*part)         (const char* chan);
-	void           (*send_msg)     (const char* chan, const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));
-	void           (*send_raw)     (const char* raw);
+	size_t         (*send_msg)     (const char* chan, const char* fmt, ...) __attribute__ ((format (printf, 2, 3)));
+	size_t         (*send_raw)     (const char* raw);
 	void           (*send_ipc)     (int target, const void* data, size_t data_len); // target 0 == broadcast
 	void           (*send_mod_msg) (IRCModMsg* msg);
 	void           (*save_me)      (void);
@@ -108,7 +117,7 @@ enum {
 struct IRCModMsg_ {
 	const char* cmd;
 	intptr_t    arg;
-	void        (*callback)(intptr_t result, intptr_t arg);
+	intptr_t    (*callback)(intptr_t result, intptr_t arg);
 	intptr_t    cb_arg;
 };
 

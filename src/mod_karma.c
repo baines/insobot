@@ -160,7 +160,7 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 		}
 
 		if(link){
-			ctx->send_msg(chan, "Happy birthday %s %s", inso_dispname(ctx, target), link);
+			ctx->send_msg(chan, "Happy birthday %s %s", target, link);
 		}
 
 		return true;

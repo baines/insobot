@@ -91,12 +91,13 @@ static int syllable_estimate(const char* _word){
 	return count;
 }
 
-static void haiku_markov_cb(intptr_t result, intptr_t arg){
+static intptr_t haiku_markov_cb(intptr_t result, intptr_t arg){
 	if(result && !*(char*)arg){
 		*(char**)arg = (char*)result;
 	} else if(result){
 		free((char*)result);
 	}
+	return 0;
 }
 
 static void haiku_cmd (const char* chan, const char* name, const char* arg, int cmd){

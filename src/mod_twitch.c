@@ -329,8 +329,9 @@ static const char* twitch_display_name(const char* fallback){
 	return fallback;
 }
 
-static void check_alias_cb(intptr_t result, intptr_t arg){
+static intptr_t check_alias_cb(intptr_t result, intptr_t arg){
 	*(int*)arg = result;
+	return 0;
 }
 
 static void twitch_print_vod(size_t index, const char* send_chan, const char* name, bool check_alias){

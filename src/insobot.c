@@ -45,8 +45,8 @@
 	#define __auto_type intptr_t
 #endif
 
-_Static_assert(sizeof(intptr_t) == sizeof(void*), "uh oh");
-_Static_assert(sizeof(void (*)) == sizeof(void*), "uh oh");
+_Static_assert(sizeof(intptr_t)   == sizeof(void*), "uh oh");
+_Static_assert(sizeof(void (*)()) == sizeof(void*), "uh oh");
 
 /******************************
  * Types, global vars, macros *
@@ -56,6 +56,7 @@ typedef struct Module_ {
 	char* lib_path;
 	void* lib_handle;
 	IRCModuleCtx* ctx;
+	size_t ctx_size;
 	bool needs_reload, data_modified;
 } Module;
 
@@ -70,6 +71,7 @@ typedef struct INotifyData_ {
 } INotifyData;
 
 typedef struct IRCCmd_ {
+	size_t id;
 	int cmd;
 	char *chan, *data;
 } IRCCmd;
@@ -85,6 +87,7 @@ enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW };
 
 static IRCCmd* cmd_queue;
 static uint32_t prev_cmd_ms;
+static size_t last_cmd_id;
 
 static irc_session_t* irc_ctx;
 
@@ -157,6 +160,14 @@ static const char* debug_chan;
 			IRC_MOD_CALL(m, ptr, args);                         \
 		}                                                       \
 	}
+
+#define IRC_MOD_CALL_ALL_ABI(ptr, args, abi)                    \
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){ \
+		if(ABI_CHECK(m, abi)) IRC_MOD_CALL(m, ptr, args);       \
+	}
+
+#define ABI_FILTER 24
+#define ABI_CHECK(m, abi) ((m)->ctx_size >= (sizeof(void*)*(abi)))
 
 /*********************************
  * Required forward declarations *
@@ -243,16 +254,22 @@ static void util_dispatch_cmds(Module* m, const char* chan, const char* name, co
 	}
 }
 
-static void util_cmd_enqueue(int cmd, const char* chan, const char* data){
-	if(sb_count(cmd_queue) > CMD_QUEUE_MAX) return;
+static size_t util_cmd_enqueue(int cmd, const char* chan, const char* data){
+	if(sb_count(cmd_queue) > CMD_QUEUE_MAX) return 0;
+
+	size_t id = ++last_cmd_id;
+	if(!id) ++id;
 
 	IRCCmd c = {
+		.id   = id,
 		.cmd  = cmd,
 		.chan = chan ? strdup(chan) : NULL,
 		.data = data ? strdup(data) : NULL
 	};
 
 	sb_push(cmd_queue, c);
+
+	return c.id;
 }
 
 static void util_process_pending_cmds(void){
@@ -279,6 +296,8 @@ static void util_process_pending_cmds(void){
 			} break;
 
 			case IRC_CMD_MSG: {
+				size_t len = strlen(cmd.data);
+				IRC_MOD_CALL_ALL_ABI(on_filter, (cmd.id, cmd.chan, cmd.data, len), ABI_FILTER);
 				printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
 				irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
 				IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
@@ -402,16 +421,19 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			Dl_info unused;
 			if(dladdr1(m->ctx, &unused, (void**)&sym, RTLD_DL_SYMENT) == 0){
 				errmsg = "dladdr1 failed.";
-			} else if(sym->st_size < sizeof(IRCModuleCtx)) {
+			} else if(sym->st_size < (sizeof(void*)*23)) {
 				// TODO: Use a table of which function pointers were present in the context
 				//       for each size, so that we can retain backwards binary compatibility.
 				//       (assuming new functions are only added to the end of the struct)
 				//
 				//       | sizeof(void*) | last field |
 				//       +---------------+------------+
-				//       |      x23      |   on_ipc   |
+				//       |      x23      | on_ipc     |
+				//       |      x24      | on_filter  |
 
 				errmsg = "version mismatch (wrong size irc_mod_ctx)";
+			} else {
+				m->ctx_size = sym->st_size;
 			}
 		}
 
@@ -1070,24 +1092,26 @@ static void core_part(const char* chan){
 	}
 }
 
-static void core_send_msg(const char* chan, const char* fmt, ...){
-	if(!chan || !fmt) return;
+static size_t core_send_msg(const char* chan, const char* fmt, ...){
+	if(!chan || !fmt) return 0;
 
+	size_t id = 0;
 	char buff[1024];
 	va_list v;
 
 	va_start(v, fmt);
 	if(vsnprintf(buff, sizeof(buff), fmt, v) > 0){
-		util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
+		id = util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
 	}
+	va_end(v);
 
 	send_msg_called = true;
 
-	va_end(v);
+	return id;
 }
 
-static void core_send_raw(const char* raw){
-	util_cmd_enqueue(IRC_CMD_RAW, NULL, raw);
+static size_t core_send_raw(const char* raw){
+	return util_cmd_enqueue(IRC_CMD_RAW, NULL, raw);
 }
 
 static void core_send_ipc(int target, const void* data, size_t data_len){

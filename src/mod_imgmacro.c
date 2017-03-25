@@ -383,12 +383,13 @@ static bool im_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static void imgmacro_markov_cb(intptr_t result, intptr_t arg){
+static intptr_t imgmacro_markov_cb(intptr_t result, intptr_t arg){
 	if(result && !*(char*)arg){
 		*(char**)arg = (char*)result;
 	} else if(result){
 		free((char*)result);
 	}
+	return 0;
 }
 
 static void im_cmd(const char* chan, const char* name, const char* arg, int cmd){

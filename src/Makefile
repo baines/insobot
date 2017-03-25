@@ -1,4 +1,5 @@
-CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -Wno-pointer-sign -std=gnu99 -g -Werror=implicit-function-declaration
+CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -std=gnu99 \
+ -g -Werror=implicit-function-declaration -Wno-pointer-sign -funwind-tables
 LDFLAGS := -Wl,--as-needed -Wl,--gc-sections
 
 headers  := $(wildcard *.h)

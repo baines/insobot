@@ -1,7 +1,9 @@
 #ifndef INSOBOT_MODULE_MSGS_H
 #define INSOBOT_MODULE_MSGS_H
 
+//
 // Explanation
+//
 
 // MOD_MSG is a macro defined in module.h for passing messages between modules.
 // It has the following syntax:
@@ -10,7 +12,7 @@
 //
 // The callback parameter should have the following signature:
 //
-//   void callback(intptr_t result, intptr_t user_defined)
+//   intptr_t callback(intptr_t result, intptr_t user_defined)
 //
 // The user_defined parameter is the same as given in the macro, and can be
 // used to store the result somewhere without using a global.
@@ -28,8 +30,13 @@
 // Code written using this system shouldn't assume it'll always get a response;
 // it should handle the case where the callback is not called.
 
+// New in API_VERSION 2:
+// The callbacks now return intptr_t instead of void. This can be used to return
+// some data to the module that called the callback. Most will ignore it currently.
 
+//
 // Message List
+// 
 
 // [L] means the arg is a space-separated List of strings in a single char*
 // [M] means the callback will be called Multiple times with different results
@@ -39,23 +46,69 @@
 //
 // Custom argument / return types will be defined in this file.
 
-//    module     |        msg id          | arg type  | ret type  | desc
-// --------------+------------------------+-----------+-----------+------
-// mod_alias     | "alias_exists"         | char*[2]  | bool      | returns true if any of the given aliases exist. arg[0] is the alias list, arg[1] is the channel.
-// mod_hmh       | "hmh_is_live"          | unused    | bool      | returns true if HMH is scheduled to be airing currently
-// mod_karma     | "karma_get"            | char*     | int       | returns the total karma for the given name
-// mod_markov    | "markov_gen"           | unused    | char* [F] | returns a malloc'd random markov sentence
-// mod_notes     | "note_get_stream_start"| char* [L] | time_t    | returns the stream start time if a note is present for any of the channels given
-// mod_schedule  | "sched_get" [M]        | char*     | SchedMsg* | returns all the known schedules for a given user name
-// mod_schedule  | "sched_set" (TODO)     | SchedMsg* | bool      | sets the given schedule, or if start/end are 0, delete it. if sched_id < 0, use next available.
-// mod_twitch    | "twitch_get_user_date" | char*     | time_t    | returns the account creation date of the given twitch user
-// mod_twitch    | "twitch_is_live"       | char* [L] | bool      | returns true if any of the given channels are currently live
-// mod_whitelist | "check_admin"          | char*     | bool      | returns true if the given name is an admin
-// mod_whitelist | "check_whitelist"      | char*     | bool      | returns true if the given name is whitelisted
-// mod_twitch    | "display_name"         | char*     | char*     | returns the display name of the given name (correct capitilzation or unicode variant) (needs tags support)
+//    module     |        msg id          | arg type  | result type | callback return |
+// --------------+------------------------+-----------+-------------+-----------------+
+// mod_alias     | "alias_exists"         | char*[2]  | bool        | unused          |
+// mod_hmh       | "hmh_is_live"          | unused    | bool        | unused          |
+// mod_karma     | "karma_get"            | char*     | int         | unused          |
+// mod_markov    | "markov_gen"           | unused    | char* [F]   | unused          |
+// mod_notes     | "note_get_stream_start"| char* [L] | time_t      | unused          |
+// mod_schedule  | "sched_iter"           | char*     | SchedMsg*   | SchedIterCmd    |
+// mod_schedule  | "sched_add"            | SchedMsg* | bool        | unused          |
+// mod_schedule  | "sched_save"           | unused    | unused      | unused          |
+// mod_twitch    | "display_name"         | char*     | char*       | unused          |
+// mod_twitch    | "twitch_get_user_date" | char*     | time_t      | unused          |
+// mod_twitch    | "twitch_is_live"       | char* [L] | bool        | unused          |
+// mod_whitelist | "check_admin"          | char*     | bool        | unused          |
+// mod_whitelist | "check_whitelist"      | char*     | bool        | unused          |
 
+//
+// Descriptions
+//
 
-// Types
+// ALIAS:
+//  alias_exists:
+//    *result* will be true/false if any of the space-separated aliases in the *aliases* field exist.
+
+typedef struct {
+	const char* aliases;
+	const char* channel;
+} AliasExistsMsg;
+
+// HMH:
+//  hmh_is_live:
+//    *result* will be true/false if HMH is scheduled to be airing currently.
+
+// KARMA:
+//   karma_get:
+//     *result* will be the karma of the user given in *arg*
+
+// MARKOV:
+//  markov_gen:
+//    *result* will be a malloc'd randomly generated sentence.
+//    a max length can optionally be given in *arg*
+
+// NOTES:
+//  note_get_stream_start:
+//    *result* will be the time a "NOTE(Annotator): ... start" was last issued for
+//    the channel given in *arg*
+
+// SCHEDULE:
+//  sched_iter:
+//    This will call the callback for every known schedule, filtered to only those with the channel
+//    name specified by *arg* if non-null. *result* will be set to the next SchedMsg for each call.
+//    You should return one of the SchedIterCmd values to control what happens next.
+//  sched_add:
+//    Adds a new schedule defined by the SchedMsg given in *arg*. The sched_id is ignored.
+//  sched_save:
+//    Saves changes made by calls to sched_iter or sched_save, and uploads the new data to gist.
+//    *arg* is ignored, and *result* unused.
+
+typedef enum {
+	SCHED_ITER_CONTINUE, // keep iterating through schedules
+	SCHED_ITER_STOP,     // stop iterating
+	SCHED_ITER_DELETE,   // delete this schedule, continue to the next
+} SchedIterCmd;
 
 typedef struct {
 	const char* user;
@@ -66,4 +119,19 @@ typedef struct {
 	uint8_t repeat;
 } SchedMsg;
 
+// TWITCH:
+//  display_name:
+//   *result* will be the current message author's capitalized / unicode twitich name.
+//   if that isn't available, then *arg* is returned in *result* as a fallback.
+//  twitch_get_user_date:
+//    *result* will be the epoch time that the user given in *arg* created their account.
+//  twitch_is_live:
+//    *result* will be true/false if any of the channels given in *arg* are live or not.
+
+// WHITELIST:
+//  check_admin:
+//    *result* will be true/false if the user given in *arg* is an admin or not.
+//  check_whitelist:
+//    *result* will be true/false if the user given in *arg* is whitelisted or not.
+//    
 #endif

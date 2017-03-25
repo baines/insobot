@@ -238,12 +238,14 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 	return bad_char_score;
 }
 
-static void get_karma_cb(intptr_t result, intptr_t arg){
+static intptr_t get_karma_cb(intptr_t result, intptr_t arg){
 	if(result) *(int*)arg = result;
+	return 0;
 }
 
-static void get_user_cb(intptr_t result, intptr_t arg){
+static intptr_t get_user_cb(intptr_t result, intptr_t arg){
 	if(result) *(time_t*)arg = result;
+	return 0;
 }
 
 static int am_score_links(const Suspect* s, const char* msg, size_t len){
