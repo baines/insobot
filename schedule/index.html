@@ -193,7 +193,9 @@ function get_sched_time_string(e){
 
 	str += start_date.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' });
 	str += " - ";
-	str += end_date.toLocaleTimeString(undefined,  { hour: 'numeric', minute: 'numeric', timeZoneName: 'short' });
+	str += end_date.toLocaleTimeString(undefined,  { hour: 'numeric', minute: 'numeric' });
+	str += " ";
+	str += new Date().toLocaleTimeString(undefined, { hour: '2-digit', timeZoneName: 'short' }).substring(3);
 
 	return str;
 }
