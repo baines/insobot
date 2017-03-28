@@ -57,7 +57,9 @@ typedef struct IRCModuleCtx_ {
 	// called on receipt of an inter-process message
 	void (*on_ipc)     (int sender_id, const uint8_t* data, size_t data_len);
 
-	// called before a message is sent out, to allow filtering
+	// called before a message is sent out, to allow filtering.
+	// chan will be NULL for a raw message.
+	// set msg[0] to '\0' to prevent the message being sent at all.
 	void (*on_filter)  (size_t msg_id, const char* chan, char* msg, size_t msg_len);
 
 } IRCModuleCtx;

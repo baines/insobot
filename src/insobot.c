@@ -298,13 +298,19 @@ static void util_process_pending_cmds(void){
 			case IRC_CMD_MSG: {
 				size_t len = strlen(cmd.data);
 				IRC_MOD_CALL_ALL_ABI(on_filter, (cmd.id, cmd.chan, cmd.data, len), ABI_FILTER);
-				printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
-				irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
-				IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
+				if(*cmd.data){
+					printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
+					irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
+					IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
+				}
 			} break;
 
 			case IRC_CMD_RAW: {
-				irc_send_raw(irc_ctx, "%s", cmd.data);
+				size_t len = strlen(cmd.data);
+				IRC_MOD_CALL_ALL_ABI(on_filter, (cmd.id, NULL, cmd.data, len), ABI_FILTER);
+				if(*cmd.data){
+					irc_send_raw(irc_ctx, "%s", cmd.data);
+				}
 			} break;
 		}
 

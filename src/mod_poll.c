@@ -218,6 +218,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 			} else if(sscanf(arg, " %d %d", &vote, &dummy) == 1){
 				poll = poll_get_mru(chan);
 			} else {
+				ctx->send_msg(name, "Could not parse your vote command.");
 				break;
 			}
 
@@ -235,7 +236,17 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 					poll->options[vote].votes++;
 					sb_push(poll->voters, strdup(name));
 					ctx->save_me();
+
+					ctx->send_msg(name, "Your vote for [%s] was counted successfully.", poll->options[vote].text);
+				} else {
+					ctx->send_msg(name, "You've already voted on poll #%d.", poll->id);
 				}
+			} else if(!poll){
+				ctx->send_msg(name, "Vote command failed: Poll not found.");
+			} else if(!poll->open){
+				ctx->send_msg(name, "Vote command failed: That poll is closed.");
+			} else {
+				ctx->send_msg(name, "Vote command failed: Vote number out of range.");
 			}
 		} break;
 
