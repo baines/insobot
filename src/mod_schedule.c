@@ -950,6 +950,8 @@ static void sched_quit(void){
 
 static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 
+	// XXX: we might need to pull from the gist here...
+
 	if(strcmp(msg->cmd, "sched_iter") == 0){
 		const char* name = (const char*)msg->arg;
 		bool iter_all = true;
@@ -976,13 +978,16 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 
 				SchedIterCmd cmd = msg->callback((intptr_t)&result, msg->cb_arg);
 
-				if(cmd == SCHED_ITER_DELETE){
+				if(cmd & SCHED_ITER_DELETE){
 					if(sched_del_i(index, i)){
 						--index;
+						break;
 					}
 					--i;
-				} else if(cmd == SCHED_ITER_STOP){
-					break;
+				}
+
+				if(cmd & SCHED_ITER_STOP){
+					return;
 				}
 			}
 

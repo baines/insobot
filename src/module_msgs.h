@@ -105,9 +105,9 @@ typedef struct {
 //    *arg* is ignored, and *result* unused.
 
 typedef enum {
-	SCHED_ITER_CONTINUE, // keep iterating through schedules
-	SCHED_ITER_STOP,     // stop iterating
-	SCHED_ITER_DELETE,   // delete this schedule, continue to the next
+	SCHED_ITER_CONTINUE = 0, // keep iterating through schedules
+	SCHED_ITER_STOP     = 1, // stop iterating
+	SCHED_ITER_DELETE   = 2, // delete this schedule, OR with continue or stop
 } SchedIterCmd;
 
 typedef struct {
