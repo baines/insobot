@@ -520,9 +520,6 @@ function calc_schedule(table, e){
 	var date_end   = new Date(e.end);
 	var duration = get_duration(date_start, date_end);
 
-	var prev_row = -1;
-	var prev_col = -1;
-
 	var mask = get_fixed_mask(date_start, e.repeat);
 	mask |= (1 << remap_day(date_start.getDay()));
 
@@ -532,6 +529,9 @@ function calc_schedule(table, e){
 		if(!(mask & (1 << i))) continue;
 
 		add_stream(e, i);
+
+		var prev_row = -1;
+		var prev_col = -1;
 
 		for(var j = 0; j < duration; ++j){
 			var d = i;
