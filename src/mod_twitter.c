@@ -6,6 +6,7 @@
 #include "inso_json.h"
 #include <inttypes.h>
 #include <curl/curl.h>
+#include "twc.h"
 
 // NOTE:
 // Currently this is just for searching twitter for schedule information
@@ -36,6 +37,9 @@ static CURL* curl;
 static struct curl_slist* twitter_headers;
 static uint64_t twitter_since_id;
 
+static twc_state twc;
+static bool using_twc;
+
 typedef struct {
 	char* twitter;
 	char* twitch;
@@ -47,7 +51,7 @@ typedef struct {
 TwitterSchedule* schedules;
 
 enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
-static int get_dow(struct tm* tm){
+static int get_dow(const struct tm* tm){
 	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
 }
 
@@ -81,75 +85,244 @@ static bool twitter_init(const IRCCoreCtx* _ctx){
 	}
 	fclose(f);
 
+	twc_oauth_keys keys = {
+		getenv("INSOBOT_TWITTER_OAUTH_CKEY"),
+		getenv("INSOBOT_TWITTER_OAUTH_CSEC"),
+		getenv("INSOBOT_TWITTER_OAUTH_TKEY"),
+		getenv("INSOBOT_TWITTER_OAUTH_TSEC"),
+	};
+
+	if(keys.ConsumerKey && keys.ConsumerSecret && keys.TokenKey && keys.TokenSecret){
+		twc_Init(&twc, keys);
+		using_twc = true;
+	}
+
 	return true;
 }
 
-static intptr_t twitter_sched_iter_cb(intptr_t result, intptr_t arg){
-	SchedMsg* sched = (SchedMsg*)result;
-	TwitterSchedule* ts = (TwitterSchedule*)arg;
+static bool sched_has_date(const SchedMsg* sched, const struct tm* date, int* day_out){
 
-	// TODO: need more selective logic here, and to adjust masks?
-	//       the repeat mask thing seems more and more annoying...
+	struct tm sched_utc = {}, sched_local = {};
+	gmtime_r(&sched->start, &sched_utc);
 
-	if(strcmp(sched->title, ts->title) == 0){
-		printf("twitter_iter: delete %s %zu %x\n", sched->user, sched->start, sched->repeat);
-		return SCHED_ITER_DELETE;
-	} else {
-		return SCHED_ITER_CONTINUE;
+	char* tz = tz_push_off(date->tm_gmtoff);
+	localtime_r(&sched->start, &sched_local);
+	tz_pop(tz);
+
+	// we have to do some awkward adjusting here to make sure "today" in some
+	// arbitrary timezone lines up with "today" in UTC (stored in the mask)
+
+	int day = get_dow(date);
+	if(sched_local.tm_mday > sched_utc.tm_mday){
+		day = (day + 6) % 7;
+	} else if(sched_local.tm_mday < sched_utc.tm_mday){
+		day = (day + 1) % 7;
 	}
+
+	if(sched->repeat & (1 << day)){
+		if(day_out) *day_out = day;
+		return true;
+	}
+
+	if(sched_local.tm_year == date->tm_year && sched_local.tm_yday == date->tm_yday){
+		if(day_out) *day_out = -1;
+		return true;
+	}
+
+	return false;
 }
 
-static bool twitter_sched_parse(const TwitterSchedule* ts, const char* _msg){
+typedef struct {
+	const char* title; // name of schedule to remove
+	struct tm* sched;  // year+month+day to remove, or NULL to remove all
+	bool modified;     // [out] set by the callback if it modified anything
+} SchedIterInfo;
 
+static intptr_t twitter_sched_iter_cb(intptr_t result, intptr_t arg){
+	SchedMsg*      sched = (SchedMsg*)result;
+	SchedIterInfo* info  = (SchedIterInfo*)arg;
+
+	int day;
+	if(strcmp(sched->title, info->title) == 0){
+		if(info->sched == NULL){
+			info->modified = true;
+			return SCHED_ITER_DELETE;
+		} else if(sched_has_date(sched, info->sched, &day)){
+			info->modified = true;
+
+			if(day == -1 || __builtin_popcount(sched->repeat) == 1){
+				return SCHED_ITER_DELETE;
+			}
+
+			sched->repeat &= ~(1 << day);
+
+			int start_day = __builtin_ffs(sched->repeat) - 1;
+			if(start_day > day){
+				int diff = (start_day - day) * (60*60*24);
+
+				sched->start += diff;
+				sched->end   += diff;
+			}
+		}
+	}
+
+	return SCHED_ITER_CONTINUE;
+}
+
+static bool twitter_parse_time(const char* msg, struct tm* out){
+	const char* tzp = NULL;
+
+	if(!tzp) tzp = strptime(msg, " %I:%M %p", out);
+	if(!tzp) tzp = strptime(msg, " %H:%M", out);
+
+	if(tzp){
+		int off;
+		while(*tzp == ' ') ++tzp;
+
+		if(tz_abbr2off(tzp, &off)){
+			out->tm_min -= off;
+			timegm(out);
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+static bool twitter_parse_datetime(const char* msg, struct tm* out){
+	struct tm tm = {};
 	time_t now = time(0);
-	struct tm* days = NULL;
+
+	// XXX: i think using "now" here might break dst...
+	gmtime_r(&now, &tm);
+	tm.tm_sec = tm.tm_min = tm.tm_hour = 0;
+
+	char* timep = strptime(msg, "%b %d", &tm);
+	if(timep){
+		if(!twitter_parse_time(timep, &tm)){
+			tm.tm_min = tm.tm_hour = -1;
+		}
+		tm.tm_gmtoff = 0;
+		memcpy(out, &tm, sizeof(*out));
+		return true;
+	}
+
+	return false;
+}
+
+static bool twitter_parse_bulk(const TwitterSchedule* ts, const char* _msg, struct tm** days){
 	char* msg = strdupa(_msg);
 	char* p;
 
-	// handmade hero style
-	if(strncmp(_msg, "This week", 9) == 0 && (p = strchr(msg, '\n'))){
+	if(strncasecmp(_msg, "This week", 9) == 0 && (p = strchr(msg, '\n'))){
 		char* state;
 		char* line = strtok_r(p, "\n", &state);
 
 		while(line){
 			struct tm tm = {};
-			// XXX: i think using "now" here breaks dst...
-			gmtime_r(&now, &tm);
-			tm.tm_sec = 0;
-			tm.tm_min = tm.tm_hour = -1;
-
-			char* timep = strptime(line, "%b %d", &tm);
-
-			if(timep){
-				char* tzp = NULL;
-
-				if(!tzp) tzp = strptime(timep, " %I:%M %p", &tm);
-				if(!tzp) tzp = strptime(timep, " %H:%M", &tm);
-
-				if(tzp){
-					int off;
-					while(*tzp == ' ') ++tzp;
-
-					if(tz_abbr2off(tzp, &off)){
-						tm.tm_min -= off;
-						timegm(&tm);
-					}
-				}
-
-				sb_push(days, tm);
+			if(twitter_parse_datetime(line, &tm)){
+				sb_push(*days, tm);
 			}
+
 			line = strtok_r(NULL, "\n", &state);
 		}
 
 		// make sure old schedules are cleared out for this style
-		// XXX: the callback will need to be changed in the future!
-		if(sb_count(days)){
-			MOD_MSG(ctx, "sched_iter", ts->twitch, &twitter_sched_iter_cb, ts);
+		if(sb_count(*days)){
+			SchedIterInfo info = { ts->title, NULL };
+			MOD_MSG(ctx, "sched_iter", ts->twitch, &twitter_sched_iter_cb, &info);
+			return true;
 		}
 	}
 
-	// TODO: check cancellations / reschedules / other formats here
+	return false;
+}
 
+static bool twitter_strfind(const char* haystack, const char** needles){
+	for(const char** n = needles; *n; ++n){
+		if(strcasestr(haystack, *n)){
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool twitter_parse_reschedule(const TwitterSchedule* ts, const char* msg, yajl_val data, time_t tweet_time, struct tm** days){
+
+	static const char* today_words[] = {
+		"today", "tonight", "this morning", "this afternoon", "this evening", NULL
+	};
+	static const char* resched_words[] = {
+		"missed", "moved", "moving", "chang", NULL
+	};
+	static const char* cancel_words[] = {
+		"cancel", "missed", "no stream", NULL
+	};
+
+	struct tm tm = {};
+
+	// get local day (might be wrong if the twitter user hasn't set their timezone :/)
+	int utc_offset = 0;
+	yajl_val json_off = YAJL_GET(data, yajl_t_number, ("user", "utc_offset"));
+	if(YAJL_IS_INTEGER(json_off)){
+		utc_offset -= (json_off->u.number.i / 60);
+	}
+
+	char* tz = tz_push_off(utc_offset);
+	localtime_r(&tweet_time, &tm);
+	tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+
+	if(twitter_strfind(msg, today_words)){
+
+		// test for reschedule, push the new time into days
+		if(twitter_strfind(msg, resched_words)){
+			for(const char* p = msg; *p; ++p){
+				if(twitter_parse_time(p, &tm)){
+					tm.tm_gmtoff = utc_offset; // set this here incase the gmtime in parse_time messes with it..
+					sb_push(*days, tm);
+					tz_pop(tz);
+					printf("mod_twitter: Found reschedule [%d-%d] -> [%d:%d] [%ld]\n", tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_gmtoff);
+					return true;
+				}
+			}
+		}
+
+		// otherwise, it might be cancelled, so set stuff to -1 to indicate a delete
+		tm.tm_hour = tm.tm_min = -1;
+		tm.tm_gmtoff = utc_offset;
+
+		if(twitter_strfind(msg, cancel_words)){
+			sb_push(*days, tm);
+			tz_pop(tz);
+			printf("mod_twitter: Found cancel [%d-%d] [%ld]\n", tm.tm_mon, tm.tm_mday, tm.tm_gmtoff);
+			return true;
+		}
+	}
+
+	tz_pop(tz);
+	return false;
+}
+
+static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl_val data, time_t tweet_time){
+	struct tm* days = NULL;
+	bool parsed = false;
+	bool modified = false;
+
+	printf("mod_twitter: begin parse for [%s] [%s]\n", ts->twitter, msg);
+
+	if(!parsed){
+		parsed = twitter_parse_bulk(ts, msg, &days);
+		// XXX: assume the bulk ones always modify if they parsed
+		modified = parsed;
+	}
+
+	if(!parsed){
+		parsed = twitter_parse_reschedule(ts, msg, data, tweet_time, &days);
+	}
+
+	// send update to mod_schedule
 	for(int i = 0; i < sb_count(days); ++i){
 		uint8_t mask = (1 << get_dow(days + i));
 
@@ -164,8 +337,9 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* _msg){
 		}
 
 		if(days[i].tm_min == -1){
-			// TODO: fix this callback so it is able to delete single days
-			//MOD_MSG(ctx, "sched_iter", ts->twitch, &twitter_sched_iter_cb, ts);
+			SchedIterInfo info = { ts->title, days + i };
+			MOD_MSG(ctx, "sched_iter", ts->twitch, &twitter_sched_iter_cb, &info);
+			modified = info.modified;
 		} else {
 			time_t t = timegm(days + i);
 
@@ -179,17 +353,13 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* _msg){
 
 			printf("twitter: add sched %s %zu %x\n", sm.user, sm.start, sm.repeat);
 			MOD_MSG(ctx, "sched_add", &sm, 0, 0);
+			modified = true; // XXX: we could pass a callback to sched_add to be 100% sure?
 		}
 	}
 
-	bool updated = sb_count(days);
 	sb_free(days);
 
-	if(updated){
-		MOD_MSG(ctx, "sched_save", 0, 0, 0);
-	}
-
-	return updated;
+	return modified;
 }
 
 static void twitter_tick(time_t now){
@@ -264,15 +434,29 @@ static void twitter_tick(time_t now){
 				strptime(created->u.string, "%a %b %d %T %z %Y", &tm);
 				time_t created_time = mktime(&tm);
 
-				if(created_time > ts->last_modified && twitter_sched_parse(ts, text->u.string)){
+				if(created_time > ts->last_modified && twitter_sched_parse(ts, text->u.string, obj, created_time)){
 					ts->last_modified = created_time;
 					modified = true;
+
+					printf("mod_twitter: Sending tweet to %s.\n", author->u.string);
+					if(using_twc){
+						char tweet[256];
+						snprintf(tweet, sizeof(tweet), "@%s Schedule change registered: " SCHEDULE_URL " 🤖", author->u.string);
+
+						twc_statuses_update_params params = {
+							.InReplyToStatusId = { .Exists = true, .Value = id->u.number.i }
+						};
+
+						twc_call_result res = twc_Statuses_Update(&twc, twc_ToString(tweet), params);
+						free(res.Data.Ptr);
+					}
 				}
 			}
 		}
 	}
 
 	if(modified){
+		MOD_MSG(ctx, "sched_save", 0, 0, 0);
 		ctx->save_me();
 	}
 
@@ -292,6 +476,10 @@ static void twitter_quit(void){
 
 	curl_slist_free_all(twitter_headers);
 	curl_easy_cleanup(curl);
+
+	if(using_twc){
+		twc_Close(&twc);
+	}
 }
 
 static bool twitter_save(FILE* f){

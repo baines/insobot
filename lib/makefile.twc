@@ -1,0 +1,25 @@
+VPATH  := twc/build twc/code twc
+CFLAGS := -std=c99 -Wall -g -fPIC
+
+libtwc.a: twitter.o
+	ar rcs $@ $^
+
+twc/build/twitter.o: twitter.c twitter_api.c twitter.h api.json | build
+twc/build/json.o: json.c json.h | build
+twc/build/codegen.o: codegen.c tokenizer.c twitter.h json.h | build
+%.o:
+	cc $(CFLAGS) -c $< -o $@
+
+twc/twc_codegen: codegen.o json.o | build
+	cc $^ -o $@
+
+twc/code/twitter_api.c: twc_codegen code/twitter.c api.json
+	./$^ twc/code/twitter_api.h $@
+
+twc/build:
+	mkdir $@
+
+clean:
+	rm -rf libtwc.a twc/build twc/code/twitter_api.c twc/code_twitter_api.h
+
+.PHONY: clean

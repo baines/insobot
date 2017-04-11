@@ -215,10 +215,10 @@ static bool sched_reload(void){
 		struct tm tm = {};
 
 		strptime(vals[K_START]->u.string, "%FT%TZ", &tm);
-		entry.start = mktime(&tm);
+		entry.start = timegm(&tm);
 
 		strptime(vals[K_END]->u.string, "%FT%TZ", &tm);
-		entry.end = mktime(&tm);
+		entry.end = timegm(&tm);
 
 		int diff = (entry.end - entry.start) / 60;
 		localtime_r(&entry.start, &tm);
@@ -565,7 +565,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 
 	ctx->send_msg(
 		chan,
-		"Added schedule for \0038%s\017's [\00311%s\017] stream \0038#%zu\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		"Added schedule for \0038%s\017's [\00311%s\017] stream \0038#%zu\017:\00310 " SCHEDULE_URL " \017",
 		sched_user,
 		sched.title,
 		sb_count(sched_vals[index])-1
@@ -713,7 +713,7 @@ static void sched_edit(const char* chan, const char* name, const char* _arg){
 
 	ctx->send_msg(
 		chan, 
-		"Updated \0038%s\017's [\00311%s\017] stream schedule \0038#%d\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		"Updated \0038%s\017's [\00311%s\017] stream schedule \0038#%d\017:\00310 " SCHEDULE_URL " \017",
 		sched_user,
 		entry->title,
 		id
@@ -779,7 +779,7 @@ static void sched_del(const char* chan, const char* name, const char* _arg){
 
 	ctx->send_msg(
 		chan,
-		"%s: Deleted \0038%s\017's schedule \0038#%d\017:\00310 https://abaines.me.uk/insobot/schedule \017",
+		"%s: Deleted \0038%s\017's schedule \0038#%d\017:\00310 " SCHEDULE_URL " \017",
 		name,
 		sched_user,
 		id
@@ -927,7 +927,7 @@ static void sched_cmd(const char* chan, const char* name, const char* arg, int c
 		} break;
 
 		case SCHED_LINK: {
-			ctx->send_msg(chan, "%s: You can view all known schedules here: https://abaines.me.uk/insobot/schedule/", name);
+			ctx->send_msg(chan, "%s: You can view all known schedules here: " SCHEDULE_URL, name);
 		} break;
 
 		case SCHED_NEXT: {
@@ -969,14 +969,26 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 				.user = sched_keys[index],
 			};
 
-			for(size_t i = 0; i < sb_count(sched_keys[index]); ++i){
+			for(size_t i = 0; i < sb_count(sched_vals[index]); ++i){
+				SchedEntry* ent = sched_vals[index] + i;
 				result.sched_id = i;
-				result.start  = sched_vals[index][i].start;
-				result.end    = sched_vals[index][i].end;
-				result.title  = sched_vals[index][i].title;
-				result.repeat = sched_vals[index][i].repeat;
+				result.start  = ent->start;
+				result.end    = ent->end;
+				result.title  = ent->title;
+				result.repeat = ent->repeat;
 
 				SchedIterCmd cmd = msg->callback((intptr_t)&result, msg->cb_arg);
+
+				// if the callback changed anything, save back those changes.
+
+				ent->start  = result.start;
+				ent->end    = result.end;
+				ent->repeat = result.repeat;
+
+				if(result.title != ent->title){
+					free(ent->title);
+					ent->title = (char*)result.title;
+				}
 
 				if(cmd & SCHED_ITER_DELETE){
 					if(sched_del_i(index, i)){

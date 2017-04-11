@@ -17,6 +17,22 @@ static inline char* tz_push(const char* tz){
 	return oldtz;
 }
 
+static inline char* tz_push_off(int utc_off){
+	char* oldtz = getenv("TZ");
+	if(oldtz) oldtz = strdup(oldtz);
+
+	int pos_off = utc_off;
+	if(pos_off < 0) pos_off *= -1;
+
+	char buf[32];
+	snprintf(buf, sizeof(buf), "UTC+%+02d:%02d", utc_off / 60, pos_off % 60);
+
+	setenv("TZ", buf, 1);
+	tzset();
+
+	return oldtz;
+}
+
 static inline void tz_pop(char* oldtz){
 	if(oldtz){
 		setenv("TZ", oldtz, 1);
@@ -243,8 +259,10 @@ const struct {
 };
 
 bool tz_abbr2off(const char* abbr, int* offset){
+	size_t abbr_len = strcspn(abbr, " \t\n");
+
 	for(size_t i = 0; i < ARRAY_SIZE(tz_abbrs); ++i){
-		if(strcasecmp(abbr, tz_abbrs[i].abbr) == 0){
+		if(strncasecmp(abbr, tz_abbrs[i].abbr, abbr_len) == 0){
 			if(offset) *offset = tz_abbrs[i].offset;
 			return true;
 		}

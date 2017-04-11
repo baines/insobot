@@ -20,4 +20,7 @@
 // alternatate control char for certain commands (can be the same as CONTROL_CHAR)
 #define CONTROL_CHAR_2 "!"
 
+// URL to the schedule webpage if you're using mod_schedule / mod_twitter
+#define SCHEDULE_URL ""
+
 #endif

@@ -97,6 +97,7 @@ typedef struct {
 //  sched_iter:
 //    This will call the callback for every known schedule, filtered to only those with the channel
 //    name specified by *arg* if non-null. *result* will be set to the next SchedMsg for each call.
+//    Edits made to the fields of the SchedMsg will be saved.
 //    You should return one of the SchedIterCmd values to control what happens next.
 //  sched_add:
 //    Adds a new schedule defined by the SchedMsg given in *arg*. The sched_id is ignored.

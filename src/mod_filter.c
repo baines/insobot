@@ -7,6 +7,7 @@
 static bool filter_init    (const IRCCoreCtx*);
 static void filter_exec    (size_t, const char*, char*, size_t);
 static void filter_mod_msg (const char*, const IRCModMsg*);
+static void filter_quit    (void);
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "filter",
@@ -14,7 +15,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.flags      = IRC_MOD_GLOBAL,
 	.on_init    = &filter_init,
 	.on_filter  = &filter_exec,
-	.on_mod_msg = &filter_mod_msg
+	.on_mod_msg = &filter_mod_msg,
+	.on_quit    = &filter_quit,
 };
 
 static const IRCCoreCtx* ctx;
@@ -91,4 +93,12 @@ static void filter_mod_msg(const char* sender, const IRCModMsg* msg){
 			sb_push(permits, msg->arg);
 		}
 	}
+}
+
+static void filter_quit(void){
+	sb_each(r, regexen){
+		regfree(r);
+	}
+	sb_free(regexen);
+	sb_free(permits);
 }
