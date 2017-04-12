@@ -9,9 +9,13 @@ module_o  = $(patsubst %.c,../modules/%.so,$(module_c))
 common_h := $(wildcard inso_*.h)
 common_o := $(patsubst %.h,../lib/%.o,$(common_h))
 
-# Use this to only build certain modules
-# MODULES := meta admin chans whitelist markov linkinfo
-# And put it (and other stuff) in here that you don't want overridden by a git pull
+# Use this to only build certain modules; here is a reasonable default set.
+MODULES := admin alias chans filter haiku help imgmacro info karma linkinfo\
+ markov meta poll psa quotes twitch whitelist
+
+# You can define it (and other stuff) in src/config.mk to avoid makefile changes
+#  in git from overwriting your settings.
+# Put "undefine MODULES" in there if you want all modules (not recommended)
 -include config.mk
 
 ifdef MODULES

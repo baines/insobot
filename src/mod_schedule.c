@@ -553,7 +553,7 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 	}
 
 	if(!title){
-		sched.title = strdup("Untitled stream");
+		sched.title = strdup("Untitled Stream");
 	} else {
 		sched.title = strndup(title, sb_count(title));
 		sb_free(title);
@@ -1020,20 +1020,39 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 			return;
 		}
 
-		char* user = strdup(request->user);
+		const char* title = request->title ?: "Untitled Stream";
+		char* user = strdupa(request->user);
 		for(char* c = user; *c; ++c) *c = tolower(*c);
 
+		// check if we can merge this with an existing schedule
+		int index = sched_get(user);
+		if(index != -1){
+			struct tm want = {}, have = {};
+			gmtime_r(&request->start, &want);
+
+			for(int i = 0; i < sb_count(sched_vals[index]); ++i){
+				SchedEntry* s = sched_vals[index] + i;
+				gmtime_r(&s->start, &have);
+
+				if(strcasecmp(title, s->title) == 0
+					&& s->end - s->start == request->end - request->start
+					&& want.tm_hour == have.tm_hour
+					&& want.tm_min  == have.tm_min
+					&& s->repeat){
+
+					s->repeat |= (1 << get_dow(&want));
+					return;
+				}
+			}
+		}
+
+		// otherwise, add it.
 		sched.start  = request->start;
 		sched.end    = request->end;
 		sched.repeat = request->repeat & 0x7f;
+		sched.title  = strdup(title);
 
-		if(request->title){
-			sched.title = strdup(request->title);
-		} else {
-			sched.title = strdup("Untitled Stream");
-		}
-
-		int index = sched_get_add(user);
+		index = sched_get_add(user);
 		sb_push(sched_vals[index], sched);
 
 		return;

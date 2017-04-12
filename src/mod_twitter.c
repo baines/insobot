@@ -255,10 +255,7 @@ static bool twitter_parse_reschedule(const TwitterSchedule* ts, const char* msg,
 		"today", "tonight", "this morning", "this afternoon", "this evening", NULL
 	};
 	static const char* resched_words[] = {
-		"missed", "moved", "moving", "chang", NULL
-	};
-	static const char* cancel_words[] = {
-		"cancel", "missed", "no stream", NULL
+		"cancel", "missed", "no stream", "moved", "moving", "chang", NULL
 	};
 
 	struct tm tm = {};
@@ -272,37 +269,38 @@ static bool twitter_parse_reschedule(const TwitterSchedule* ts, const char* msg,
 
 	char* tz = tz_push_off(utc_offset);
 	localtime_r(&tweet_time, &tm);
-	tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+	tm.tm_hour = tm.tm_min = -1;
+	tm.tm_sec = 0;
+	tm.tm_gmtoff = utc_offset;
 
-	if(twitter_strfind(msg, today_words)){
+	bool found = false;
 
-		// test for reschedule, push the new time into days
-		if(twitter_strfind(msg, resched_words)){
-			for(const char* p = msg; *p; ++p){
-				if(twitter_parse_time(p, &tm)){
-					tm.tm_gmtoff = utc_offset; // set this here incase the gmtime in parse_time messes with it..
-					sb_push(*days, tm);
-					tz_pop(tz);
-					printf("mod_twitter: Found reschedule [%d-%d] -> [%d:%d] [%ld]\n", tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_gmtoff);
-					return true;
-				}
+	if(twitter_strfind(msg, today_words) && twitter_strfind(msg, resched_words)){
+		found = true;
+
+		// add a delete entry for today
+		sb_push(*days, tm);
+		printf("mod_twitter: Found cancel [%d-%d] [%ld]\n", tm.tm_mon, tm.tm_mday, tm.tm_gmtoff);
+
+		// since the twitter_parse_time stuff works in UTC, change tm to that.
+		// this might be unnecessary but i think there could be some edge cases with day switchover...
+		tm.tm_gmtoff = 0;
+		gmtime_r(&tweet_time, &tm);
+		tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+
+		// look for a rescheduled time, push the new time into days
+		// XXX: assumes any timestamp it hits refers to the same day
+		for(const char* p = msg; *p; ++p){
+			if(twitter_parse_time(p, &tm)){
+				sb_push(*days, tm);
+				printf("mod_twitter: Found reschedule [%d-%d] -> [%d:%d]\n", tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min);
+				break;
 			}
-		}
-
-		// otherwise, it might be cancelled, so set stuff to -1 to indicate a delete
-		tm.tm_hour = tm.tm_min = -1;
-		tm.tm_gmtoff = utc_offset;
-
-		if(twitter_strfind(msg, cancel_words)){
-			sb_push(*days, tm);
-			tz_pop(tz);
-			printf("mod_twitter: Found cancel [%d-%d] [%ld]\n", tm.tm_mon, tm.tm_mday, tm.tm_gmtoff);
-			return true;
 		}
 	}
 
 	tz_pop(tz);
-	return false;
+	return found;
 }
 
 static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl_val data, time_t tweet_time){
@@ -351,7 +349,7 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl
 				.repeat = mask,
 			};
 
-			printf("twitter: add sched %s %zu %x\n", sm.user, sm.start, sm.repeat);
+			printf("twitter: add sched %s %zu %x\n", sm.user, (size_t)sm.start, sm.repeat);
 			MOD_MSG(ctx, "sched_add", &sm, 0, 0);
 			modified = true; // XXX: we could pass a callback to sched_add to be 100% sure?
 		}
@@ -441,7 +439,7 @@ static void twitter_tick(time_t now){
 					printf("mod_twitter: Sending tweet to %s.\n", author->u.string);
 					if(using_twc){
 						char tweet[256];
-						snprintf(tweet, sizeof(tweet), "@%s Schedule change registered: " SCHEDULE_URL " 🤖", author->u.string);
+						snprintf(tweet, sizeof(tweet), "@%s Schedule registered: " SCHEDULE_URL " 🤖", author->u.string);
 
 						twc_statuses_update_params params = {
 							.InReplyToStatusId = { .Exists = true, .Value = id->u.number.i }
@@ -484,7 +482,7 @@ static void twitter_quit(void){
 
 static bool twitter_save(FILE* f){
 	sb_each(s, schedules){
-		fprintf(f, "%s %s %d %zu %s\n", s->twitter, s->twitch, s->duration, s->last_modified, s->title);
+		fprintf(f, "%s %s %d %zu %s\n", s->twitter, s->twitch, s->duration, (size_t)s->last_modified, s->title);
 	}
 	return true;
 }
