@@ -180,7 +180,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 			Poll* poll;
 			int id;
 
-			if(sscanf(arg, " #%d", &id) == 1){
+			if(sscanf(arg, " %d", &id) == 1 || sscanf(arg, " #%d", &id) == 1){
 				poll = poll_get(id);
 			} else {
 				poll = poll_get_mru(chan);
@@ -211,11 +211,11 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 
 		case POLL_VOTE: {
 			Poll* poll;
-			int id, vote, dummy;
+			int id, vote;
 
-			if(sscanf(arg, " #%d %d", &id, &vote) == 2){
+			if(sscanf(arg, " %d %d", &id, &vote) == 2 || sscanf(arg, " #%d %d", &id, &vote) == 2){
 				poll = poll_get(id);
-			} else if(sscanf(arg, " %d %d", &vote, &dummy) == 1){
+			} else if(sscanf(arg, " %d", &vote) == 1){
 				poll = poll_get_mru(chan);
 			} else {
 				ctx->send_msg(name, "Could not parse your vote command.");
@@ -255,7 +255,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 			Poll* poll;
 			int id;
 
-			if(sscanf(arg, " #%d", &id) == 1){
+			if(sscanf(arg, " %d", &id) == 1 || sscanf(arg, " #%d", &id) == 1){
 				poll = poll_get(id);
 			} else {
 				poll = poll_get_mru(chan);
@@ -312,7 +312,13 @@ static void poll_nick(const char* prev, const char* cur){
 		if(!poll->open) continue;
 
 		sb_each(v, poll->voters){
-			if(strcmp(*v, prev)){
+			if(strcmp(*v, cur) == 0){
+				return;
+			}
+		}
+
+		sb_each(v, poll->voters){
+			if(strcmp(*v, prev) == 0){
 				sb_push(poll->voters, strdup(cur));
 				break;
 			}

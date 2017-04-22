@@ -288,9 +288,12 @@ static const char* quotes_get_chan(const char* default_chan, const char** arg, Q
 		}
 
 		*arg = *end ? end + 1 : end;
-		chan = new_chan;
 
-		if(same) *same = false;
+		if(same){
+			*same = strcasecmp(chan, new_chan) == 0;
+		}
+
+		chan = new_chan;
 	}
 
 	bool found = false;

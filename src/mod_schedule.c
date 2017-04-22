@@ -389,7 +389,6 @@ static bool sched_parse_days(const char* _in, struct tm* date, unsigned* day_mas
 
 	// try comma separated days list
 	if(!found){
-
 		char* day_state;
 		char* day = strtok_r(in, ",", &day_state);
 		while(day){
@@ -411,7 +410,7 @@ static bool sched_parse_days(const char* _in, struct tm* date, unsigned* day_mas
 			for(int i = 0; i < 7; ++i){
 				if(*day_mask & (1 << i)){
 					date->tm_mday += (i - today);
-					mktime(date);
+					timegm(date);
 					break;
 				}
 			}
@@ -427,7 +426,7 @@ static bool sched_parse_days(const char* _in, struct tm* date, unsigned* day_mas
 		date->tm_hour = 0;
 		date->tm_min = 0;
 		date->tm_sec = 0;
-		mktime(date);
+		timegm(date);
 		return true;
 	}
 
