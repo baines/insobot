@@ -77,6 +77,7 @@ static void alias_load(){
 	if(fscanf(f, "VERSION %d\n", &save_format_ver) == 1){
 		if(save_format_ver != 2){
 			fprintf(stderr, "Unknown save format version %d! Can't load any aliases.\n", save_format_ver);
+			fclose(f);
 			return;
 		}
 

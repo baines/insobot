@@ -4,6 +4,7 @@
 #include <time.h>
 #include <string.h>
 #include <yajl/yajl_tree.h>
+#include <ctype.h>
 #include "inso_utils.h"
 
 static bool twitch_init    (const IRCCoreCtx*);
@@ -126,21 +127,21 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 		char buffer[256];
 		char* arg = NULL;
 
-		if(sscanf(line, "NOTIFY %s", buffer) == 1){
+		if(sscanf(line, "NOTIFY %255s", buffer) == 1){
 			TwitchInfo* t = twitch_get_or_add(buffer);
 
 			t->do_follower_notify = true;
 			t->last_follower_time = now;
 
-		} else if(sscanf(line, "TRACK %s %m[^\n]", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TRACK %255s %m[^\n]", buffer, &arg) >= 1){
 			TwitchInfo* t = twitch_get_or_add(buffer);
 
 			t->is_tracked = true;
 			t->tracked_name = arg;
 
-		} else if(sscanf(line, "OUTPUT %s", buffer) == 1){
+		} else if(sscanf(line, "OUTPUT %255s", buffer) == 1){
 			sb_push(twitch_tracker_chans, strdup(buffer));
-		} else if(sscanf(line, "TAG %s :%m[^\n]", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TAG %255s :%m[^\n]", buffer, &arg) >= 1){
 			TwitchTag tag = { .name = strdup(buffer) };
 			if(arg){
 				tag.tag_list = arg;
@@ -320,12 +321,19 @@ static bool twitch_check_live(size_t index){
 static const char* twitch_display_name(const char* fallback){
 	int i = 0;
 	const char *k, *v;
+	static char caps_buffer[256];
+
 	while(ctx->get_tag(i++, &k, &v)){
 		if(strcmp(k, "display-name") == 0){
 			if(*v) return v;
-			else return fallback;
+			else { // When twitch returns an empty tag, the web UI shows the first char capitalized.
+				strncpy(caps_buffer, fallback, 255);
+				caps_buffer[0] = tolower(caps_buffer[0]);
+				return caps_buffer;
+			}
 		}
 	}
+
 	return fallback;
 }
 
@@ -548,7 +556,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 	char buffer[256];
 	char* optional_name = NULL;
 
-	if(wlist && sscanf(arg, " add %s %m[^\n]", buffer, &optional_name) >= 1){
+	if(wlist && sscanf(arg, " add %255s %m[^\n]", buffer, &optional_name) >= 1){
 
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = true;
@@ -560,7 +568,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		ctx->send_msg(chan, "Now tracking channel %s", buffer);
 		ctx->save_me();
 
-	} else if(wlist && sscanf(arg, " del %s", buffer) == 1){
+	} else if(wlist && sscanf(arg, " del %255s", buffer) == 1){
 
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = false;

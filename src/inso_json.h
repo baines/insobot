@@ -20,6 +20,7 @@ bool yajl_multi_get(yajl_val root, ...) __attribute__((sentinel));
 bool yajl_multi_get(yajl_val root, ...){
 	va_list va;
 	va_start(va, root);
+	bool result = false;
 
 	const char* id;
 	while((id = va_arg(va, char*))){
@@ -32,11 +33,15 @@ bool yajl_multi_get(yajl_val root, ...){
 		const char* yajl_path[] = { id, NULL };
 		
 		yajl_val ret = yajl_tree_get(root, yajl_path, type);
-		if(!ret) return false;
+		if(!ret) goto out;
 		*dst = ret;
 	}
 
-	return true;
+	result = true;
+
+out:
+	va_end(va);
+	return result;
 }
 
 #endif

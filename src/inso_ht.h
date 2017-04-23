@@ -89,8 +89,8 @@ void inso_ht_free(inso_ht* ht){
 				free(ht->prev_memory);
 			}
 		}
+		memset(ht, 0, sizeof(*ht));
 	}
-	memset(ht, 0, sizeof(*ht));
 }
 
 void* inso_ht_put(inso_ht* ht, const void* elem){

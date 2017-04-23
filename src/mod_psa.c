@@ -82,7 +82,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 		S_MSG
 	} state = S_ID;
 
-	const char* errs[] = {
+	static const char* errs[] = {
 		[-S_NO_ID] = "No psa id/name given",
 		[-S_NO_MSG] = "No message given",
 		[-S_NEGATIVE_FREQ] = "The minute frequency must be > 0",
@@ -107,7 +107,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 	do {
 		switch(state){
 			case S_ID: {
-				if(sscanf(p, " %s%n", token, &len) == 1){
+				if(sscanf(p, " %127s%n", token, &len) == 1){
 					p += len;
 					psa.id = strdup(token);
 					state = S_MAIN;
@@ -151,7 +151,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 			} break;
 
 			case S_OPT_TRIGGER: {
-				if(sscanf(p, " '%127[^']'%n", token, &len) == 1 || sscanf(p, " %s%n", token, &len) == 1){
+				if(sscanf(p, " '%127[^']'%n", token, &len) == 1 || sscanf(p, " %127s%n", token, &len) == 1){
 					p += len;
 					psa.trigger = strdup(token);
 					state = S_MAIN;
