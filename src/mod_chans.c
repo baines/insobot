@@ -41,6 +41,14 @@ static inline const char* env_else(const char* env, const char* def){
 
 static bool chans_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+	char file_chan[256];
+
+	FILE* f = fopen(ctx->get_datafile(), "rb");
+	while(fscanf(f, "%255s", file_chan) == 1){
+		sb_push(join_list, strdup(file_chan));
+	}
+	fclose(f);
+
 	return true;
 }
 
@@ -124,10 +132,31 @@ static void chans_join(const char* chan, const char* name){
 	}
 }
 
+static int chans_sort(const void* a, const void* b){
+	return strcmp(*(const char**)a, *(const char**)b);
+}
+
 static bool chans_save(FILE* file){
+	const char** list = NULL;
 	for(const char** c = ctx->get_channels(); *c; ++c){
-		fprintf(file, "%s\n", *c);
+		sb_push(list, *c);
 	}
+
+	if(sb_count(join_list)){
+		memcpy(sb_add(list, sb_count(join_list)), join_list, sb_count(join_list)*sizeof(char*));
+	}
+
+	qsort(list, sb_count(list), sizeof(char*), &chans_sort);
+
+	const char* prev = "";
+	sb_each(c, list){
+		if(strcmp(prev, *c) == 0) continue;
+		fprintf(file, "%s\n", *c);
+		prev = *c;
+	}
+
+	sb_free(list);
+
 	return true;
 }
 
@@ -169,17 +198,6 @@ static void chans_connect(const char* serv){
 	} while((c = strtok_r(NULL, ", ", &state)));
 
 	free(channels);
-
-	char file_chan[256];
-
-	FILE* f = fopen(ctx->get_datafile(), "rb");
-	while(fscanf(f, "%255s", file_chan) == 1){
-		if(!chans_find(file_chan)){
-			printf("mod_chans: Joining %s (file)\n", file_chan);
-			sb_push(join_list, strdup(file_chan));
-		}
-	}
-	fclose(f);
 
 	if(sb_count(join_list)){
 		char* c = sb_last(join_list);
