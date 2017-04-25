@@ -163,6 +163,7 @@ typedef struct {
 	size_t from_len, to_len;
 } Replacement;
 
+// XXX: this is duplicated in inso_xml.h, should be pulled out into utils.h?
 static void html_unescape(char* msg, size_t len){
 
 	#define RTAG(x, y) { .from = (x), .to = (y), .from_len = sizeof(x) - 1, .to_len = sizeof(y) - 1 }
@@ -193,7 +194,7 @@ static void html_unescape(char* msg, size_t len){
 			}
 		}
 
-		wchar_t wc;
+		wint_t wc;
 		int old_len, new_len;
 		if(sscanf(p, "&#%u;%n", &wc, &old_len) == 1){
 			if((new_len = wctomb(c, wc)) > 0 && old_len > new_len){

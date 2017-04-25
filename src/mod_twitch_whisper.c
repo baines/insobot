@@ -4,8 +4,6 @@
 #include <regex.h>
 #include <string.h>
 
-// TODO: relay in the other direction too (whisper -> irc pm)
-
 static bool whisper_init    (const IRCCoreCtx*);
 static void whisper_filter  (size_t, const char*, char*, size_t);
 static void whisper_connect (const char*);

@@ -48,6 +48,7 @@ bool ixt_match    (uintptr_t* tokens, ...) __attribute__((sentinel));
 #include <assert.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <wchar.h>
 
 static char* ixt_skip_ws(char* p){
 	while(*p && ((uint8_t)*p <= ' ')) ++p;
@@ -97,7 +98,7 @@ static void ixt_unescape(char* msg, size_t len){
 		}
 
 		// numeric replacements
-		wchar_t wc;
+		wint_t wc;
 		int old_len, new_len;
 		if(*p == '&' &&
 			(sscanf(p, "&#%u;%n" , &wc, &old_len) == 1 || sscanf(p, "&#x%x;%n", &wc, &old_len) == 1) &&

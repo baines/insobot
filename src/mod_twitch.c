@@ -328,7 +328,7 @@ static const char* twitch_display_name(const char* fallback){
 			if(*v) return v;
 			else { // When twitch returns an empty tag, the web UI shows the first char capitalized.
 				strncpy(caps_buffer, fallback, 255);
-				caps_buffer[0] = tolower(caps_buffer[0]);
+				caps_buffer[0] = toupper(caps_buffer[0]);
 				return caps_buffer;
 			}
 		}
