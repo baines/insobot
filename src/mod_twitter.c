@@ -405,7 +405,6 @@ static void twitter_tick(time_t now){
 
 	bool modified = false;
 
-	twitter_since_id = 0;
 	for(size_t i = 0; i < list->u.array.len; ++i){
 		yajl_val obj = list->u.array.values[i];
 

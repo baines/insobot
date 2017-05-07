@@ -117,6 +117,11 @@ static void info_cmd(const char* chan, const char* nick, const char* arg, int cm
 		return;
 	}
 
+	if(strcasecmp(arg, "insobot") == 0){
+		ctx->send_msg(chan, "I'm an IRC bot written in C99 by insofaras: https://github.com/baines/insobot");
+		return;
+	}
+
 	char* data = NULL;
 	char* url;
 	CURL* curl = curl_easy_init();

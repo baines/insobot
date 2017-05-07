@@ -6,8 +6,9 @@ To run your own insobot instance, see [this quickstart guide](https://github.com
 , other pages in [the wiki](https://github.com/baines/insobot/wiki), and the
 files 'insobot.sh.example' and 'src/config.h'.
 
-I should also be available in [#botdev](ircs://irc.handmade.network:7777/#botdev)
-on irc.handmade.network/7777 (ssl) if you need help.
+I should be available in [#botdev](ircs://irc.handmade.network:7777/#botdev)
+on irc.handmade.network/7777 (ssl) if you need help. See also the [Handmade Network project page](https://insobot.handmade.network)
+for a place to post forum topics or read project updates.
 
 ## Contributing
 Any contributions of new modules, improvements to existing modules, or raising

@@ -7,7 +7,7 @@
 static bool help_init (const IRCCoreCtx*);
 static void help_cmd  (const char*, const char*, const char*, int);
 
-enum { CMD_HELP };
+enum { CMD_HELP, CMD_BOTINFO };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "help",
@@ -16,7 +16,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = help_init,
 	.on_cmd   = &help_cmd,
 	.commands = DEFINE_CMDS (
-		[CMD_HELP] = CONTROL_CHAR "help"
+		[CMD_HELP] = CONTROL_CHAR "help",
+		[CMD_BOTINFO] = CMD(DEFAULT_BOT_NAME)
 	)
 };
 
@@ -49,7 +50,11 @@ static void get_mod_cmds(IRCModuleCtx* mod, char* buf, size_t sz){
 }
 
 static void help_cmd(const char* chan, const char* name, const char* arg, int cmd){
-	if(cmd != CMD_HELP) return;
+
+	if(cmd == CMD_BOTINFO){
+		ctx->send_msg(chan, "Hello %s, I'm %s based on code available at https://github.com/baines/insobot", name, ctx->get_username());
+		return;
+	}
 
 	//TODO: description of each command?
 

@@ -560,6 +560,10 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			continue;
 		}
 
+		if(irc_ctx && irc_is_connected(irc_ctx)){
+			IRC_MOD_CALL(m, on_connect, (serv));
+		}
+
 		for(size_t i = 0; i < sb_count(channels) - 1; ++i){
 			const char** c = (const char**)channels + i;
 

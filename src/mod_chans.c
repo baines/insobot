@@ -41,13 +41,6 @@ static inline const char* env_else(const char* env, const char* def){
 
 static bool chans_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
-	char file_chan[256];
-
-	FILE* f = fopen(ctx->get_datafile(), "rb");
-	while(fscanf(f, "%255s", file_chan) == 1){
-		sb_push(join_list, strdup(file_chan));
-	}
-	fclose(f);
 
 	return true;
 }
@@ -170,6 +163,13 @@ static bool chans_find(const char* chan){
 }
 
 static void chans_connect(const char* serv){
+
+	char file_chan[256];
+	FILE* f = fopen(ctx->get_datafile(), "rb");
+	while(fscanf(f, "%255s", file_chan) == 1){
+		sb_push(join_list, strdup(file_chan));
+	}
+	fclose(f);
 
 	if(strcasecmp(serv, "irc.chat.twitch.tv") == 0 || getenv("IRC_IS_TWITCH")){
 		ctx->send_raw("CAP REQ :twitch.tv/membership");
