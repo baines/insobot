@@ -337,7 +337,7 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl
 		if(days[i].tm_min == -1){
 			SchedIterInfo info = { ts->title, days + i };
 			MOD_MSG(ctx, "sched_iter", ts->twitch, &twitter_sched_iter_cb, &info);
-			modified = info.modified;
+			modified = modified || info.modified;
 		} else {
 			time_t t = timegm(days + i);
 
