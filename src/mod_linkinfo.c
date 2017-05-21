@@ -2,12 +2,12 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <curl/curl.h>
-#include <yajl/yajl_tree.h>
 #include <string.h>
 #include <assert.h>
 #include <wchar.h>
 #include "stb_sb.h"
 #include "inso_utils.h"
+#include "inso_json.h"
 
 //#define USE_LEGIT_YOUTUBE_API
 
@@ -44,6 +44,7 @@ static const char* twitter_token;
 static regex_t steam_url_regex;
 static regex_t vimeo_url_regex;
 static regex_t xkcd_url_regex;
+static regex_t github_url_regex;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -129,6 +130,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
+	ret = ret & (regcomp(
+		&github_url_regex,
+		"https?://(www.)?github.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)(.git)?",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
 	twitter_token = getenv("INSOBOT_TWITTER_TOKEN");
 	if(!twitter_token || !*twitter_token){
 		fputs("mod_linkinfo: no twitter token, expanding tweets won't work.\n", stderr);
@@ -156,6 +163,7 @@ static void linkinfo_quit(void){
 	regfree(&steam_url_regex);
 	regfree(&vimeo_url_regex);
 	regfree(&xkcd_url_regex);
+	regfree(&github_url_regex);
 }
 
 typedef struct {
@@ -780,6 +788,47 @@ static void do_xkcd_info(const char* chan, const char* msg, regmatch_t* matches)
 	free(url);
 }
 
+static void do_github_info(const char* chan, const char* msg, regmatch_t* matches){
+
+	char* url;
+	asprintf_check(
+		&url,
+		"https://api.github.com/repos/%.*s/%.*s",
+		matches[2].rm_eo - matches[2].rm_so,
+		msg + matches[2].rm_so,
+		matches[3].rm_eo - matches[3].rm_so,
+		msg + matches[3].rm_so
+	);
+
+	char* data = NULL;
+	CURL* curl = inso_curl_init(url, &data);
+	struct curl_slist* headers = curl_slist_append(NULL, "Accept: application/vnd.github.drax-preview+json");
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+	if(inso_curl_perform(curl, &data) == 200){
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		yajl_val desc = YAJL_GET(root, yajl_t_string, ("description"));
+		yajl_val name = YAJL_GET(root, yajl_t_string, ("full_name"));
+		yajl_val lang = YAJL_GET(root, yajl_t_string, ("language"));
+		yajl_val lsnc = YAJL_GET(root, yajl_t_string, ("license", "spdx_id"));
+
+		if(desc && name && lang){
+			if(lsnc){
+				ctx->send_msg(chan, "↑ GitHub: %s [%s] [%s] [%s]", name->u.string, desc->u.string, lang->u.string, lsnc->u.string);
+			} else {
+				ctx->send_msg(chan, "↑ GitHub: %s [%s] [%s]", name->u.string, desc->u.string, lang->u.string);
+			}
+		}
+
+		yajl_tree_free(root);
+	}
+
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(curl);
+	sb_free(data);
+	free(url);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -790,11 +839,11 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		do_youtube_info(chan, msg, matches);
 	}
 
-	if(regexec(&yt_playlist_regex, msg, 2, matches, 0) == 0){
+	else if(regexec(&yt_playlist_regex, msg, 2, matches, 0) == 0){
 		do_yt_playlist_info(chan, msg, matches);
 	}
 
-	if(regexec(&hmn_url_regex, msg, 1, matches, 0) == 0){
+	else if(regexec(&hmn_url_regex, msg, 1, matches, 0) == 0){
 		if(msg[m->rm_eo] != '-'){
 			snprintf(url, sizeof(url), "https://%.*s", m->rm_eo - m->rm_so, msg + m->rm_so);
 			do_generic_info(chan, url, "HMN");
@@ -804,25 +853,28 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		do_ograph_info(chan, url, "HMN");
 	}
 
-	if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
+	else if(regexec(&msdn_url_regex, msg, 1, matches, 0) == 0){
 		snprintf(url, sizeof(url), "https://%.*s", m->rm_eo - m->rm_so, msg + m->rm_so);
 		do_generic_info(chan, url, "MSDN");
 	}
 
-	if(regexec(&twitter_url_regex, msg, 2, matches, 0) == 0){
+	else if(regexec(&twitter_url_regex, msg, 2, matches, 0) == 0){
 		do_twitter_info(chan, msg, matches);
 	}
 
-	if(regexec(&steam_url_regex, msg, 2, matches, 0) == 0){
+	else if(regexec(&steam_url_regex, msg, 2, matches, 0) == 0){
 		do_steam_info(chan, msg, matches);
 	}
 
-	if(regexec(&vimeo_url_regex, msg, 2, matches, 0) == 0){
+	else if(regexec(&vimeo_url_regex, msg, 2, matches, 0) == 0){
 		do_vimeo_info(chan, msg, matches);
 	}
 
-	if(regexec(&xkcd_url_regex, msg, 3, matches, 0) == 0){
+	else if(regexec(&xkcd_url_regex, msg, 3, matches, 0) == 0){
 		do_xkcd_info(chan, msg, matches);
 	}
 
+	else if(regexec(&github_url_regex, msg, 5, matches, 0) == 0){
+		do_github_info(chan, msg, matches);
+	}
 }
