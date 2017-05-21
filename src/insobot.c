@@ -1106,6 +1106,11 @@ static const char* core_get_datafile(void){
 		inotify.data.wd = inotify_add_watch(inotify.fd, inotify.data.path, IN_CLOSE_WRITE | IN_MOVED_TO);
 	}
 
+	if(access(datafile_buff, R_OK | W_OK) != 0){
+		fprintf(stderr, "FATAL: We don't have rw permission on '%s'! Please chown/chmod it.\n", datafile_buff);
+		exit(0); // use 0 so we don't get auto-restarted..
+	}
+
 	return datafile_buff;
 }
 
