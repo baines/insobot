@@ -121,6 +121,8 @@ h1 {
 <div id="refresh"></div>
 <div id="irc">Join <a href="ircs://irc.handmade.network:7777/#streams">#streams</a> on <a href="https://handmade.network/blogs/p/1138">irc.handmade.network</a> for live info.</div>
 <script>
+/* @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain */
+/* https://github.com/baines/insobot/blob/gh-pages/schedule/index.html */
 var palette = [
 	"#06989A", "#8A609D", "#409A06", "#C4A000", "#729FCF", "#FFFFFF", "#2DE2E2",
 	"#A17FA8", "#6DE234", "#427FED", "#00D700", "#06D75F", "#5FD7D7", "#878700",
@@ -571,8 +573,7 @@ function calc_schedule(table, e){
 
 	var x = new XMLHttpRequest();
 	x.addEventListener("load", function(){
-		var gist = JSON.parse(this.responseText);
-		var entries = JSON.parse(gist["files"]["schedule.json"]["content"]);
+		var entries = JSON.parse(this.responseText);
 
 		var table = document.getElementById("schedule");
 		table.cellPadding = 0;
@@ -627,10 +628,11 @@ function calc_schedule(table, e){
 
 		window.setInterval(update_next, 1000);
 	});
-	x.open("GET", "https://api.github.com/gists/c61f6b5a4dafd987cde5234eed5bfbba");
+	x.open("GET", "https://gist.githubusercontent.com/insofaras/c61f6b5a4dafd987cde5234eed5bfbba/raw");
 	x.send();
 	document.getElementById("refresh").textContent = "Last refresh: " + new Date().toLocaleString();
 })();
+/* @license-end */
 </script>
 </body>
 </html>
