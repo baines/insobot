@@ -27,6 +27,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd  = &hmninfo_cmd,
 	.commands = DEFINE_CMDS(
 		[HMNINFO_UPDATE] = CMD1("hmnpupdate")
+	),
+	.cmd_help = DEFINE_CMDS(
+		[HMNINFO_UPDATE] = "| Updates the list of known handmade.network projects"
 	)
 };
 

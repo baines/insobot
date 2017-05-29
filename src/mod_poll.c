@@ -29,7 +29,15 @@ const IRCModuleCtx irc_mod_ctx = {
 		[POLL_LIST_OPEN]   = CMD("pall") CMD("popen"),
 		[POLL_LIST_CLOSED] = CMD("phist"),
 		[POLL_VOTE]        = CMD("vote")
-	)
+	),
+	.cmd_help = DEFINE_CMDS(
+		[POLL_OPEN]        = "<question> '?' <opt1> '|' <opt2> '|' ... <optN> | Creates a new poll for <question> with options <opt1..N>",
+		[POLL_CLOSE]       = "<ID> | Closes the poll numbered <ID> (which is displayed when created or listed",
+		[POLL_LIST]        = "<ID> | Shows information about the poll identified by <ID>",
+		[POLL_LIST_OPEN]   = "| List currently open polls",
+		[POLL_LIST_CLOSED] = "| List closed polls",
+		[POLL_VOTE]        = "[ID] <N> | Vote for option <N> on the most recently opened poll, or, if given, the poll identified by [ID]."
+	),
 };
 
 static const IRCCoreCtx* ctx;

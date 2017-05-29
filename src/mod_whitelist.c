@@ -26,6 +26,12 @@ const IRCModuleCtx irc_mod_ctx = {
 		[WL_CHECK]      = CONTROL_CHAR "wl "    CONTROL_CHAR "iswl " CONTROL_CHAR "wlcheck",
 		[WL_ADD]        = CONTROL_CHAR "wladd " CONTROL_CHAR "wl+",
 		[WL_DEL]        = CONTROL_CHAR "wldel " CONTROL_CHAR "wl-"
+	),
+	.cmd_help = DEFINE_CMDS (
+		[WL_CHECK_SELF] = "| Check if you are whitelisted",
+		[WL_CHECK]      = "[user] | Check if user is whitelisted (or yourself, if [user] omitted)",
+		[WL_ADD]        = "<user> | Adds <user> to the whitelist",
+		[WL_DEL]        = "<user> | Deletes <user> from the whitelist"
 	)
 };
 

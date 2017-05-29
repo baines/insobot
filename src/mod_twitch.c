@@ -31,6 +31,13 @@ const IRCModuleCtx irc_mod_ctx = {
 		[TWITCH_VOD]     = CMD("vod"   ),
 		[TWITCH_TRACKER] = CMD("tracker") CMD("streams"),
 		[TWITCH_TITLE]   = CMD("title"  )
+	),
+	.cmd_help = DEFINE_CMDS (
+		[FOLLOW_NOTIFY]  = "<on|off> | Enables/disables the twitch follow notifier, which thanks people for follwing the channel.",
+		[UPTIME]         = "[#chan] | Displays the current twitch channel's uptime (or [chan]'s, if given).",
+		[TWITCH_VOD]     = "[#chan] | Displays the URL of the channel's most recent VoD (past broadcast).",
+		[TWITCH_TRACKER] = "[list|tagme [chans...]|untagme|chans|add <chan> [name]|del <chan>] | Operate the twitch stream tracker (#streams channel on HMN IRC)",
+		[TWITCH_TITLE]   = "[title] | Displays the current channel's stream title or, if given and I am made an editor for the channel, sets it to [title]"
 	)
 };
 

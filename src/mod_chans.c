@@ -25,8 +25,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_connect = &chans_connect,
 	.on_quit    = &chans_quit,
 	.commands   = DEFINE_CMDS (
-		[CHAN_JOIN]  = CONTROL_CHAR "join",
-		[CHAN_LEAVE] = CONTROL_CHAR "leave " CONTROL_CHAR "part"
+		[CHAN_JOIN]  = CMD1("join"),
+		[CHAN_LEAVE] = CMD1("leave") CMD1("part")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[CHAN_JOIN]  = "| Instruct the bot to join your channel",
+		[CHAN_LEAVE] = "| Instruct the bot to leave the current channel"
 	)
 };
 

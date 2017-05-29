@@ -33,8 +33,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_modified = &karma_modified,
 	.on_mod_msg  = &karma_mod_msg,
 	.commands = DEFINE_CMDS (
-		[KARMA_SHOW] = CONTROL_CHAR "karma " CONTROL_CHAR_2 "karma",
-		[KARMA_TOP]  = CONTROL_CHAR "ktop "  CONTROL_CHAR_2 "ktop"
+		[KARMA_SHOW] = CMD("karma"),
+		[KARMA_TOP]  = CMD("ktop")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[KARMA_SHOW] = "[user] | Show your karma, or, if given, the karma for [user]",
+		[KARMA_TOP]  = "[N] | Show the top N users with highest karma (admin only)"
 	)
 };
 

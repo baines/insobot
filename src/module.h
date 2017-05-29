@@ -65,6 +65,12 @@ typedef struct IRCModuleCtx_ {
 	// called on an unknown IRC event
 	void (*on_unknown) (const char* event, const char* origin, const char** params, size_t num_params);
 
+	// help / usage for commands (use DEFINE_CMDS)
+	const char** cmd_help;
+
+	// link to online guide / documentation for this module
+	const char* help_url;
+
 } IRCModuleCtx;
 
 // incremented when new functions are added to IRCCoreCtx

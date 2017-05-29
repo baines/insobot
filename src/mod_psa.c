@@ -31,6 +31,12 @@ const IRCModuleCtx irc_mod_ctx = {
 		[PSA_ADD]  = CMD("psa+"),
 		[PSA_DEL]  = CMD("psa-"),
 		[PSA_LIST] = CMD("psa")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[PSA_ADD]  = "<name> [+live] [+trigger '<str>'] <N>m <text> | Adds/updates a PSA named <name> to occur every <N> mins."
+		             "With +live, only show when the channel is live. With +trigger, only show when <str> is said.",
+		[PSA_DEL]  = "<name> | Remove the psa identified by <name>.",
+		[PSA_LIST] = "| Show the PSAs for the current channel."
 	)
 };
 

@@ -95,7 +95,6 @@ static Module* irc_modules;
 static Module** mod_call_stack;
 static IRCModuleCtx** chan_mod_list;
 static IRCModuleCtx** global_mod_list;
-static bool mod_list_dirty = true;
 
 static const char *user, *pass, *serv, *port;
 static char* bot_nick;
@@ -169,6 +168,7 @@ static const char* debug_chan;
 
 #define ABI_FILTER  24
 #define ABI_UNKNOWN 25
+#define ABI_HELP    27
 #define ABI_CHECK(m, abi) ((m)->ctx_size >= (sizeof(void*)*(abi)))
 
 /*********************************
@@ -482,7 +482,6 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		if(!m->needs_reload) continue;
-		mod_list_dirty = true;
 
 		const char* mod_name = basename(m->lib_path);
 
@@ -519,6 +518,7 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 				//       |      x23      | on_ipc     |
 				//       |      x24      | on_filter  |
 				//       |      x25      | on_unknown |
+				//       |      x27      | help_url   |
 
 				errmsg = "version mismatch (wrong size irc_mod_ctx)";
 			} else {
@@ -1115,23 +1115,23 @@ static const char* core_get_datafile(void){
 }
 
 static IRCModuleCtx** core_get_modules(bool chan_only){
+	Module* caller = sb_last(mod_call_stack);
 
-	if(mod_list_dirty){
-		while(sb_count(chan_mod_list) > 0) sb_pop(chan_mod_list);
-		while(sb_count(global_mod_list) > 0) sb_pop(global_mod_list);
+	if(chan_mod_list) stb__sbn(chan_mod_list) = 0;
+	if(global_mod_list) stb__sbn(global_mod_list) = 0;
 
-		for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
-			sb_push(global_mod_list, m->ctx);
-			if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
-				sb_push(chan_mod_list, m->ctx);
-			}
+	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+		// XXX: don't return modules with a lower ABI than the caller for safety.
+		if(caller && caller->ctx_size > m->ctx_size) continue;
+
+		sb_push(global_mod_list, m->ctx);
+		if(!(m->ctx->flags & IRC_MOD_GLOBAL)){
+			sb_push(chan_mod_list, m->ctx);
 		}
-
-		sb_push(chan_mod_list, 0);
-		sb_push(global_mod_list, 0);
-
-		mod_list_dirty = false;
 	}
+
+	sb_push(chan_mod_list, 0);
+	sb_push(global_mod_list, 0);
 
 	return chan_only ? chan_mod_list : global_mod_list;
 }

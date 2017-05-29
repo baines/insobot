@@ -15,7 +15,11 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &brainfuck_cmd,
 	.commands = DEFINE_CMDS (
 		[BRAINFUCK_EXEC] = "!bf"
-	)
+	),
+	.cmd_help = DEFINE_CMDS (
+		[BRAINFUCK_EXEC] = "<code> <input> | Execute the given brainfuck program, and display its output."
+	),
+	.help_url = "https://esolangs.org/wiki/Brainfuck"
 };
 
 static const IRCCoreCtx* ctx;

@@ -19,7 +19,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = &info_init,
 	.commands = DEFINE_CMDS(
 		[INFO_GET] = CMD("info")
-	)
+	),
+	.cmd_help = DEFINE_CMDS(
+		[INFO_GET] = "<query> | Searches DuckDuckGo for <query> and displays the best result."
+	),
 };
 
 static const IRCCoreCtx* ctx;

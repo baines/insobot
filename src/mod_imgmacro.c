@@ -31,6 +31,12 @@ const IRCModuleCtx irc_mod_ctx = {
 		[IM_SHOW]   = CMD("img")     CMD("meme"),
 		[IM_LIST]   = CMD("lsimg")   CMD("memelist"),
 		[IM_AUTO]   = CMD("autoimg") CMD("automeme")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[IM_CREATE] = "<template> <\"top\"> [\"bottom\"] | Generates a new image macro from <template> and the <top> and optional [bottom] text lines.",
+		[IM_SHOW]   = "[ID] | Recall the URL for the image macro with the given [ID], or a random one otherwise.",
+		[IM_LIST]   = "| This should list image macros, but is unimplemented >_>",
+		[IM_AUTO]   = "| Generates a completely random image macro from mod_markov text"
 	)
 };
 

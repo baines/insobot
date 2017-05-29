@@ -18,6 +18,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.commands   = DEFINE_CMDS (
 		[HAIKU]          = CMD("haiku"),
 		[SYLLABLE_COUNT] = CMD("scount")
+	),
+	.cmd_help   = DEFINE_CMDS (
+		[HAIKU]          = "| Generates a haiku using text from mod_markov",
+		[SYLLABLE_COUNT] = "<word> | Shows the assumed syllable count for <word> which is probably inaccurate..."
 	)
 };
 

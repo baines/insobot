@@ -35,7 +35,16 @@ const IRCModuleCtx irc_mod_ctx = {
 		[ALIAS_LIST]        = CMD1("lsalias"   ) CMD1("lsa"      ) CMD1("listalias"  ) CMD1("listaliases"),
 		[ALIAS_LIST_GLOBAL] = CMD1("lsgalias"  ) CMD1("lsga"     ),
 		[ALIAS_SET_PERM]    = CMD1("chaliasmod") CMD1("chamod"   ) CMD1("aliasaccess") CMD1("setaliasaccess")
-	)
+	),
+	.cmd_help = DEFINE_CMDS (
+		[ALIAS_ADD]         = "<key> <text> | Adds or updates a channel-specific alias named <key>, it can then be recalled with !<key>",
+		[ALIAS_ADD_GLOBAL]  = "<key> <text> | Adds or updates a global alias named <key>",
+		[ALIAS_DEL]         = "<key> | Removes the channel-specific alias named <key>",
+		[ALIAS_DEL_GLOBAL]  = "<key> | Removes the global alias named <key>",
+		[ALIAS_LIST]        = "| Shows the aliases available in this channel",
+		[ALIAS_LIST_GLOBAL] = "| Shows the aliases available in all channels",
+		[ALIAS_SET_PERM]    = "<key> <NORMAL|WLIST|ADMIN> | Sets the permission level required to use the alias idenfitied by <key>"
+	),
 };
 
 #define ALIAS_CHAR '!'

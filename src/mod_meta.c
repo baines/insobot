@@ -33,11 +33,17 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_join  = &meta_join,
 	.on_quit  = &meta_quit,
 	.commands = DEFINE_CMDS (
-		[CMD_MODULES]  = CONTROL_CHAR"m "     CONTROL_CHAR"modules",
-		[CMD_MOD_ON]   = CONTROL_CHAR"mon "   CONTROL_CHAR"modon",
-		[CMD_MOD_OFF]  = CONTROL_CHAR"moff "  CONTROL_CHAR"modoff",
-		[CMD_MOD_INFO] = CONTROL_CHAR"minfo " CONTROL_CHAR"modinfo"
-	)
+		[CMD_MODULES]  = CMD1("m")     CMD1("modules"),
+		[CMD_MOD_ON]   = CMD1("mon")   CMD1("modon"),
+		[CMD_MOD_OFF]  = CMD1("moff")  CMD1("modoff"),
+		[CMD_MOD_INFO] = CMD1("minfo") CMD1("modinfo")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[CMD_MODULES]  = "| Displays which modules are enabled/disabled for the current channel.",
+		[CMD_MOD_ON]   = "<mod> | Enables the module named <mod>.",
+		[CMD_MOD_OFF]  = "<mod> | Disables the module named <mod>.",
+		[CMD_MOD_INFO] = "<mod> | Shows the description for the <mod> module."
+	),
 };
 
 static const IRCCoreCtx* ctx;
@@ -210,6 +216,7 @@ static void meta_cmd(const char* chan, const char* name, const char* arg, int cm
 			}
 
 			//XXX: all_mods was a bad choice of name for only channel mods...
+			//XXX: also note all_mods is invalidated by this call
 			IRCModuleCtx** m = ctx->get_modules(false);
 
 			bool found = false;

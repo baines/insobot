@@ -18,8 +18,11 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &admin_cmd,
 	.on_stdin = &admin_stdin,
 	.commands = DEFINE_CMDS (
-		[FORCE_JOIN] = CONTROL_CHAR "fjoin " CONTROL_CHAR "join"
-	)
+		[FORCE_JOIN] = CMD1("fjoin") CMD1("join")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[FORCE_JOIN] = "<chan> | Instructs the bot to join <chan>"
+	),
 };
 
 static const IRCCoreCtx* ctx;

@@ -31,6 +31,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.commands   = DEFINE_CMDS(
 		[AUTOMOD_TIMEOUT] = "!b \\b !to !ko \\ko",
 		[AUTOMOD_UNBAN]   = "!ub \\ub"
+	),
+	.cmd_help = DEFINE_CMDS(
+		[AUTOMOD_TIMEOUT] = "<user> [time] | Times out <user> for [time] minutes (default 10)",
+		[AUTOMOD_UNBAN]   = "<user> | Removes a ban/timeout on <user>"
 	)
 };
 

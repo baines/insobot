@@ -31,6 +31,16 @@ const IRCModuleCtx irc_mod_ctx = {
 		[LIST_QUOTES]   = CMD1("ql"  ) CMD1("qlist"   ),
 		[SEARCH_QUOTES] = CMD1("qs"  ) CMD1("qsearch" ) CMD1("qfind"  ) CMD1("qgrep"),
 		[GET_RANDOM]    = CMD1("qr"  ) CMD1("qrand"   ) CMD1("qrandom")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[GET_QUOTE]     = "[#chan] [ID] | Shows the quote with given ID, or a random one.",
+		[ADD_QUOTE]     = "[#chan] <text> | Adds a new quote.",
+		[DEL_QUOTE]     = "[#chan] <ID> | Removes the quote with given ID.",
+		[FIX_QUOTE]     = "[#chan] <ID> <text> | Modifies the text of the quote with the given ID.",
+		[FIX_TIME]      = "[#chan] <ID> <YYYY-MM-DD> | Modifies the associated timestamp of the quote with the given ID.",
+		[LIST_QUOTES]   = "| Shows the URL to the full list of quotes",
+		[SEARCH_QUOTES] = "[#chan] <query> | Searches the quotes for those that match <query>",
+		[GET_RANDOM]    = "[#chan] | Displays a random quote"
 	)
 };
 

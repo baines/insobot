@@ -41,6 +41,14 @@ const IRCModuleCtx irc_mod_ctx = {
 		[MARKOV_LENGTH]   = CMD1("len"),
 		[MARKOV_STATUS]   = CMD1("status"),
 		[MARKOV_SAVE]     = CMD1("msave")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[MARKOV_SAY]      = "| Instruct the bot say something random (5 minute cooldown).",
+		[MARKOV_ASK]      = "| Instruct the bot to ask a random question (5 minute cooldown).",
+		[MARKOV_INTERVAL] = "<N> | Change the rate of random messages to 1 in N, e.g. N == 100 means after every 100 messages on average",
+		[MARKOV_LENGTH]   = "<N> | Change the average length of generated messages",
+		[MARKOV_STATUS]   = "| Display memory usage statistics for the markov data",
+		[MARKOV_SAVE]     = "| Force a save of the markov data"
 	)
 };
 
@@ -48,43 +56,56 @@ static const IRCCoreCtx* ctx;
 
 // Types {{{
 
+// Unique ID for a word, and an offset into the word_mem array that contains the actual string.
 typedef uint32_t word_idx_t;
 
-struct MarkovLinkKey_ {
+// Used in chain_keys_ht hash table, one entry for each unique pair of words.
+// val_idx points into the chain_vals array
+typedef struct __attribute__((packed)) {
 	uint32_t val_idx;
 	word_idx_t word_idx_1 : 24;
 	word_idx_t word_idx_2 : 24;
-} __attribute__ ((packed));
-typedef struct MarkovLinkKey_ MarkovLinkKey;
+} MarkovLinkKey;
 
+// Used in chain_vals array, describes the possible next states for a key
+// next points to the next value for the key, terminated by (uint32_t)-1
 typedef struct {
 	word_idx_t word_idx : 24;
 	uint8_t count;
 	uint32_t next;
 } MarkovLinkVal;
 
+// Used in word_ht hash table, one entry per unique word
 typedef struct {
 	word_idx_t word_idx;
 	uint32_t   total;
 } WordInfo;
 
+typedef struct {
+	word_idx_t word;
+	time_t updated;
+	size_t count;
+} MarkovTopic;
+
+typedef struct {
+	size_t hash;
+	uint64_t topic_mask;
+	int min_depth;
+} MarkovCategory;
+
 // }}}
 
-// Global Variables {{{
+// Static Variables {{{
 
 static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", NULL };
 static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", "GitHub", NULL };
 static const char* skip_words[]    = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
 
-static const int say_cooldown = 300;
-static time_t last_say;
-
-static char* word_mem;
+static char*   word_mem;
+static inso_ht word_ht;
 
 static inso_ht        chain_keys_ht;
 static MarkovLinkVal* chain_vals;
-
-static inso_ht word_ht;
 
 static char rng_state_mem[256];
 static struct random_data rng_state;
@@ -98,9 +119,16 @@ static word_idx_t start_sym_idx;
 static word_idx_t end_sym_idx;
 
 static uint32_t recent_hashes[128];
-static size_t hash_idx;
+static size_t   recent_hash_idx;
 
 static char** markov_nicks;
+
+#if 0
+static MarkovTopic    markov_topics[64];
+static MarkovCategory markov_cats[128];
+#endif
+
+uint64_t grand_total;
 
 // }}}
 
@@ -115,8 +143,8 @@ static uint32_t markov_hash(const char* str, size_t len){
 }
 
 static void markov_add_hash(const char* str, size_t len){
-	recent_hashes[hash_idx] = markov_hash(str, len);
-	hash_idx = (hash_idx + 1) % ARRAY_SIZE(recent_hashes);
+	recent_hashes[recent_hash_idx] = markov_hash(str, len);
+	recent_hash_idx = (recent_hash_idx + 1) % ARRAY_SIZE(recent_hashes);
 }
 
 static bool markov_check_dup(const char* str, size_t len){
@@ -183,27 +211,32 @@ static uint32_t markov_rand(uint32_t limit){
 	return x % limit;
 }
 
-static bool find_word_addref(const char* word, size_t word_len, word_idx_t* index){
+static word_idx_t find_word_addref(const char* word, size_t word_len, uint32_t* total){
 	WordInfo* info;
 	size_t hash = markov_hash(word, word_len);
 	char* zword = strndupa(word, word_len);
 
 	if((info = inso_ht_get(&word_ht, hash, &wordinfo_cmp, zword))){
-		*index = info->word_idx;
 		++info->total;
-		return true;
+		if(total){
+			*total = info->total;
+		}
+		return info->word_idx;
 	}
 
-	return false;
+	return 0;
 }
 
-static word_idx_t find_or_add_word(const char* word, size_t word_len){
+static word_idx_t find_or_add_word(const char* word, size_t word_len, uint32_t* total){
 	word_idx_t index;
 
-	if(!find_word_addref(word, word_len, &index)){
+	if(!(index = find_word_addref(word, word_len, total))){
 		char* p = memcpy(sbmm_add(word_mem, word_len+1), word, word_len+1);
 		index = p - word_mem;
 		inso_ht_put(&word_ht, &(WordInfo){ index, 1 });
+		if(total){
+			*total = 1;
+		}
 	}
 
 	return index;
@@ -252,6 +285,7 @@ static void markov_add(word_idx_t indices[static 3]){
 
 		for(uint32_t i = key->val_idx; i != UINT32_MAX; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
+				// TODO: adjust all counts for this key >> 1?
 				if(chain_vals[i].count < 255) ++chain_vals[i].count;
 				found = true;
 				break;
@@ -303,6 +337,18 @@ static void markov_replace(char** msg, const char* from, const char* to){
 		msg_len += (to_len - from_len);
 	}
 
+}
+
+static int markov_topic_cmp(const void* _a, const void* _b){
+	const MarkovTopic *a = _a, *b = _b;
+
+	if(a->count != b->count){
+		if(!a->count) return -1;
+		if(!b->count) return +1;		
+		return b->count - a->count;
+	}
+
+	return a->updated - b->updated;
 }
 
 // }}}
@@ -584,8 +630,8 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 		inso_ht_init(&word_ht, 4096, sizeof(WordInfo), &wordinfo_hash);
 	}
 
-	start_sym_idx = find_or_add_word("^", 1);
-	end_sym_idx   = find_or_add_word("$", 1);
+	start_sym_idx = find_or_add_word("^", 1, NULL);
+	end_sym_idx   = find_or_add_word("$", 1, NULL);
 
 	return true;
 }
@@ -607,6 +653,9 @@ static void markov_quit(void){
 
 static void markov_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	time_t now = time(0);
+
+	static const int say_cooldown = 300;
+	static time_t last_say;
 
 	bool admin = inso_is_admin(ctx, name);
 
@@ -708,53 +757,63 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 		*c = tolower(*c);
 	}
 
-	const char* bot_name = ctx->get_username();
-	size_t      bot_name_len = strlen(bot_name);
-	const char* name_pats[] = { "@%s", "%s:", "%s," };
-	char        name_buf[256];
-	bool        found_name = false;
+	// check for mentions, and reply
+	{
+		const char* bot_name = ctx->get_username();
+		size_t      bot_name_len = strlen(bot_name);
+		const char* name_pats[] = { "@%s", "%s:", "%s," };
+		char        name_buf[256];
+		bool        found_name = false;
 
-	assert(bot_name_len + 2 < sizeof(name_buf));
-	for(size_t i = 0; i < ARRAY_SIZE(name_pats); ++i){
-		snprintf(name_buf, sizeof(name_buf), name_pats[i], bot_name);
-		if(strcasestr(msg, name_buf)){
-			found_name = true;
-			break;
+		assert(bot_name_len + 2 < sizeof(name_buf));
+		for(size_t i = 0; i < ARRAY_SIZE(name_pats); ++i){
+			snprintf(name_buf, sizeof(name_buf), name_pats[i], bot_name);
+			if(strcasestr(msg, name_buf)){
+				found_name = true;
+				break;
+			}
+		}
+
+		if(found_name && markov_rand(3)){
+			markov_reply(chan, name);
 		}
 	}
 
-	if(found_name && markov_rand(3)){
-		markov_reply(chan, name);
+	// strip various punctuation
+	{
+		if(*msg == '@') *msg = ' ';
+
+		for(char* p = msg; *p; ++p){
+			if(*p < ' ' || *p >= 127) *p = ' ';
+			else if(*p == '$') *p = '@';
+		}
+
+		markov_replace(&msg, ". ", " $ ");
+		markov_replace(&msg, "! ", " $ ");
+		markov_replace(&msg, "? ", " $ ");
+
+		markov_replace(&msg, ",", " , ");
+
+		for(char* p = msg; *p; ++p){
+			if(strchr(".!?@:;`^(){}[]\"", *p)) *p = ' ';
+		}
+
+		markov_replace(&msg, "  ", " ");
 	}
 
-	if(*msg == '@') *msg = ' ';
-	
-	for(char* p = msg; *p; ++p){
-		if(*p < ' ' || *p >= 127) *p = ' ';
-		else if(*p == '$') *p = '@';
-	}
-
-	markov_replace(&msg, ". ", " $ ");
-	markov_replace(&msg, "! ", " $ ");
-	markov_replace(&msg, "? ", " $ ");
-
-	markov_replace(&msg, ",", " , ");
-
-	for(char* p = msg; *p; ++p){
-		if(strchr(".!?@:;`^(){}[]\"", *p)) *p = ' ';
-	}
-
-	markov_replace(&msg, "  ", " ");
-
+	// the chain to be added by markov_add(). key = [0]+[1], value = [2]
 	word_idx_t words[] = { start_sym_idx, start_sym_idx, 0 };
+
+	MarkovTopic new_topics[3] = {};
 
 	char* state = NULL;
 	char* word = strtok_r(msg, " ", &state);
 
-	printf("Adding:");
+	//printf("Adding:");
 
 	for(; word; word = strtok_r(NULL, " ", &state)){
 
+		// skip words from hardcoded list
 		bool skip = false;
 		for(const char** c = skip_words; *c; ++c){
 			if(strcmp(word, *c) == 0){
@@ -762,39 +821,67 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 				break;
 			}
 		}
-
 		if(skip) continue;
 
-		printf(" [%s]", word);
+		//printf(" [%s]", word);
 
 		size_t len = strlen(word);
 		word_idx_t idx = 0;
+		uint32_t wcount;
 
+		// change too long words into "something"...
 		if(len > 24){
 			len = 9;
-			idx = find_or_add_word("something", len);
+			idx = find_or_add_word("something", len, &wcount);
 		} else {
-			//TODO: remove ++ --
 
+			// skip names of people in chat (doesn't strip ++/-- though)
 			for(char** c = markov_nicks; c < sb_end(markov_nicks); ++c){
 				if(strcasecmp(word, *c) == 0){
 					skip = true;
 					break;
 				}
 			}
-
 			if(skip) continue;
 
-			idx = find_or_add_word(word, len);
+			idx = find_or_add_word(word, len, &wcount);
 		}
 
-		if(idx == end_sym_idx && words[1] == start_sym_idx) continue;
-
-		if(idx == words[1] && words[1] == words[0]) continue;
+		// skip empty sentences + triplicates
+		if ((idx == end_sym_idx && words[1] == start_sym_idx) ||
+			(idx == words[1]    && words[1] == words[0])){
+			continue;
+		}
 
 		words[2] = idx;
 		markov_add(words);
 
+#if 0
+		printf("m: [%s:%d]\n", word_mem + idx, wcount);
+#endif
+
+		// topic update
+		if(wcount > 5){
+
+			for(int i = 0; i < ARRAY_SIZE(new_topics); ++i){
+				if(new_topics[i].word == idx){
+					goto skip_topics;
+				}
+			}
+
+			for(int i = 0; i < ARRAY_SIZE(new_topics); ++i){
+				if(!new_topics[i].count || wcount < new_topics[i].count){
+					new_topics[i].word = idx;
+					new_topics[i].count = wcount;
+
+					qsort(new_topics, ARRAY_SIZE(new_topics), sizeof(MarkovTopic), &markov_topic_cmp);
+					break;
+				}
+			}
+		}
+skip_topics:
+
+		// shift words down, or start a new sentence if this was the end symbol, $
 		if(idx == end_sym_idx){
 			words[0] = start_sym_idx;
 			words[1] = start_sym_idx;
@@ -804,11 +891,18 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 		}
 	}
 
-	puts(".");
+#if 0
+	for(int i = 0; i < ARRAY_SIZE(new_topics); ++i){
+		printf("topic %d: %s: %zu\n", i, word_mem + new_topics[i].word, new_topics[i].count);
+	}
+#endif
+	//puts(".");
 
+	// add final link to the end symbol
 	words[2] = end_sym_idx;
 	if(words[1] != start_sym_idx) markov_add(words);
 
+	// maybe send a message
 	if(markov_rand(msg_chance) == 0){
 		markov_send(chan);
 	}
@@ -817,7 +911,6 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 }
 
 static void markov_join(const char* chan, const char* name){
-
 	if(strcasecmp(name, ctx->get_username()) == 0) return;
 
 	for(size_t i = 0; i < sb_count(markov_nicks); ++i){

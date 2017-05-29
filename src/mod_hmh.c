@@ -34,6 +34,14 @@ const IRCModuleCtx irc_mod_ctx = {
 		[CMD_OWL_Y]    = "!owly !owlyes !owlyea",
 		[CMD_OWL_N]    = "!owln !owlno  !owlnay",
 		[CMD_QA]       = "!qa"
+	),
+	.cmd_help = DEFINE_CMDS (
+		[CMD_SCHEDULE] = "[TZ] | Shows the Handmade Hero schedule (optionally in the tzdb timezone [TZ], e.g. Europe/London",
+		[CMD_TIME]     = "| Shows the time to the next Handmade Hero stream, or progress through the current one if it is live.",
+		[CMD_OWLBOT]   = "| Start a vote to make Owlbot light up, notifying casey of something important.",
+		[CMD_OWL_Y]    = "| Vote yes on an Owlbot vote.",
+		[CMD_OWL_N]    = "| Vote no on an Owlbot vote.",
+		[CMD_QA]       = "| Let the bot know that the Q&A has started."
 	)
 };
 

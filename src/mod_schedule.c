@@ -33,6 +33,15 @@ const IRCModuleCtx irc_mod_ctx = {
 		[SCHED_SHOW] = CMD("sched") CMD("sched?"),
 		[SCHED_LINK] = CMD("schedlist"),
 		[SCHED_NEXT] = CMD("next") CMD("snext")
+	),
+	.cmd_help = DEFINE_CMDS (
+		[SCHED_ADD]  = "[#chan] [days] <HH:MM>[-HH:MM][TZ] [Title] | Adds a new schedule. [days] is either a YYYY-MM-DD date, or a comma separated list of 3-letter days. "
+		               "[TZ] is a timezone abbreviation like GMT, if given it should be after the HH:MM time without a space inbetween.",
+		[SCHED_DEL]  = "[#chan] <ID> | Deletes the schedule identified by <ID> (for [chan] if given)",
+		[SCHED_EDIT] = "[#chan] <ID> [days] <HH:MM>[-HH:MM][TZ] [Title] | Edits a schedule, omitted parameters will not change. See sched+ for more info",
+		[SCHED_SHOW] = "[#chan] | Shows schedules for the current channel (or [chan] if given)",
+		[SCHED_LINK] = "| Shows the URL to the amalgamated schedule webpage",
+		[SCHED_NEXT] = "| Shows which stream is scheduled to occur next"
 	)
 };
 
