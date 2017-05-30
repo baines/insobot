@@ -628,7 +628,7 @@ function calc_schedule(table, e){
 
 		window.setInterval(update_next, 1000);
 	});
-	x.open("GET", "https://gist.githubusercontent.com/insofaras/c61f6b5a4dafd987cde5234eed5bfbba/raw");
+	x.open("GET", "https://gist.githubusercontent.com/insofaras/c61f6b5a4dafd987cde5234eed5bfbba/raw?" + (new Date()).getTime());
 	x.send();
 	document.getElementById("refresh").textContent = "Last refresh: " + new Date().toLocaleString();
 })();
