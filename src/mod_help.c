@@ -24,7 +24,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.cmd_help = DEFINE_CMDS (
 		[CMD_HELP]    = "[module|command] | Shows help for the given module/command (or lists all modules)",
 		[CMD_BOTINFO] = "| Shows information about the bot"
-	)
+	),
+	.help_url = "https://insobot.handmade.network/forums/t/2385"
 };
 
 static const IRCCoreCtx* ctx;
@@ -70,8 +71,6 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 	}
 
 	IRCModuleCtx** mods = ctx->get_modules(false);
-
-	printf("[%s] [%s]\n", chan, arg);
 
 	if(*arg++){
 		const size_t arg_len = strcspn(arg, " ");
@@ -155,11 +154,11 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 		MOD_MSG(ctx, "alias_exists", &alias_msg, help_alias_cb, &is_alias);
 
 		if(is_alias){
-			ctx->send_msg(chan, "[alias] !%s was created by mod_alias, see !help alias and !ls(g)a", arg);
+			ctx->send_msg(chan, "[alias] !%s was created by mod_alias, see " CONTROL_CHAR "help alias and " CONTROL_CHAR "ls(g)a", arg);
 			return;
 		}
 
-		ctx->send_msg(chan, "Unknown module or command. Try !help with no arguments to see available modules.");
+		ctx->send_msg(chan, "Unknown module or command. Try " CONTROL_CHAR "help with no arguments to see available modules.");
 	} else {
 		char mod_names[256];
 		*mod_names = 0;
@@ -172,7 +171,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 				inso_strcat(mod_names, sizeof(mod_names), (*m)->name);
 			}
 		}
-		ctx->send_msg(chan, "%s: Use !help <module|command> for more info. (Works via PM/Whisper too!) Available modules: %s.", name, mod_names);
+		ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module|command> for more info. (Works via PM/Whisper too!) Available modules: %s.", name, mod_names);
 	}
 }
 

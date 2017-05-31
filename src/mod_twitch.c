@@ -246,7 +246,6 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 	last_uptime_check = now;
 
 	if(ret == 304){
-		puts("304");
 		goto unchanged;
 	}
 

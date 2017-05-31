@@ -44,6 +44,7 @@ const IRCModuleCtx irc_mod_ctx = {
 		[CMD_MOD_OFF]  = "<mod> | Disables the module named <mod>.",
 		[CMD_MOD_INFO] = "<mod> | Shows the description for the <mod> module."
 	),
+	.help_url = "https://insobot.handmade.network/forums/t/2385"
 };
 
 static const IRCCoreCtx* ctx;
