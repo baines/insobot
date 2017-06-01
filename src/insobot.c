@@ -988,30 +988,30 @@ void util_check_data_migrate(const char* path){
 		       "*   Press Y to move this directory, or N to keep it where it is currently.   *\n"
 		       "*     If not moved, the bot will start with a blank set of module data.      *\n"
 		       "******************************************************************************");
-	}
 
-	int opt = 0;
-	if(isatty(STDOUT_FILENO)){
-		do {
-			if(opt != '\n'){
-				printf("\nMove the data directory? (Y/N) > ");
-				fflush(stdout);
-			}
-			opt = getchar();
-		} while(!strchr("yYnN", opt));
-	} else {
-		printf("stdout isn't a tty, assuming Y.\n");
-		opt = 'y';
-	}
-
-	if(opt == 'y' || opt == 'Y'){
-		if(rename(oldpath, newpath) == -1){
-			perror("rename");
+		int opt = 0;
+		if(isatty(STDOUT_FILENO)){
+			do {
+				if(opt != '\n'){
+					printf("\nMove the data directory? (Y/N) > ");
+					fflush(stdout);
+				}
+				opt = getchar();
+			} while(!strchr("yYnN", opt));
 		} else {
-			printf("Successfully moved data directory.\n");
+			printf("stdout isn't a tty, assuming Y.\n");
+			opt = 'y';
 		}
-	} else {
-		printf("Keeping old data directory in place.\n");
+
+		if(opt == 'y' || opt == 'Y'){
+			if(rename(oldpath, newpath) == -1){
+				perror("rename");
+			} else {
+				printf("Successfully moved data directory.\n");
+			}
+		} else {
+			printf("Keeping old data directory in place.\n");
+		}
 	}
 }
 
