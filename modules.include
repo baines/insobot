@@ -1,0 +1,7 @@
+// If this file contains one or more module names, then only they will be loaded.
+// This can be useful when sharing a module directory between many bot instances via a symlink.
+// Lines containing a / are ignored.
+// e.g.:
+// admin
+// chans
+// meta

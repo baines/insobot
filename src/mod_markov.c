@@ -862,14 +862,13 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 
 		// topic update
 		if(wcount > 5){
-
-			for(int i = 0; i < ARRAY_SIZE(new_topics); ++i){
+			for(size_t i = 0; i < ARRAY_SIZE(new_topics); ++i){
 				if(new_topics[i].word == idx){
 					goto skip_topics;
 				}
 			}
 
-			for(int i = 0; i < ARRAY_SIZE(new_topics); ++i){
+			for(size_t i = 0; i < ARRAY_SIZE(new_topics); ++i){
 				if(!new_topics[i].count || wcount < new_topics[i].count){
 					new_topics[i].word = idx;
 					new_topics[i].count = wcount;

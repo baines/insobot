@@ -321,10 +321,10 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl
 	}
 
 	// send update to mod_schedule
-	for(int i = 0; i < sb_count(days); ++i){
+	for(size_t i = 0; i < sb_count(days); ++i){
 		uint8_t mask = (1 << get_dow(days + i));
 
-		for(int j = i+1; j < sb_count(days); ++j){
+		for(size_t j = i+1; j < sb_count(days); ++j){
 			if (days[j].tm_min  == days[i].tm_min &&
 				days[j].tm_hour == days[i].tm_hour){
 				
@@ -413,7 +413,7 @@ static void twitter_tick(time_t now){
 		yajl_val author  = YAJL_GET(obj, yajl_t_string, ("user", "screen_name"));
 		yajl_val created = YAJL_GET(obj, yajl_t_string, ("created_at"));
 
-		if(YAJL_IS_INTEGER(id) && id->u.number.i > twitter_since_id){
+		if(YAJL_IS_INTEGER(id) && (uint64_t)id->u.number.i > twitter_since_id){
 			twitter_since_id = id->u.number.i;
 		}
 
@@ -436,7 +436,7 @@ static void twitter_tick(time_t now){
 					modified = true;
 
 					printf("mod_twitter: Sending tweet to %s.\n", author->u.string);
-					if(using_twc){
+					if(using_twc && id){
 						char tweet[256];
 						snprintf(tweet, sizeof(tweet), "@%s Schedule registered: " SCHEDULE_URL " 🤖", author->u.string);
 

@@ -29,6 +29,7 @@
 
 ircbot
 insobot
-modules/data/
+modules
+data
 *.sh
 src/config.mk

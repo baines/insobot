@@ -95,7 +95,7 @@ static bool hmnrss_check_spam(const char* msg, time_t post_time, const char* mem
 		time_t prev_post = member->last_post;
 		member->last_post = post_time;
 
-		if(abs(post_time - prev_post) < 90){
+		if(labs(post_time - prev_post) < 90){
 			printf("hmnrss: [%s] posting too quickly, spam? [%zu : %zu]\n", member_name, (size_t)post_time, (size_t)prev_post);
 			return true;
 		}

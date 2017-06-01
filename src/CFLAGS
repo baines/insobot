@@ -1,0 +1,12 @@
+-g
+-Wall
+-Wextra
+-std=gnu99
+-D_GNU_SOURCE
+-ffunction-sections
+-fdata-sections
+-funwind-tables
+-Wno-pointer-sign
+-Wno-unused-parameter
+-Wno-missing-field-initializers
+-Werror=implicit-function-declaration

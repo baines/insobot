@@ -114,9 +114,7 @@ static void ixt_unescape(char* msg, size_t len){
 int ixt_tokenize(char* in, uintptr_t* tokens, size_t count, int flags){
 
 #define IXT_ASSERT(x) if(!(x)){ fputs("ixt assertion failure: " #x "\n", stderr); goto invalid; }
-#define IXT_EMIT(x) if(t - tokens < count-1){ *t++ = (uintptr_t)(x); } else { goto truncated; }
-
-	IXT_ASSERT(count >= 1);
+#define IXT_EMIT(x) if((size_t)(t - tokens) < count-1){ *t++ = (uintptr_t)(x); } else { goto truncated; }
 
 	enum {
 		IXTS_DEFAULT,
@@ -129,6 +127,8 @@ int ixt_tokenize(char* in, uintptr_t* tokens, size_t count, int flags){
 
 	const bool skip_blank_content = flags & IXTF_SKIP_BLANK;
 	const bool trim_content       = flags & IXTF_TRIM;
+
+	IXT_ASSERT(count >= 1);
 
 	while(*p){
 		if(state == IXTS_DEFAULT){

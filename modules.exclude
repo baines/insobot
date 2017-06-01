@@ -1,0 +1,7 @@
+// If this file contains one or more module names, then they will be prevented from loading.
+// This can be useful when sharing a module directory between many bot instances via a symlink.
+// However, if modules.include also contains entries, then this file is ignored.
+// Lines containing a / are ignored.
+// e.g.:
+// markov
+// twitter

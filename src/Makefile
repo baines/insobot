@@ -1,5 +1,4 @@
-CFLAGS  := -D_GNU_SOURCE -Wall -ffunction-sections -fdata-sections -std=gnu99 \
- -g -Werror=implicit-function-declaration -Wno-pointer-sign -funwind-tables
+CFLAGS  := @CFLAGS
 LDFLAGS := -Wl,--as-needed -Wl,--gc-sections
 
 headers  := $(wildcard *.h)

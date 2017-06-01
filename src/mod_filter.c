@@ -82,15 +82,17 @@ static void filter_mod_msg(const char* sender, const IRCModMsg* msg){
 
 	if(strcmp(msg->cmd, "filter_permit") == 0){
 		bool exists = false;
+		size_t id = (size_t)msg->arg;
+
 		sb_each(p, permits){
-			if(*p == msg->arg){
+			if(*p == id){
 				exists = true;
 				break;
 			}
 		}
 
 		if(!exists){
-			sb_push(permits, msg->arg);
+			sb_push(permits, id);
 		}
 	}
 }

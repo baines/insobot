@@ -91,14 +91,9 @@ static void alias_load(){
 		}
 
 		while(!feof(f)){
-			bool parse_keys = true;
 			char* token;
 
-			while(parse_keys){
-				if(fscanf(f, "%ms", &token) != 1){
-					break;
-				}
-
+			while(fscanf(f, "%ms", &token) == 1){
 				if(isupper(*token)){
 					int perm_idx = -1;
 					for(int i = 0; i < AP_COUNT; ++i){
@@ -115,13 +110,14 @@ static void alias_load(){
 					}
 
 					free(token);
-					parse_keys = false;
+					break;
+
 				} else {
 					sb_push(keys, token);
 				}
 			}
 
-			if(fscanf(f, " %m[^\n]", &token) == 1){
+			if(keys && fscanf(f, " %m[^\n]", &token) == 1){
 				val.msg = token;
 				val.me_action = (strstr(token, "/me") == token);
 				sb_push(alias_keys, keys);

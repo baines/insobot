@@ -230,7 +230,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 				break;
 			}
 
-			if(poll && poll->open && vote >= 0 && vote < sb_count(poll->options)){
+			if(poll && poll->open && vote >= 0 && (size_t)vote < sb_count(poll->options)){
 				bool can_vote = true;
 
 				for(char** voter = poll->voters; voter < sb_end(poll->voters); ++voter){
@@ -336,6 +336,7 @@ static void poll_nick(const char* prev, const char* cur){
 
 static bool poll_load(void){
 	bool success = false;
+	PollOpt opt = {};
 
 	FILE* f = fopen(ctx->get_datafile(), "r");
 
@@ -398,7 +399,6 @@ static bool poll_load(void){
 			.open     = YAJL_IS_TRUE(open),
 		};
 
-		PollOpt opt;
 		for(size_t j = 0; j < options->u.array.len; ++j){
 			yajl_val v = options->u.array.values[j];
 
@@ -409,6 +409,7 @@ static bool poll_load(void){
 				if(!YAJL_IS_INTEGER(v)) goto end;
 				opt.votes = v->u.number.i;
 				sb_push(poll.options, opt);
+				memset(&opt, 0, sizeof(opt));
 			}
 		}
 
@@ -424,6 +425,7 @@ static bool poll_load(void){
 
 	success = true;
 end:
+	free(opt.text);
 	yajl_tree_free(root);
 	free(buf);
 

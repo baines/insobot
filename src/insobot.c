@@ -96,6 +96,9 @@ static Module** mod_call_stack;
 static IRCModuleCtx** chan_mod_list;
 static IRCModuleCtx** global_mod_list;
 
+static char* modules_include;
+static char* modules_exclude;
+
 static const char *user, *pass, *serv, *port;
 static char* bot_nick;
 
@@ -122,6 +125,8 @@ static bool   have_tag_hack;
 static int pipe_fds[2];
 static int debug_pipe[2];
 static const char* debug_chan;
+
+static char* insobot_path;
 
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
@@ -181,12 +186,15 @@ IRC_STR_CALLBACK(on_part);
 static const char* core_get_datafile(void);
 static IPCAddress* util_ipc_add(const char* name);
 static void        util_ipc_del(const char* name);
+static void        util_module_filter_update(void);
+static bool        util_module_filter_allowed(const char*);
+
 
 /****************
  * Helper funcs *
  ****************/
 
-static void util_log_proc(int fd, pid_t pid){
+static void util_log_proc(int fd){
 	char text_buf[1024];
 	char time_buf[64];
 
@@ -250,7 +258,7 @@ restart:
 		close(pipe_fds[1]);
 		prctl(PR_SET_NAME, "ib-parent");
 
-		util_log_proc(pipe_fds[0], pid);
+		util_log_proc(pipe_fds[0]);
 		close(pipe_fds[0]);
 
 		int status;
@@ -408,19 +416,20 @@ static void util_module_add(const char* name){
 	const char* path = name;
 
 	if(!strchr(path, '/')){
-		if(strlen(inotify.module.path) + strlen(name) + 1 > sizeof(path_buf)) return;
-
-		strcpy(path_buf, inotify.module.path);
-		strcat(path_buf, name);
+		if(snprintf(path_buf, PATH_MAX, "%s%s", inotify.module.path, name) >= PATH_MAX) return;
 		path = path_buf;
 	}
 
-	Module m = {
-		.lib_path = strdup(path),
-		.needs_reload = true
-	};
+	if(util_module_filter_allowed(path)){
+		Module m = {
+			.lib_path = strdup(path),
+			.needs_reload = true
+		};
 
-	sb_push(irc_modules, m);
+		sb_push(irc_modules, m);
+	} else {
+		printf("NOTE: Loading module '%s' cancelled due to filter.\n", basename(path));
+	}
 }
 
 static void util_module_save(Module* m){
@@ -491,6 +500,14 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			dlclose(m->lib_handle);
 		}
 
+		if(!util_module_filter_allowed(mod_name)){
+			printf("Module '%s' is now filtered. Unloading.\n", mod_name);
+			free(m->lib_path);
+			sb_erase(irc_modules, m - irc_modules);
+			--m;
+			continue;
+		}
+
 		dlerror();
 		m->lib_handle = dlopen(m->lib_path, RTLD_LAZY | RTLD_LOCAL);
 
@@ -536,7 +553,6 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			free(m->lib_path);
 			sb_erase(irc_modules, m - irc_modules);
 			--m;
-			continue;
 		} else {
 			struct link_map* mod_info = m->lib_handle;
 			printf("[0x%zx]\n", (size_t)mod_info->l_addr);
@@ -594,6 +610,7 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 	struct inotify_event* ev;
 	char buff[sizeof(*ev) + NAME_MAX + 1];
 	bool reload = false;
+	bool updated_filter = false;
 
 	ssize_t num_read = read(inotify.fd, &buff, sizeof(buff));
 
@@ -601,6 +618,11 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 		ev = (struct inotify_event*)p;
 
 		if(ev->wd == inotify.module.wd){
+			if(!updated_filter){
+				updated_filter = true;
+				util_module_filter_update();
+			}
+
 			Module* m = util_module_get(ev->name, MOD_GET_SONAME);
 			if(m){
 				m->needs_reload = true;
@@ -856,6 +878,143 @@ static void util_update_tags(const char** params){
 	}
 }
 
+static char* util_file_read(const char* name){
+	char* mem = NULL;
+	long len = 0;
+	FILE* f = fopen(name, "r");
+	if(!f) return NULL;
+
+	if(fseek(f, 0, SEEK_END) == -1) goto end;
+	if((len = ftell(f)) == -1) goto end;
+	if(fseek(f, 0, SEEK_SET) == -1) goto end;
+
+	mem = malloc(len + 1);
+	assert(mem);
+
+	fread(mem, len, 1, f);
+	mem[len] = 0;
+
+end:
+	fclose(f);
+	return mem;
+}
+
+static bool util_module_filter_update_file(const char* name, char** list){
+	char pathbuf[PATH_MAX];
+	snprintf(pathbuf, sizeof(pathbuf), "%s/%s", insobot_path, name);
+
+	if(*list) stb__sbn(*list) = 0;
+
+	char* mem = util_file_read(pathbuf);
+	if(mem){
+		char* state;
+
+		for(char* line = strtok_r(mem, "\r\n", &state); line; line = strtok_r(NULL, "\r\n", &state)){
+			if(strchr(line, '/')) continue;
+
+			size_t len = strlen(line);
+			sb_push(*list, '/');
+			memcpy(sb_add(*list, len), line, len);
+		}
+
+		if(sb_count(*list)){
+			sb_push(*list, 0);
+		}
+
+		free(mem);
+	} else if(errno != ENOENT){
+		fprintf(stderr, "Error reading %s: %m\n", name);
+	}
+
+	return sb_count(*list) > 0;
+}
+
+static void util_module_filter_update(void){
+	bool inc = util_module_filter_update_file("modules.include", &modules_include);
+	bool exc = util_module_filter_update_file("modules.exclude", &modules_exclude);
+	if(inc && exc){
+		printf("WARNING: Both modules.include and modules.exclude exist. Only modules.include will be used.\n");
+	}
+}
+
+static bool util_module_filter_allowed(const char* module){
+	char* base = strdupa(basename(module));
+	if(strncmp(base, "mod_", 4) == 0){
+		base += 4;
+	}
+
+	{
+		char* p = strrchr(base, '.');
+		if(p && strcmp(p, ".so") == 0){
+			*p = 0;
+		}
+	}
+
+	size_t mod_len = strlen(base);
+	char* p = sb_count(modules_include) ? modules_include : modules_exclude;
+	bool ret = p == modules_include;
+
+	if(p){
+		while((p = strstr(p, base))){
+			if(p && p[-1] == '/' && (p[mod_len] == '/' || !p[mod_len])){
+				return ret;
+			}
+			++p;
+		}
+		return !ret;
+	} else {
+		return true;
+	}
+}
+
+void util_check_data_migrate(const char* path){
+	char oldpath[PATH_MAX];
+	char newpath[PATH_MAX];
+
+	snprintf(oldpath, sizeof(oldpath), "%s/modules/data", path);
+	snprintf(newpath, sizeof(newpath), "%s/data", path);
+
+	if(access(newpath, F_OK) == 0){
+		// new location already exists, skip.
+		return;
+	}
+
+	struct stat st;
+	if(stat(oldpath, &st) == 0 && S_ISDIR(st.st_mode)){
+		printf("******************************************************************************\n"
+		       "* The location of module data files has changed from /modules/data to /data. *\n"
+		       "* This allows the modules directory to be symlinked and used by multiple bot *\n"
+		       "*           instances, while each bot keeps its own set of data.             *\n"
+		       "*   Press Y to move this directory, or N to keep it where it is currently.   *\n"
+		       "*     If not moved, the bot will start with a blank set of module data.      *\n"
+		       "******************************************************************************");
+	}
+
+	int opt = 0;
+	if(isatty(STDOUT_FILENO)){
+		do {
+			if(opt != '\n'){
+				printf("\nMove the data directory? (Y/N) > ");
+				fflush(stdout);
+			}
+			opt = getchar();
+		} while(!strchr("yYnN", opt));
+	} else {
+		printf("stdout isn't a tty, assuming Y.\n");
+		opt = 'y';
+	}
+
+	if(opt == 'y' || opt == 'Y'){
+		if(rename(oldpath, newpath) == -1){
+			perror("rename");
+		} else {
+			printf("Successfully moved data directory.\n");
+		}
+	} else {
+		printf("Keeping old data directory in place.\n");
+	}
+}
+
 /*****************
  * IRC Callbacks *
  *****************/
@@ -1088,17 +1247,7 @@ static char datafile_buff[PATH_MAX];
 static const char* core_get_datafile(void){
 	Module* caller = sb_last(mod_call_stack);
 
-	strncpy(datafile_buff, caller->lib_path, sizeof(datafile_buff) - 1);
-	datafile_buff[sizeof(datafile_buff) - 1] = 0;
-
-	char* end_ptr = strrchr(datafile_buff, '/');
-	if(!end_ptr){
-		end_ptr = datafile_buff + 1;
-		*datafile_buff = '.';
-	}
-
-	const size_t sz = sizeof(datafile_buff) - (end_ptr - datafile_buff);
-	snprintf(end_ptr, sz - 1, "/data/%s.data", caller->ctx->name);
+	snprintf(datafile_buff, sizeof(datafile_buff), "%s/data/%s.data", insobot_path, caller->ctx->name);
 
 	if(access(datafile_buff, F_OK) != 0){
 		inotify.data.wd = inotify_add_watch(inotify.fd, inotify.data.path, IN_DELETE_SELF);
@@ -1374,21 +1523,9 @@ static void core_gen_event(int which, ...){
 
 int main(int argc, char** argv){
 
-	// parent process setup
-
-	if(!getenv("INSOBOT_NO_FORK")){
-		util_multiprocess_init(); // NOTE: only the child process will return from this function
-	}
-
-	srand(time(0));
-	signal(SIGSEGV, &util_handle_sig);
-	signal(SIGINT , &util_handle_sig);
-	signal(SIGPIPE, SIG_IGN);
-	assert(setlocale(LC_CTYPE, "C.UTF-8"));
-
 	// path setup
 
-	char our_path[PATH_MAX] = {};
+	static char our_path[PATH_MAX] = {};
 
 	if(readlink("/proc/self/exe", our_path, sizeof(our_path) - 1) == -1){
 		err(errno, "Can't read path");
@@ -1399,14 +1536,31 @@ int main(int argc, char** argv){
 		path_end = our_path + 1;
 		*our_path = '.';
 	}
+	*path_end = 0;
 
 	static const char in_mod_suffix[] = "/modules/";
-	static const char in_dat_suffix[] = "/modules/data/";
+	static const char in_dat_suffix[] = "/data/";
 	static const char glob_suffix[]   = "/modules/*.so";
 
 	if(path_end + sizeof(in_dat_suffix) >= our_path + sizeof(our_path)){
 		errx(1, "Path too long!");
 	}
+
+	util_check_data_migrate(our_path);
+
+	// parent process setup
+
+	if(!getenv("INSOBOT_NO_FORK")){
+		util_multiprocess_init(); // *** NOTE: only the child process will return from this function ***
+	}
+
+	srand(time(0));
+	signal(SIGSEGV, &util_handle_sig);
+	signal(SIGINT , &util_handle_sig);
+	signal(SIGPIPE, SIG_IGN);
+	assert(setlocale(LC_CTYPE, "C.UTF-8"));
+
+	insobot_path = strdup(our_path);
 
 	// inotify init
 
@@ -1441,6 +1595,7 @@ int main(int argc, char** argv){
 
 	printf("Found %zu modules\n", glob_data.gl_pathc);
 
+	util_module_filter_update();
 	for(size_t i = 0; i < glob_data.gl_pathc; ++i){
 		util_module_add(glob_data.gl_pathv[i]);
 	}
@@ -1487,7 +1642,7 @@ int main(int argc, char** argv){
 	util_reload_modules(&core_ctx);
 	
 	if(sb_count(irc_modules) == 0){
-		errx(1, "No modules could be loaded.");
+		errx(0, "No modules could be loaded.");
 	}
 
 	// irc init
@@ -1704,6 +1859,8 @@ int main(int argc, char** argv){
 	if(pipe_fds[1]){
 		close(pipe_fds[1]);
 	}
+
+	free(insobot_path);
 
 	return 0;
 }

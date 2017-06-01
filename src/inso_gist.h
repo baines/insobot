@@ -118,6 +118,7 @@ inso_gist* inso_gist_find(const char* find_desc, const char* user, const char* t
 	char* data = NULL;
 	gist->curl = inso_curl_init("https://api.github.com/gists", &data);
 	curl_easy_setopt(gist->curl, CURLOPT_USERPWD, gist->auth);
+	yajl_val root = NULL;
 
 	long ret = inso_curl_perform(gist->curl, &data);
 	if(ret < 0){
@@ -128,7 +129,7 @@ inso_gist* inso_gist_find(const char* find_desc, const char* user, const char* t
 		goto out;
 	}
 
-	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	root = yajl_tree_parse(data, NULL, 0);
 	if(!root || !YAJL_IS_ARRAY(root)){
 		printf("inso_gist_find: json error.");
 		goto out;

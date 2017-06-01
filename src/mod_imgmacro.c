@@ -156,7 +156,7 @@ static bool im_upload(const uint8_t* png, unsigned int png_len, IMEntry* e){
 	yajl_val id   = yajl_tree_get(root, id_path, yajl_t_string);
 	yajl_val del  = yajl_tree_get(root, del_path, yajl_t_string);
 
-	if(root && id && del){
+	if(result == 200 && root && id && del){
 		printf("DELETE HASH: [%s] = [%s]\n", id->u.string, del->u.string);
 		asprintf_check(&e->url, "https://i.imgur.com/%s.png", id->u.string);
 		e->del = strdup(del->u.string);
@@ -311,7 +311,7 @@ static void im_load_album(void){
 	yajl_val imgs = yajl_tree_get(root, data_path, yajl_t_array);
 
 	if(root && imgs){
-		for(int i = 0; i < imgs->u.array.len; ++i){
+		for(size_t i = 0; i < imgs->u.array.len; ++i){
 			yajl_val key = imgs->u.array.values[i];
 
 			yajl_val img_id    = yajl_tree_get(key, id_path   , yajl_t_string);

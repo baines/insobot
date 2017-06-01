@@ -299,7 +299,7 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 	CURLcode result = curl_easy_perform(curl);
 	sb_push(data, 0);
 
-	regmatch_t title[2], length[2];
+	regmatch_t title[2] = {}, length[2];
 
 	if(
 		result == 0 &&
@@ -682,8 +682,8 @@ static void do_steam_info(const char* chan, const char* msg, regmatch_t* matches
 	}
 
 out:
-	if(data) sb_free(data);
-	if(root) yajl_tree_free(root);
+	sb_free(data);
+	yajl_tree_free(root);
 }
 
 static void do_vimeo_info(const char* chan, const char* msg, regmatch_t* matches){
@@ -745,7 +745,7 @@ static void do_vimeo_info(const char* chan, const char* msg, regmatch_t* matches
 	ctx->send_msg(chan, "↑ Vimeo: [%s] [%s]", title->u.string, length_str);
 
 out:
-	if(root) yajl_tree_free(root);
+	yajl_tree_free(root);
 	sb_free(data);
 }
 

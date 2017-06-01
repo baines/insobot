@@ -972,7 +972,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 			}
 		}
 
-		for(; index < sb_count(sched_keys); ++index){
+		for(; (size_t)index < sb_count(sched_keys); ++index){
 			SchedMsg result = {
 				.user = sched_keys[index],
 			};
@@ -1038,7 +1038,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 			struct tm want = {}, have = {};
 			gmtime_r(&request->start, &want);
 
-			for(int i = 0; i < sb_count(sched_vals[index]); ++i){
+			for(size_t i = 0; i < sb_count(sched_vals[index]); ++i){
 				SchedEntry* s = sched_vals[index] + i;
 				gmtime_r(&s->start, &have);
 

@@ -104,8 +104,8 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 		// TODO: skip control char of cmds?
 
 		const char* found_cmd = NULL;
-		int found_cmd_idx = 0;
-		int found_len = 0;
+		size_t found_cmd_idx = 0;
+		size_t found_len = 0;
 
 		for(IRCModuleCtx** m = mods; *m; ++m){
 			if(!(*m)->commands) continue;
@@ -139,7 +139,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 
 		if(found_cmd){
 			const char* help_text = found_mod->cmd_help ? found_mod->cmd_help[found_cmd_idx] : "No help available :(";
-			ctx->send_msg(chan, "[mod_%s cmd]: %.*s %s", found_mod->name, found_len, found_cmd, help_text);
+			ctx->send_msg(chan, "[mod_%s cmd]: %.*s %s", found_mod->name, (int)found_len, found_cmd, help_text);
 			return;
 		}
 
