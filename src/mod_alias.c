@@ -28,10 +28,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit     = &alias_quit,
 	.on_mod_msg  = &alias_mod_msg,
 	.commands    = DEFINE_CMDS (
-		[ALIAS_ADD]         = CMD1("alias"     ),
-		[ALIAS_ADD_GLOBAL]  = CMD1("galias"    ),
-		[ALIAS_DEL]         = CMD1("unalias"   ) CMD1("delalias" ) CMD1("rmalias"    ),
-		[ALIAS_DEL_GLOBAL]  = CMD1("gunalias"  ) CMD1("gdelalias") CMD1("grmalias"   ),
+		[ALIAS_ADD]         = CMD1("alias"     ) CMD1("alias+"   ),
+		[ALIAS_ADD_GLOBAL]  = CMD1("galias"    ) CMD1("galias+"  ),
+		[ALIAS_DEL]         = CMD1("unalias"   ) CMD1("delalias" ) CMD1("rmalias"    ) CMD1("alias-"),
+		[ALIAS_DEL_GLOBAL]  = CMD1("gunalias"  ) CMD1("gdelalias") CMD1("grmalias"   ) CMD1("galias-"),
 		[ALIAS_LIST]        = CMD1("lsalias"   ) CMD1("lsa"      ) CMD1("listalias"  ) CMD1("listaliases"),
 		[ALIAS_LIST_GLOBAL] = CMD1("lsgalias"  ) CMD1("lsga"     ),
 		[ALIAS_SET_PERM]    = CMD1("chaliasmod") CMD1("chamod"   ) CMD1("aliasaccess") CMD1("setaliasaccess")
@@ -45,6 +45,7 @@ const IRCModuleCtx irc_mod_ctx = {
 		[ALIAS_LIST_GLOBAL] = "| Shows the aliases available in all channels",
 		[ALIAS_SET_PERM]    = "<key> <NORMAL|WLIST|ADMIN> | Sets the permission level required to use the alias idenfitied by <key>"
 	),
+	.help_url = "https://insobot.handmade.network/forums/t/2393",
 };
 
 #define ALIAS_CHAR '!'
@@ -248,6 +249,42 @@ static void alias_del(int idx, int sub_idx){
 	}
 }
 
+static void alias_list(const char* chan, const char* name, int type){
+	char alias_buf[512];
+	char* alias_ptr = alias_buf;
+	size_t alias_sz = sizeof(alias_buf);
+
+	// NOTE: only prints the first key if there are multiple per alias
+
+	for(size_t i = 0; i < sb_count(alias_keys); ++i){
+		for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
+			const char* key = alias_keys[i][j];
+
+			if(type == ALIAS_LIST && !alias_valid_1st_char(*key)){
+				char* endptr = strchr(key, ',');
+				if(endptr && strncmp(chan, key, endptr - key) == 0){
+					key = endptr + 1;
+					snprintf_chain(&alias_ptr, &alias_sz, "!%s ", key);
+					break;
+				}
+			} else if(type == ALIAS_LIST_GLOBAL && alias_valid_1st_char(*key)){
+				snprintf_chain(&alias_ptr, &alias_sz, "!%s ", key);
+				break;
+			}
+		}
+	}
+
+	if(alias_ptr == alias_buf){
+		strcpy(alias_buf, "(none)");
+	}
+
+	if(type == ALIAS_LIST_GLOBAL){
+		ctx->send_msg(chan, "%s: Global aliases: %s", inso_dispname(ctx, name), alias_buf);
+	} else {
+		ctx->send_msg(chan, "%s: Aliases in %s: %s", inso_dispname(ctx, name), chan, alias_buf);
+	}
+}
+
 static void alias_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	bool is_admin = strcasecmp(chan+1, name) == 0 || inso_is_admin(ctx, name); 
@@ -257,7 +294,12 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 
 	switch(cmd){
 		case ALIAS_ADD: {
-			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_add;
+			if(!*arg++){
+				alias_list(chan, name, ALIAS_LIST);
+				break;
+			}
+
+			if(!alias_valid_1st_char(*arg)) goto usage_add;
 
 			const char* space = strchr(arg, ' ');
 			if(!space) goto usage_add;
@@ -303,7 +345,12 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 
 		case ALIAS_ADD_GLOBAL: {
 			//TODO: implement the -> thing for global aliases? should only be able to alias global to global i think
-			if(!*arg++ || !alias_valid_1st_char(*arg)) goto usage_add;
+			if(!*arg++){
+				alias_list(chan, name, ALIAS_LIST_GLOBAL);
+				break;
+			}
+
+			if(!alias_valid_1st_char(*arg)) goto usage_add;
 
 			const char* space = strchr(arg, ' ');
 			if(!space) goto usage_add;
@@ -354,58 +401,9 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			}
 		} break;
 
-		case ALIAS_LIST: {
-			char alias_buf[512];
-			char* alias_ptr = alias_buf;
-			size_t alias_sz = sizeof(alias_buf);
-
-			// NOTE: only prints the first key if there are multiple per alias
-
-			for(size_t i = 0; i < sb_count(alias_keys); ++i){
-				for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
-					const char* key = alias_keys[i][j];
-
-					if(!alias_valid_1st_char(*key)){
-						char* endptr = strchr(key, ',');
-						if(endptr && strncmp(chan, key, endptr - key) == 0){
-							key = endptr + 1;
-							snprintf_chain(&alias_ptr, &alias_sz, "!%s ", key);
-							break;
-						}
-					}
-				}
-			}
-
-			if(alias_ptr == alias_buf){
-				strcpy(alias_buf, "(none)");
-			}
-
-			ctx->send_msg(chan, "%s: Aliases in %s: %s", inso_dispname(ctx, name), chan, alias_buf);
-		} break;
-
+		case ALIAS_LIST:
 		case ALIAS_LIST_GLOBAL: {
-			char alias_buf[512];
-			char* alias_ptr = alias_buf;
-			size_t alias_sz = sizeof(alias_buf);
-
-			// NOTE: only prints the first key if there are multiple per alias
-
-			for(size_t i = 0; i < sb_count(alias_keys); ++i){
-				for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
-					const char* key = alias_keys[i][j];
-
-					if(alias_valid_1st_char(*key)){
-						snprintf_chain(&alias_ptr, &alias_sz, "!%s ", key);
-						break;
-					}
-				}
-			}
-
-			if(alias_ptr == alias_buf){
-				strcpy(alias_buf, "(none)");
-			}
-
-			ctx->send_msg(chan, "%s: Global aliases: %s", inso_dispname(ctx, name), alias_buf);
+			alias_list(chan, name, cmd);
 		} break;
 
 		//FIXME: potential issues:
@@ -538,7 +536,7 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 	}
 	sb_push(msg_buf, 0);
 
-	if(*msg_buf == '.' || *msg_buf == '!' || *msg_buf == '\\'){
+	if(*msg_buf == '.' || *msg_buf == '!' || *msg_buf == '\\' || *msg_buf == '/'){
 		*msg_buf = ' ';
 	}
 

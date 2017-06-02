@@ -8,7 +8,7 @@ static bool help_init (const IRCCoreCtx*);
 static void help_cmd  (const char*, const char*, const char*, int);
 static void help_pm   (const char*, const char*);
 
-enum { CMD_HELP, CMD_BOTINFO };
+enum { CMD_HELP, CMD_BOTINFO, CMD_CMDS };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name     = "help",
@@ -18,12 +18,14 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &help_cmd,
 	.on_pm    = &help_pm,
 	.commands = DEFINE_CMDS (
-		[CMD_HELP]    = CONTROL_CHAR "help",
-		[CMD_BOTINFO] = CMD(DEFAULT_BOT_NAME)
+		[CMD_HELP]    = CMD1("help"),
+		[CMD_BOTINFO] = CMD(DEFAULT_BOT_NAME),
+		[CMD_CMDS]    = CMD("commands")
 	),
 	.cmd_help = DEFINE_CMDS (
 		[CMD_HELP]    = "[module|command] | Shows help for the given module/command (or lists all modules)",
-		[CMD_BOTINFO] = "| Shows information about the bot"
+		[CMD_BOTINFO] = "| Shows information about the bot",
+		[CMD_CMDS]    = "| Sends a private message about the help system"
 	),
 	.help_url = "https://insobot.handmade.network/forums/t/2385"
 };
@@ -69,6 +71,13 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 		ctx->send_msg(chan, "Hello %s, I'm %s based on code available at https://github.com/baines/insobot", name, ctx->get_username());
 		return;
 	}
+
+	if(cmd == CMD_CMDS){
+		ctx->send_msg(name, "You can find a list of commands at https://github.com/baines/insobot, or PM me with \"help\" for more info.");
+		return;
+	}
+
+	// cmd == CMD_HELP
 
 	IRCModuleCtx** mods = ctx->get_modules(false);
 

@@ -37,7 +37,8 @@ const IRCModuleCtx irc_mod_ctx = {
 		             "With +live, only show when the channel is live. With +trigger, only show when <str> is said.",
 		[PSA_DEL]  = "<name> | Remove the psa identified by <name>.",
 		[PSA_LIST] = "| Show the PSAs for the current channel."
-	)
+	),
+	.help_url = "https://insobot.handmade.network/forums/t/2393",
 };
 
 static const IRCCoreCtx* ctx;

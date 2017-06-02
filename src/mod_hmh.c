@@ -355,26 +355,30 @@ static intptr_t note_callback(intptr_t result, intptr_t arg){
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
-	bool empty_sched = true;
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		if(schedule[i] != 0){
-			empty_sched = false;
-			break;
+	// test for empty schedule, and attempt update
+	{
+		bool empty_sched = true;
+		for(int i = 0; i < DAYS_IN_WEEK; ++i){
+			if(schedule[i] != 0){
+				empty_sched = false;
+				break;
+			}
 		}
-	}
 
-	const long lim = empty_sched ? 30 : 1800;
-	if(now - last_schedule_update > lim && update_schedule()){
-		last_schedule_update = now;
+		const long lim = empty_sched ? 30 : 1800;
+		if(now - last_schedule_update > lim && update_schedule()){
+			last_schedule_update = now;
+		}
 	}
 
 	enum { SCHED_UNKNOWN = 0, SCHED_OFF = (1 << 0), SCHED_OLD = (1 << 1) };
 
-	bool is_weekend;
+	int stream_duration_mins;
 	{
 		char* tz = tz_push(":US/Pacific");
 		struct tm* lt = localtime(&now);
-		is_weekend = get_dow(lt) >= 5;
+		const bool is_weekend = get_dow(lt) >= 5;
+		stream_duration_mins = is_weekend ? 150 : 90;
 		tz_pop(tz);
 	}
 
@@ -385,7 +389,7 @@ static void print_time(const char* chan, const char* name){
 
 		if(schedule[i] == -1){
 			schedule_flags |= SCHED_OFF;
-		} else if(schedule[i] > (now - (90*60))){
+		} else if(schedule[i] > (now - (stream_duration_mins*60))){
 			index = i;
 			break;
 		} else {
@@ -393,16 +397,15 @@ static void print_time(const char* chan, const char* name){
 		}
 	}
 
+	// see if someone did a NOTE(annotator): start
 	time_t note_time = 0;
 	MOD_MSG(ctx, "note_get_stream_start", "#handmade_hero #hero", &note_callback, &note_time);
 
 	int diff = now - note_time;
 
-	// FIXME: 75 normally
-	if(diff < (135*60)){
-		// add 15 mins since the note marks the end of the prestream.
-		diff += (15*60);
-	} else if(index == -1){
+	if(diff < ((stream_duration_mins-15)*60)){ // recent note found
+		diff += (15*60); // add 15 mins since the note marks the end of the prestream.
+	} else if(index == -1){ // no note, and no streams
 		if(schedule_flags & SCHED_OLD){
 			ctx->send_msg(chan, "No more streams this week.");
 		} else if(schedule_flags & SCHED_OFF){
@@ -411,12 +414,12 @@ static void print_time(const char* chan, const char* name){
 			ctx->send_msg(chan, "The schedule hasn't been updated yet.");
 		}
 		return;
-	} else {
+	} else { // no note, but either an upcoming stream or during one
 		note_time = 0;
 		diff = now - schedule[index];
 	}
 
-	if(diff < 0){
+	if(diff < 0){ // upcoming stream
 		int until = -diff;
 
 		if(until / (60*60*24) == 1){
@@ -446,11 +449,11 @@ static void print_time(const char* chan, const char* name){
 
 			ctx->send_msg(chan, "Next stream in %s.", time_buf);
 		}
-	} else {
+	} else { // during stream
 		char* format;
 		int mins_in = diff / 60;
 		int duration = 15;
-		int mins_until_qa = is_weekend ? 135 : 75;
+		int mins_until_qa = stream_duration_mins - 15;
 
 		if(mins_in < 15){
 			format = "%d %s into the pre-stream Q&A. %d until start. %s";
@@ -530,7 +533,9 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		} break;
 
 		case CMD_QA: {
-			//ctx->send_ipc(0, &cmd, sizeof(cmd));
+			if(irc_server != SERV_TWITCH && inso_is_wlist(ctx, name)){
+				ctx->send_ipc(0, &cmd, sizeof(cmd));
+			}
 		} break;
 	}
 }
@@ -608,5 +613,7 @@ static void hmh_ipc(int who, const uint8_t* ptr, size_t sz){
 			case 'y': owlbot_yea++; break;
 			case 'n': owlbot_nay++; break;
 		}
+	} else if(irc_server == SERV_TWITCH && sz == sizeof(int)){
+		ctx->send_msg("#handmade_hero", "=== Q&A Session. Prefix questions with Q: ===");
 	}
 }
