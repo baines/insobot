@@ -46,21 +46,22 @@
 //
 // Custom argument / return types will be defined in this file.
 
-//    module     |        msg id          | arg type  | result type | callback return |
-// --------------+------------------------+-----------+-------------+-----------------+
-// mod_alias     | "alias_exists"         | char*[2]  | bool        | unused          |
-// mod_hmh       | "hmh_is_live"          | unused    | bool        | unused          |
-// mod_karma     | "karma_get"            | char*     | int         | unused          |
-// mod_markov    | "markov_gen"           | unused    | char* [F]   | unused          |
-// mod_notes     | "note_get_stream_start"| char* [L] | time_t      | unused          |
-// mod_schedule  | "sched_iter"           | char*     | SchedMsg*   | SchedIterCmd    |
-// mod_schedule  | "sched_add"            | SchedMsg* | bool        | unused          |
-// mod_schedule  | "sched_save"           | unused    | unused      | unused          |
-// mod_twitch    | "display_name"         | char*     | char*       | unused          |
-// mod_twitch    | "twitch_get_user_date" | char*     | time_t      | unused          |
-// mod_twitch    | "twitch_is_live"       | char* [L] | bool        | unused          |
-// mod_whitelist | "check_admin"          | char*     | bool        | unused          |
-// mod_whitelist | "check_whitelist"      | char*     | bool        | unused          |
+//    module     |        msg id          | arg type  |  result type   | callback return |
+// --------------+------------------------+-----------+----------------+-----------------+
+// mod_alias     | "alias_exists"         | char*[2]  | bool           | unused          |
+// mod_hmh       | "hmh_is_live"          | unused    | bool           | unused          |
+// mod_karma     | "karma_get"            | char*     | int            | unused          |
+// mod_markov    | "markov_gen"           | unused    | char* [F]      | unused          |
+// mod_notes     | "note_get_stream_start"| char* [L] | time_t         | unused          |
+// mod_schedule  | "sched_iter"           | char*     | SchedMsg*      | SchedIterCmd    |
+// mod_schedule  | "sched_add"            | SchedMsg* | bool           | unused          |
+// mod_schedule  | "sched_save"           | unused    | unused         | unused          |
+// mod_twitch    | "display_name"         | char*     | char*          | unused          |
+// mod_twitch    | "twitch_get_user_date" | char*     | time_t         | unused          |
+// mod_twitch    | "twitch_get_user_date" | char*     | TwitchInfoMsg* | unused          |
+// mod_twitch    | "twitch_is_live"       | char* [L] | bool           | unused          |
+// mod_whitelist | "check_admin"          | char*     | bool           | unused          |
+// mod_whitelist | "check_whitelist"      | char*     | bool           | unused          |
 
 //
 // Descriptions
@@ -128,6 +129,13 @@ typedef struct {
 //    *result* will be the epoch time that the user given in *arg* created their account.
 //  twitch_is_live:
 //    *result* will be true/false if any of the channels given in *arg* are live or not.
+//  twitch_get_info:
+//    *result* will be a struct with stream info:
+
+typedef struct {
+	uint64_t id;
+	time_t start;
+} TwitchInfoMsg;
 
 // WHITELIST:
 //  check_admin:

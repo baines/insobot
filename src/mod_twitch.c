@@ -6,6 +6,7 @@
 #include <yajl/yajl_tree.h>
 #include <ctype.h>
 #include "inso_utils.h"
+#include "module_msgs.h"
 
 static bool twitch_init    (const IRCCoreCtx*);
 static void twitch_cmd     (const char*, const char*, const char*, int);
@@ -70,6 +71,8 @@ typedef struct {
 	bool  is_tracked;
 	char* tracked_name;
 	char* stream_title;
+
+	uint64_t stream_id;
 } TwitchInfo;
 
 static char**      twitch_keys;
@@ -261,6 +264,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 		const char* name_path[]    = { "channel", "name", NULL };
 		const char* title_path[]   = { "channel", "status", NULL };
 		const char* created_path[] = { "created_at", NULL };
+		const char* id_path[]      = { "_id", NULL };
 
 		for(size_t i = 0; i < streams->u.array.len; ++i){
 			yajl_val obj = streams->u.array.values[i];
@@ -268,6 +272,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 			yajl_val name  = yajl_tree_get(obj, name_path, yajl_t_string);
 			yajl_val start = yajl_tree_get(obj, created_path, yajl_t_string);
 			yajl_val title = yajl_tree_get(obj, title_path, yajl_t_string);
+			yajl_val id    = yajl_tree_get(obj, id_path, yajl_t_number);
 
 			if(name && start){
 				TwitchInfo* info = twitch_get_or_add(name->u.string);
@@ -279,6 +284,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 //				info->live_state_changed = new_stream_start != info->stream_start;
 				info->live_state_changed = info->stream_start == 0;
 				info->stream_start = new_stream_start;
+				info->stream_id = YAJL_IS_INTEGER(id) ? id->u.number.i : 0;
 
 				if(title){
 					if(info->stream_title){
@@ -1072,7 +1078,19 @@ static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 
 		msg->callback(live, msg->cb_arg);
 	} else if(strcmp(msg->cmd, "display_name") == 0){
+
 		const char* dispname = twitch_display_name((const char*)msg->arg);
 		msg->callback((intptr_t)dispname, msg->cb_arg);
+
+	} else if(strcmp(msg->cmd, "twitch_get_stream_info") == 0){
+		TwitchInfo* t = twitch_get_or_add((char*)msg->arg);
+		twitch_check_live(t - twitch_vals);
+
+		TwitchInfoMsg info = {
+			.id    = t->stream_id,
+			.start = t->stream_start,
+		};
+
+		msg->callback((intptr_t)&info, msg->cb_arg);
 	}
 }
