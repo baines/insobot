@@ -199,7 +199,7 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 	long* num_stack = NULL;
 
 	token t;
-	calc_state state = {};
+	calc_state state = { .prev = { T_OP }};
 
 	while((t = calc_next_token(&arg, &state)), !(t.type & T_BAD)){
 
@@ -245,8 +245,12 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 		sb_pop(op_stack);
 	}
 
-	const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
-	ctx->send_msg(chan, fmt, name, sb_last(num_stack));
+	if(sb_count(num_stack)){
+		const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
+		ctx->send_msg(chan, fmt, name, sb_last(num_stack));
+	} else {
+		ctx->send_msg(chan, "%s: wat?", name);
+	}
 
 out:
 	sb_free(op_stack);
