@@ -46,22 +46,23 @@
 //
 // Custom argument / return types will be defined in this file.
 
-//    module     |        msg id          | arg type  |  result type   | callback return |
-// --------------+------------------------+-----------+----------------+-----------------+
-// mod_alias     | "alias_exists"         | char*[2]  | bool           | unused          |
-// mod_hmh       | "hmh_is_live"          | unused    | bool           | unused          |
-// mod_karma     | "karma_get"            | char*     | int            | unused          |
-// mod_markov    | "markov_gen"           | unused    | char* [F]      | unused          |
-// mod_notes     | "note_get_stream_start"| char* [L] | time_t         | unused          |
-// mod_schedule  | "sched_iter"           | char*     | SchedMsg*      | SchedIterCmd    |
-// mod_schedule  | "sched_add"            | SchedMsg* | bool           | unused          |
-// mod_schedule  | "sched_save"           | unused    | unused         | unused          |
-// mod_twitch    | "display_name"         | char*     | char*          | unused          |
-// mod_twitch    | "twitch_get_user_date" | char*     | time_t         | unused          |
-// mod_twitch    | "twitch_get_user_date" | char*     | TwitchInfoMsg* | unused          |
-// mod_twitch    | "twitch_is_live"       | char* [L] | bool           | unused          |
-// mod_whitelist | "check_admin"          | char*     | bool           | unused          |
-// mod_whitelist | "check_whitelist"      | char*     | bool           | unused          |
+//    module     |         msg id          | arg type  |  result type   | callback return |
+// --------------+-------------------------+-----------+----------------+-----------------+
+// mod_alias     | "alias_exists"          | char*[2]  | bool           | unused          |
+// mod_alias     | "alias_info"            | char*[2]  | AliasInfo*     | unused          |
+// mod_hmh       | "hmh_is_live"           | unused    | bool           | unused          |
+// mod_karma     | "karma_get"             | char*     | int            | unused          |
+// mod_markov    | "markov_gen"            | unused    | char* [F]      | unused          |
+// mod_notes     | "note_get_stream_start" | char* [L] | time_t         | unused          |
+// mod_schedule  | "sched_iter"            | char*     | SchedMsg*      | SchedIterCmd    |
+// mod_schedule  | "sched_add"             | SchedMsg* | bool           | unused          |
+// mod_schedule  | "sched_save"            | unused    | unused         | unused          |
+// mod_twitch    | "display_name"          | char*     | char*          | unused          |
+// mod_twitch    | "twitch_get_user_date"  | char*     | time_t         | unused          |
+// mod_twitch    | "twitch_get_stream_info"| char*     | TwitchInfoMsg* | unused          |
+// mod_twitch    | "twitch_is_live"        | char* [L] | bool           | unused          |
+// mod_whitelist | "check_admin"           | char*     | bool           | unused          |
+// mod_whitelist | "check_whitelist"       | char*     | bool           | unused          |
 
 //
 // Descriptions
@@ -70,11 +71,21 @@
 // ALIAS:
 //  alias_exists:
 //    *result* will be true/false if any of the space-separated aliases in the *aliases* field exist.
+//  alias_info:
+//    *result* will be info for the given alias/chan
 
 typedef struct {
 	const char* aliases;
 	const char* channel;
 } AliasExistsMsg;
+
+typedef struct {
+	char* content;
+	char* author;
+	time_t last_used;
+	int perms;
+	bool is_action;
+} AliasInfo;
 
 // HMH:
 //  hmh_is_live:

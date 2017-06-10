@@ -61,7 +61,7 @@ static void get_mod_cmds(IRCModuleCtx* mod, char* buf, size_t sz){
 }
 
 static intptr_t help_alias_cb(intptr_t result, intptr_t arg){
-	if(result) *(bool*)arg = true;
+	if(result) memcpy((AliasInfo*)arg, (AliasInfo*)result, sizeof(AliasInfo));
 	return 0;
 }
 
@@ -159,11 +159,12 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 			.channel = (chan == name) ? NULL : chan
 		};
 
-		bool is_alias = false;
-		MOD_MSG(ctx, "alias_exists", &alias_msg, help_alias_cb, &is_alias);
+		AliasInfo alias_info = {};
+		MOD_MSG(ctx, "alias_info", &alias_msg, help_alias_cb, &alias_info);
 
-		if(is_alias){
-			ctx->send_msg(chan, "[alias] !%s was created by mod_alias, see " CONTROL_CHAR "help alias and " CONTROL_CHAR "ls(g)a", arg);
+		if(alias_info.content){
+			const char* author = alias_info.author ?: "mod_alias";
+			ctx->send_msg(chan, "[alias] !%s was created by %s, see " CONTROL_CHAR "help alias and " CONTROL_CHAR "ls(g)a", arg, author);
 			return;
 		}
 

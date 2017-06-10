@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <curl/curl.h>
 #include "inso_utils.h"
+#include "module_msgs.h"
 
 static void alias_msg      (const char*, const char*, const char*);
 static void alias_cmd      (const char*, const char*, const char*, int);
@@ -72,6 +73,7 @@ typedef struct {
 	bool me_action;
 	char* msg;
 	time_t last_use; // should technically be per channel
+	char* author;
 } Alias;
 
 static char*** alias_keys;
@@ -83,7 +85,7 @@ static void alias_load(){
 	Alias val = { .permission = AP_NORMAL };
 
 	FILE* f = fopen(ctx->get_datafile(), "rb");
-	
+
 	if(fscanf(f, "VERSION %d\n", &save_format_ver) == 1){
 		if(save_format_ver != 2){
 			fprintf(stderr, "Unknown save format version %d! Can't load any aliases.\n", save_format_ver);
@@ -96,6 +98,12 @@ static void alias_load(){
 
 			while(fscanf(f, "%ms", &token) == 1){
 				if(isupper(*token)){
+					if(strncmp(token, "AUTHOR:", 7) == 0){
+						val.author = strdup(token+7);
+						free(token);
+						continue;
+					}
+
 					int perm_idx = -1;
 					for(int i = 0; i < AP_COUNT; ++i){
 						if(strcmp(token, alias_permission_strs[i]) == 0){
@@ -112,7 +120,6 @@ static void alias_load(){
 
 					free(token);
 					break;
-
 				} else {
 					sb_push(keys, token);
 				}
@@ -156,6 +163,7 @@ static void alias_quit(void){
 		}
 		sb_free(alias_keys[i]);
 		free(alias_vals[i].msg);
+		free(alias_vals[i].author);
 	}
 	sb_free(alias_keys);
 	sb_free(alias_vals);
@@ -203,7 +211,7 @@ static int alias_find(const char* chan, const char* key, int* idx, int* sub_idx)
 	return ALIAS_NOT_FOUND;
 }
 
-static void alias_add(const char* chan, const char* key, const char* msg, int perm){
+static void alias_add(const char* chan, const char* key, const char* msg, int perm, const char* author){
 	Alias* alias;
 	int idx;
 
@@ -212,6 +220,7 @@ static void alias_add(const char* chan, const char* key, const char* msg, int pe
 	if(alias_find(chan, key, &idx, NULL) == required){
 		alias = alias_vals + idx;
 		free(alias->msg);
+		free(alias->author);
 	} else {
 
 		char* full_key;
@@ -234,6 +243,7 @@ static void alias_add(const char* chan, const char* key, const char* msg, int pe
 	alias->msg        = strdup(msg);
 	alias->permission = perm;
 	alias->me_action  = (strstr(msg, "/me") == msg);
+	alias->author     = strdup(author);
 }
 
 static void alias_del(int idx, int sub_idx){
@@ -337,7 +347,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 					free(otherkey);
 				}
 			} else {
-				alias_add(chan, key, space+1, AP_NORMAL);
+				alias_add(chan, key, space+1, AP_NORMAL, name);
 				ctx->send_msg(chan, "%s: Alias %s set.", name, key);
 			}
 
@@ -358,7 +368,7 @@ static void alias_cmd(const char* chan, const char* name, const char* arg, int c
 			char* key = strndupa(arg, space - arg);
 			for(char* k = key; *k; ++k) *k = tolower(*k);
 
-			alias_add(NULL, key, space+1, AP_NORMAL);
+			alias_add(NULL, key, space+1, AP_NORMAL, name);
 			ctx->send_msg(chan, "%s: Global alias %s set.", name, key);
 		} break;
 
@@ -551,10 +561,14 @@ static void alias_msg(const char* chan, const char* name, const char* msg){
 }
 
 static bool alias_save(FILE* file){
-	fputs("VERSION 2\n", file);
+	fputs("VERSION 2b\n", file);
 	for(size_t i = 0; i < sb_count(alias_keys); ++i){
 		for(size_t j = 0; j < sb_count(alias_keys[i]); ++j){
 			fprintf(file, "%s ", alias_keys[i][j]);
+		}
+
+		if(alias_vals[i].author){
+			fprintf(file, "AUTHOR:%s ", alias_vals[i].author);
 		}
 
 		int perms = alias_vals[i].permission;
@@ -567,7 +581,10 @@ static bool alias_save(FILE* file){
 }
 
 static void alias_mod_msg(const char* sender, const IRCModMsg* msg){
-	if(strcmp(msg->cmd, "alias_exists") == 0){
+
+	bool is_info = strcmp(msg->cmd, "alias_info") == 0;
+
+	if(is_info || strcmp(msg->cmd, "alias_exists") == 0){
 		const char** arglist = (const char**)msg->arg;
 		const char* keys = arglist[0];
 		const char* chan = arglist[1];
@@ -580,9 +597,22 @@ static void alias_mod_msg(const char* sender, const IRCModMsg* msg){
 			char* key = strndupa(prev_p, p - prev_p);
 			prev_p = p+1;
 
-			int result = alias_find(chan, key, NULL, NULL);
+			int idx;
+			int result = alias_find(chan, key, &idx, NULL);
 			if(result){
-				msg->callback(result, msg->cb_arg);
+				if(is_info){
+					Alias* a = alias_vals + idx;
+					AliasInfo info = {
+						.content = a->msg,
+						.author  = a->author,
+						.last_used = a->last_use,
+						.perms = a->permission,
+						.is_action = a->me_action,
+					};
+					msg->callback((intptr_t)&info, msg->cb_arg);
+				} else {
+					msg->callback(result, msg->cb_arg);
+				}
 				break;
 			}
 		} while(*p);
