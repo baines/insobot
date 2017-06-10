@@ -84,19 +84,17 @@ static bool clip_login(const char* user, const char* pass){
 		               "password=%s&"
 		               "client_id=%s&"
 		               "nonce=%s&"
-					   "scope=openid&"
-					   "state=%s&"
-					   "redirect_url=https%%3A%%2F%%2Fwww.twitch.tv%%2F&"
-					   "response_type=code&"
-					   "request_id=%s&"
-					   "embed=false&"
-					   "time_to_submit=%d.%03d&"
-					   "captcha=",
-					   user, pass,
-					   login_params[0], login_params[1], login_params[2], login_params[3],
-					   rand()%3+2, rand()%1000);
-
-		printf("POST = [%s]\n", post);
+		               "scope=openid&"
+		               "state=%s&"
+		               "redirect_url=https%%3A%%2F%%2Fwww.twitch.tv%%2F&"
+		               "response_type=code&"
+		               "request_id=%s&"
+		               "embed=false&"
+		               "time_to_submit=%d.%03d&"
+		               "captcha=",
+		               user, pass,
+		               login_params[0], login_params[1], login_params[2], login_params[3],
+		               rand()%3+2, rand()%1000);
 
 		usleep(3*1000*1000);
 
@@ -209,7 +207,7 @@ static void clip_cmd(const char* chan, const char* name, const char* msg, int cm
 		return;
 	}
 
-	TwitchInfoMsg info;
+	TwitchInfoMsg info = {};
 	MOD_MSG(ctx, "twitch_get_stream_info", chan, &clip_stream_info_cb, &info);
 
 	if(!info.id || !info.start) return;
@@ -222,12 +220,12 @@ static void clip_cmd(const char* chan, const char* name, const char* msg, int cm
 	asprintf_check(&post,
 	               "player_backend_type=player-core&"
 	               "channel=%s&"
-				   "offset=%d&"
-				   "broadcast_id=%" PRIu64 "&"
-				   "vod_id=&"
-				   "play_session_id=%.32s&"
-				   "show_view_page=false",
-				   chan+1, offset, info.id, sess_id);
+	               "offset=%d&"
+	               "broadcast_id=%" PRIu64 "&"
+	               "vod_id=&"
+	               "play_session_id=%.32s&"
+	               "show_view_page=false",
+	               chan+1, offset, info.id, sess_id);
 
 	char* data = NULL;
 	char* location = NULL;
@@ -250,6 +248,7 @@ static void clip_cmd(const char* chan, const char* name, const char* msg, int cm
 		printf("clips: RIP %ld\n", ret);
 	}
 
+	free(post);
 	free(location);
 	sb_free(data);
 }

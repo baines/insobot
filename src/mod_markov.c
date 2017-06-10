@@ -761,7 +761,7 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 	{
 		const char* bot_name = ctx->get_username();
 		size_t      bot_name_len = strlen(bot_name);
-		const char* name_pats[] = { "@%s", "%s:", "%s," };
+		const char* name_pats[] = { "@%s", "%s:", "%s,", "%s.", "%s!", "%s?", "%s;" };
 		char        name_buf[256];
 		bool        found_name = false;
 
