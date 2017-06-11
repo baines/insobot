@@ -1,6 +1,7 @@
 #include "module.h"
 #include "inso_utils.h"
 #include "stb_sb.h"
+#include <ctype.h>
 
 static void calc_cmd  (const char*, const char*, const char*, int);
 static bool calc_init (const IRCCoreCtx*);
@@ -133,11 +134,11 @@ static token calc_next_token(const char** str, calc_state* state){
 		}
 	}
 
-	if(!strchr(digits, **str)){
+	if(!strchr(digits, tolower(**str))){
 		return (token){ T_ERROR };
 	}
 
-	while(**str && (p = strchr(digits, **str))){
+	while(**str && (p = strchr(digits, tolower(**str)))){
 		num = (num * base) + (p - digits);
 		++*str;
 	}
@@ -252,13 +253,14 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 		ctx->send_msg(chan, "%s: wat?", name);
 	}
 
-out:
-	sb_free(op_stack);
-	sb_free(num_stack);
-	return;
+	goto out;
 
 dbz:
 	ctx->send_msg(chan, "\001ACTION bursts into flames after dividing by zero.\001");
+
+out:
+	sb_free(op_stack);
+	sb_free(num_stack);
 }
 
 static bool calc_init(const IRCCoreCtx* _ctx){
