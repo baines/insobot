@@ -45,6 +45,7 @@ static regex_t steam_url_regex;
 static regex_t vimeo_url_regex;
 static regex_t xkcd_url_regex;
 static regex_t github_url_regex;
+static regex_t twitch_vid_regex;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -136,6 +137,12 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
+	ret = ret & (regcomp(
+		&twitch_vid_regex,
+		"https?://(www\\.)?twitch.tv/videos/([0-9]+)",
+		REG_EXTENDED | REG_ICASE
+	) == 0);
+
 	twitter_token = getenv("INSOBOT_TWITTER_TOKEN");
 	if(!twitter_token || !*twitter_token){
 		fputs("mod_linkinfo: no twitter token, expanding tweets won't work.\n", stderr);
@@ -164,6 +171,7 @@ static void linkinfo_quit(void){
 	regfree(&vimeo_url_regex);
 	regfree(&xkcd_url_regex);
 	regfree(&github_url_regex);
+	regfree(&twitch_vid_regex);
 }
 
 typedef struct {
@@ -829,6 +837,48 @@ static void do_github_info(const char* chan, const char* msg, regmatch_t* matche
 	free(url);
 }
 
+static void do_twitch_vid_info(const char* chan, const char* msg, regmatch_t* matches){
+	if(matches[2].rm_so == -1 || matches[2].rm_eo == -1) return;
+	
+	char* url;
+	asprintf_check(
+		&url,
+		"https://api.twitch.tv/kraken/videos/%.*s",
+		matches[2].rm_eo - matches[2].rm_so,
+		msg + matches[2].rm_so
+	);
+
+	char* data = NULL;
+	CURL* curl = inso_curl_init(url, &data);
+	struct curl_slist* headers = NULL;
+
+	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
+	if(!client_id){
+		client_id = "jzkbprff40iqj646a697cyrvl0zt2m6";
+	}
+
+	char buf[256];
+	snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
+	headers = curl_slist_append(headers, buf);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+	if(inso_curl_perform(curl, &data) == 200){
+		yajl_val root  = yajl_tree_parse(data, NULL, 0);
+		yajl_val title = YAJL_GET(root, yajl_t_string, ("title"));
+		yajl_val name  = YAJL_GET(root, yajl_t_string, ("channel", "display_name"));
+
+		if(title && name){
+			ctx->send_msg(chan, "↑ Twitch VoD: [%s] by %s", title->u.string, name->u.string);
+		}
+
+		yajl_tree_free(root);
+	}
+
+	free(url);
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(curl);
+}
+
 static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 
 	regmatch_t matches[5] = {};
@@ -877,4 +927,9 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 	else if(regexec(&github_url_regex, msg, 5, matches, 0) == 0){
 		do_github_info(chan, msg, matches);
 	}
+
+	else if(regexec(&twitch_vid_regex, msg, 3, matches, 0) == 0){
+		do_twitch_vid_info(chan, msg, matches);
+	}
+			
 }

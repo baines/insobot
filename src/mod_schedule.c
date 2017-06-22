@@ -798,11 +798,11 @@ static void sched_show(const char* chan, const char* name, const char* arg){
 	if(*arg) ++arg;
 
 	char sched_user[64];
-	sched_parse_user(arg, name, sched_user, sizeof(sched_user));
+	sched_parse_user(arg, chan+1, sched_user, sizeof(sched_user));
 
 	int index = sched_get(sched_user);
 	if(index == -1){
-		ctx->send_msg(chan, "%s: I don't have any schedules for %s", name, sched_user);
+		ctx->send_msg(chan, "%s: No schedules for %s", name, sched_user);
 		return;
 	}
 
@@ -928,10 +928,8 @@ static void sched_cmd(const char* chan, const char* name, const char* arg, int c
 		} break;
 
 		case SCHED_SHOW: {
-			if(inso_is_wlist(ctx, name)){
-				sched_reload();
-				sched_show(chan, name, arg);
-			}
+			sched_reload();
+			sched_show(chan, name, arg);
 		} break;
 
 		case SCHED_LINK: {
