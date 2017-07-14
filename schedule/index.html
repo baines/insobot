@@ -123,6 +123,7 @@ h1 {
 <script>
 /* @license magnet:?xt=urn:btih:e95b018ef3580986a04669f1b5879592219e2a7a&dn=public-domain.txt Public Domain */
 /* https://github.com/baines/insobot/blob/gh-pages/schedule/index.html */
+'use strict';
 var palette = [
 	"#06989A", "#8A609D", "#409A06", "#C4A000", "#729FCF", "#FFFFFF", "#2DE2E2",
 	"#A17FA8", "#6DE234", "#427FED", "#00D700", "#06D75F", "#5FD7D7", "#878700",
@@ -197,7 +198,7 @@ function get_sched_time_string(e){
 	str += " - ";
 	str += end_date.toLocaleTimeString(undefined,  { hour: 'numeric', minute: 'numeric' });
 	str += " ";
-	str += new Date().toLocaleDateString(undefined, { year: '2-digit', timeZoneName: 'short' }).substring(4);
+	str += new Date().toLocaleDateString(undefined, { year: '2-digit', timeZoneName: 'short' }).split(" ")[1];
 
 	return str;
 }
