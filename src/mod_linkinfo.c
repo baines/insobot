@@ -264,13 +264,30 @@ static void do_youtube_info(const char* chan, const char* msg, regmatch_t* match
 			ctx->send_msg(chan, "↑ YT Video: [%s] [LIVE]", title->u.string);
 		} else if(title && duration){
 			int h = 0, m = 0, s = 0;
-			if(sscanf(duration->u.string, "PT%dH%dM%dS", &h, &m, &s) == 3){
-				ctx->send_msg(chan, "↑ YT Video: [%s] [%d:%02d:%02d]", title->u.string, h, m, s);
-			} else if(sscanf(duration->u.string, "PT%dM%dS", &m, &s) == 2){
-				ctx->send_msg(chan, "↑ YT Video: [%s] [%02d:%02d]", title->u.string, m, s);
-			} else if(sscanf(duration->u.string, "PT%dS", &s) == 1){
-				ctx->send_msg(chan, "↑ YT Video: [%s] [00:%02d]", title->u.string, s);
+
+			if(strncmp(duration->u.string, "PT", 2) == 0){
+				int tmp = 0;
+
+				for(const char* p = duration->u.string + 2; *p; ++p){
+					if(*p >= '0' && *p <= '9'){
+						tmp = (tmp * 10) + (*p - '0');
+						continue;
+					}
+
+					if(*p == 'H') h = tmp;
+					else if(*p == 'M') m = tmp;
+					else if(*p == 'S') s = tmp;
+
+					tmp = 0;
+				}
+
+				if(h){
+					ctx->send_msg(chan, "↑ YT Video: [%s] [%d:%02d:%02d]", title->u.string, h, m, s);
+				} else {
+					ctx->send_msg(chan, "↑ YT Video: [%s] [%02d:%02d]", title->u.string, m, s);
+				}
 			}
+
 		}
 		yajl_tree_free(root);
 	}
@@ -449,6 +466,11 @@ void do_ograph_info(const char* chan, const char* url, const char* tag){
 	if((html = do_download(url)) && regexec(&ograph_desc_regex, html, 2, desc, 0) == 0){
 		int len = desc[1].rm_eo - desc[1].rm_so;
 		char* desc_str = strndupa(html + desc[1].rm_so, len);
+		char* p = strchr(desc_str, '\n');
+		if(p){
+			*p = 0;
+			len = p - desc_str;
+		}
 		html_unescape(desc_str, len);
 		ctx->send_msg(chan, "↑ %s: [%s]", tag, desc_str);
 	}
