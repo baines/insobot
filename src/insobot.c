@@ -188,6 +188,7 @@ static IPCAddress* util_ipc_add(const char* name);
 static void        util_ipc_del(const char* name);
 static void        util_module_filter_update(void);
 static bool        util_module_filter_allowed(const char*);
+static void        core_join(const char* chan);
 
 
 /****************
@@ -1196,6 +1197,12 @@ IRC_STR_CALLBACK(on_unknown) {
 	IRC_MOD_CALL_ALL_ABI(on_unknown, (event, origin, params, count), ABI_UNKNOWN);
 }
 
+IRC_STR_CALLBACK(on_invite) {
+	if(count < 2 || !origin || !params[1]) return;
+	printf("We got invited to [%s] by [%s]\n", params[1], origin);
+	core_join(params[1]);
+}
+
 IRC_NUM_CALLBACK(on_numeric) {
 	static const char nick_start_symbols[] = "[]\\`_^{|}";
 	
@@ -1664,6 +1671,7 @@ int main(int argc, char** argv){
 		.event_ctcp_action = irc_on_action,
 		.event_numeric     = irc_on_numeric,
 		.event_unknown     = irc_on_unknown,
+		.event_invite      = irc_on_invite,
 	};
 
 	// outer main loop, (re)set irc state
