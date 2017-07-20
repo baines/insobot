@@ -58,6 +58,18 @@ typedef struct Quote_ {
 static char** channels;
 static Quote** chan_quotes;
 
+static char* quote_fixup(char* text){
+	size_t n = strlen(text);
+
+	// remove redundant quotes
+	if(*text == '"' && text[n-1] == '"' && !memchr(text+1, '"', n-2)){
+		text[n-1] = 0;
+		memmove(text, text+1, n-1);
+	}
+
+	return text;
+}
+
 static char* gen_escaped_csv(Quote* quotes){
 	char* csv = NULL;
 
@@ -146,6 +158,7 @@ static void load_csv(const char* content, Quote** qlist){
 		}
 
 		q.text = strndup(text_buff, o - text_buff);
+		quote_fixup(q.text);
 
 		sb_push(*qlist, q);
 	}
@@ -288,6 +301,12 @@ static const char* quotes_get_chan(const char* default_chan, const char** arg, Q
 	if(!chan) chan = default_chan;
 	if(same) *same = true;
 
+#ifdef HACKS
+    if(default_chan && strcmp(default_chan, "#hero") == 0){
+        chan = "#handmade_hero";
+    }
+#endif
+
 	// if the arg starts with a #, parse the channel out of it
 	if(**arg == '#'){
 		const char* end = strchrnul(*arg, ' ');
@@ -411,7 +430,11 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 			if(sb_count(*quotes) > 0){
 				id = sb_last(*quotes).id + 1;
 			}
-			Quote q = { .id = id, .text = strdup(arg), .timestamp = time(0) };
+			Quote q = {
+				.id = id,
+				.text = quote_fixup(strdup(arg)),
+				.timestamp = time(0)
+			};
 			sb_push(*quotes, q);
 			ctx->send_msg(chan, "%s: Added as quote %d.", name, id);
 
