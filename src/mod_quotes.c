@@ -6,6 +6,11 @@
 #include "inso_utils.h"
 #include "inso_gist.h"
 
+/*
+ * NOTE: This module is now deprecated, in favour of mod_new_quotes.c
+ *       It remains if you want to keep using gist for storage, but it likely won't be updated.
+ */
+
 static bool quotes_init     (const IRCCoreCtx*);
 static void quotes_modified (void);
 static void quotes_cmd      (const char*, const char*, const char*, int);
@@ -245,6 +250,13 @@ static bool quotes_reload(void){
 
 static bool quotes_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+
+	for(IRCModuleCtx** m = ctx->get_modules(false); *m; ++m){
+		if((*m)->name != irc_mod_ctx.name && strcmp((*m)->name, "quotes") == 0){
+			puts("mod_quotes (old): It looks like mod_new_quotes.so is loaded, aborting.");
+			return false;
+		}
+	}
 
 	char* gist_id = getenv("INSOBOT_GIST_ID");
 	if(!gist_id || !*gist_id){

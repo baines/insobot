@@ -10,7 +10,7 @@ common_o := $(patsubst %.h,../lib/%.o,$(common_h))
 
 # Use this to only build certain modules; here is a reasonable default set.
 MODULES := admin alias chans filter haiku help imgmacro info karma linkinfo\
- markov meta poll psa quotes twitch whitelist
+ markov meta poll psa new_quotes twitch whitelist
 
 # You can define it (and other stuff) in src/config.mk to avoid makefile changes
 #  in git from overwriting your settings.
