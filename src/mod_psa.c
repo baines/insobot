@@ -4,9 +4,9 @@
 #include "inso_utils.h"
 #include "stb_sb.h"
 #include "assert.h"
+#include "module_msgs.h"
 #include <ctype.h>
-
-// TODO: add %t style things in messages like mod_alias
+#include <regex.h>
 
 static void psa_add  (const char*, const char*, bool);
 static bool psa_init (const IRCCoreCtx*);
@@ -47,6 +47,7 @@ typedef struct {
 	char* channel;
 	char* id;
 	char* trigger;
+	regex_t trig_rx;
 	char* message;
 	char* cmdline;
 	time_t last_posted;
@@ -77,6 +78,7 @@ static bool psa_init(const IRCCoreCtx* _ctx){
 static void psa_add(const char* chan, const char* arg, bool silent){
 
 	enum {
+		S_BAD_REGEX = -5,
 		S_NO_ID  = -4,
 		S_NO_MSG = -3,
 		S_NEGATIVE_FREQ = -2,
@@ -90,10 +92,11 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 	} state = S_ID;
 
 	static const char* errs[] = {
-		[-S_NO_ID] = "No psa id/name given",
-		[-S_NO_MSG] = "No message given",
+		[-S_BAD_REGEX]     = "Error compiling regex",
+		[-S_NO_ID]         = "No psa id/name given",
+		[-S_NO_MSG]        = "No message given",
 		[-S_NEGATIVE_FREQ] = "The minute frequency must be > 0",
-		[-S_UNKNOWN_TOKEN] = "Could not parse command"
+		[-S_UNKNOWN_TOKEN] = "Could not parse command",
 	};
 	
 	static struct {
@@ -103,6 +106,8 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 		{ "live"   , S_OPT_LIVE },
 		{ "trigger", S_OPT_TRIGGER }
 	};
+
+	char regerr_buf[256];
 
 	char token[128];
 	int len;
@@ -160,8 +165,15 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 			case S_OPT_TRIGGER: {
 				if(sscanf(p, " '%127[^']'%n", token, &len) == 1 || sscanf(p, " %127s%n", token, &len) == 1){
 					p += len;
-					psa.trigger = strdup(token);
-					state = S_MAIN;
+
+					int err;
+					if((err = regcomp(&psa.trig_rx, token, REG_ICASE | REG_EXTENDED | REG_NOSUB))){
+						regerror(err, &psa.trig_rx, regerr_buf, sizeof(regerr_buf));
+						state = S_BAD_REGEX;
+					} else {
+						psa.trigger = strdup(token);
+						state = S_MAIN;
+					}
 				} else {
 					state = S_NO_MSG;
 				}
@@ -196,7 +208,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 
 		psa.cmdline = strdup(psa.cmdline);
 		psa.channel = strdup(chan);
-		psa.last_posted = time(0);
+		psa.last_posted = (time(0) + 5) - (psa.freq_mins * 60);
 		sb_push(psa_data, psa);
 
 		if(!silent){
@@ -206,9 +218,14 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 	} else {
 		free(psa.id);
 		free(psa.trigger);
+		regfree(&psa.trig_rx);
 
 		if(!silent){
-			ctx->send_msg(chan, "Error adding PSA: %s. Use !psa+ with no arguments for usage info.", errs[-state]);
+			if(state == S_BAD_REGEX){
+				ctx->send_msg(chan, "Error compiling regex: %s.", regerr_buf);
+			} else {
+				ctx->send_msg(chan, "Error adding PSA: %s. Use !psa+ with no arguments for usage info.", errs[-state]);
+			}
 		}
 	}
 }
@@ -236,6 +253,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 						free(p->message);
 						free(p->id);
 						free(p->trigger);
+						regfree(&p->trig_rx);
 						free(p->cmdline);
 						sb_erase(psa_data, p - psa_data);
 						found = true;
@@ -262,20 +280,40 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 			for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
 				if(strcmp(p->channel, chan) != 0) continue;
 
-				char tbuf[128];
-				if(p->trigger){
-					snprintf(tbuf, sizeof(tbuf), "trigger='%s'", p->trigger);
-				} else {
-					*tbuf = '\0';
-				}
+				char optbuf[128] = "";
+				char* o = optbuf;
+				size_t osz = sizeof(optbuf);
 
-				snprintf_chain(&psa_ptr, &psa_sz, "[%s: %dm %s%s] ", p->id, p->freq_mins, tbuf, p->when_live ? " (when live)" : "");
+				if(p->trigger)
+					snprintf_chain(&o, &osz, " (trigger:%s)", p->trigger);
+				if(p->when_live)
+					snprintf_chain(&o, &osz, " (live)");
+				if(*p->message == '!')
+					snprintf_chain(&o, &osz, " (alias:%.*s)", (int)strcspn(p->message, " "), p->message);
+
+				snprintf_chain(&psa_ptr, &psa_sz, "[%s: %dm%s] ", p->id, p->freq_mins, optbuf);
 			}
 
 			ctx->send_msg(chan, "Current PSAs: %s", psa_buf);
 
 		} break;
 	};
+}
+
+static void psa_post(PSAData* psa, const char* user, time_t now){
+	if(*psa->message == '!'){
+		AliasReq req = {
+			.alias = psa->message,
+			.chan  = psa->channel,
+			.user  = user,
+		};
+
+		MOD_MSG(ctx, "alias_exec", &req, NULL, NULL);
+	} else {
+		ctx->send_msg(psa->channel, "%s", psa->message);
+	}
+
+	psa->last_posted = now;
 }
 
 static intptr_t psa_twitch_cb(intptr_t result, intptr_t arg){
@@ -291,7 +329,7 @@ static void psa_msg(const char* chan, const char* name, const char* msg){
 
 		if(
 			now - p->last_posted > p->freq_mins * 60 && p->trigger &&
-			(strcmp(p->trigger, "*") == 0 || strcasestr(msg, p->trigger))
+			regexec(&p->trig_rx, msg, 0, NULL, 0) == 0
 		){
 			bool post = true;
 			if(p->when_live){
@@ -299,10 +337,8 @@ static void psa_msg(const char* chan, const char* name, const char* msg){
 			}
 
 			if(post){
-				ctx->send_msg(p->channel, "%s", p->message);
+				psa_post(p, name, now);
 			}
-
-			p->last_posted = now;
 			break;
 		}
 	}
@@ -321,10 +357,8 @@ static void psa_tick(time_t now){
 			}
 
 			if(post){
-				ctx->send_msg(p->channel, "%s", p->message);
+				psa_post(p, "", now);
 			}
-
-			p->last_posted = now;
 			break;
 		}
 	}
@@ -344,6 +378,7 @@ static void psa_quit(void){
 		free(p->message);
 		free(p->trigger);
 		free(p->cmdline);
+		regfree(&p->trig_rx);
 	}
 	sb_free(psa_data);
 }

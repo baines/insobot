@@ -616,5 +616,22 @@ static void alias_mod_msg(const char* sender, const IRCModMsg* msg){
 				break;
 			}
 		} while(*p);
+	} else if(strcmp(msg->cmd, "alias_exec") == 0){
+		AliasReq* req = (AliasReq*)msg->arg;
+
+		if(!(req->alias && req->chan && req->user)){
+			return;
+		}
+
+		size_t len = strlen(req->alias);
+		char* buf = alloca(len+2);
+
+		char* p = buf;
+		if(*req->alias != ALIAS_CHAR){
+			*p++ = ALIAS_CHAR;
+		}
+		memcpy(p, req->alias, len+1);
+
+		alias_msg(req->chan, req->user, buf);
 	}
 }

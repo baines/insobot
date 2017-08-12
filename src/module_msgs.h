@@ -50,6 +50,7 @@
 // --------------+-------------------------+-----------+----------------+-----------------+
 // mod_alias     | "alias_exists"          | char*[2]  | bool           | unused          |
 // mod_alias     | "alias_info"            | char*[2]  | AliasInfo*     | unused          |
+// mod_alias     | "alias_exec"            | AliasReq* | unused         | unused          |
 // mod_hmh       | "hmh_is_live"           | unused    | bool           | unused          |
 // mod_karma     | "karma_get"             | char*     | int            | unused          |
 // mod_markov    | "markov_gen"            | unused    | char* [F]      | unused          |
@@ -69,10 +70,18 @@
 //
 
 // ALIAS:
+//  alias_exec:
+//    shows the alias, given the alias name, channel, and triggering user for %t
 //  alias_exists:
 //    *result* will be true/false if any of the space-separated aliases in the *aliases* field exist.
 //  alias_info:
 //    *result* will be info for the given alias/chan
+
+typedef struct {
+	const char* alias;
+	const char* chan;
+	const char* user;
+} AliasReq;
 
 typedef struct {
 	const char* aliases;
