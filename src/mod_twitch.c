@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include "inso_utils.h"
 #include "module_msgs.h"
+#include <argz.h>
 
 static bool twitch_init    (const IRCCoreCtx*);
 static void twitch_cmd     (const char*, const char*, const char*, int);
@@ -82,8 +83,14 @@ static TwitchInfo* twitch_vals;
 
 typedef struct {
 	char* name;
-	char* tag_list;
+	char* argz;
+	size_t argz_len;
 } TwitchTag;
+
+enum {
+	TAGS_APPEND,
+	TAGS_REMOVE,
+};
 
 static char**      twitch_tracker_chans;
 static TwitchTag*  twitch_tracker_tags;
@@ -151,10 +158,11 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 		} else if(sscanf(line, "OUTPUT %255s", buffer) == 1){
 			sb_push(twitch_tracker_chans, strdup(buffer));
-		} else if(sscanf(line, "TAG %255s :%m[^\n]", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TAG %255s :%ms", buffer, &arg) >= 1){
 			TwitchTag tag = { .name = strdup(buffer) };
 			if(arg){
-				tag.tag_list = arg;
+				argz_create_sep(arg, ':', &tag.argz, &tag.argz_len);
+				free(arg);
 			}
 			sb_push(twitch_tracker_tags, tag);
 		}
@@ -429,12 +437,8 @@ out:
 #define TWITCH_TRACKER_MSG(fmt, ...) \
 	for(char** c = twitch_tracker_chans; c < sb_end(twitch_tracker_chans); ++c) ctx->send_msg(*c, fmt, __VA_ARGS__)
 
-static void twitch_print_tags(const char* prefix, const char* stream){
-	char tag_buf[1024];
-
-	size_t stream_len = strlen(stream);
-	char* spaced_stream = alloca(stream_len + 3);
-	sprintf(spaced_stream, " %s ", stream);
+static void twitch_tags_print(const char* prefix, const char* stream){
+	char tag_buf[512];
 
 	for(char** chan = twitch_tracker_chans; chan < sb_end(twitch_tracker_chans); ++chan){
 		*tag_buf = 0;
@@ -443,10 +447,24 @@ static void twitch_print_tags(const char* prefix, const char* stream){
 		const char** nicks = ctx->get_nicks(*chan, &nick_count);
 
 		for(TwitchTag* tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
-			if(tag->tag_list && !strcasestr(tag->tag_list, spaced_stream)){
-				continue;
+			// check if stream is one that this user wants to be tagged for, or if they want all (argz null)
+			if(tag->argz){
+				bool found = false;
+
+				char* p = NULL;
+				while((p = argz_next(tag->argz, tag->argz_len, p))){
+					if(strcasecmp(stream, p) == 0){
+						found = true;
+						break;
+					}
+				}
+
+				if(!found){
+					continue;
+				}
 			}
 
+			// check if this user is actually in the channel, and append their name to tag_buf if so
 			for(int i = 0; i < nick_count; ++i){
 				if(strcasecmp(tag->name, nicks[i]) == 0){
 					inso_strcat(tag_buf, sizeof(tag_buf), tag->name);
@@ -462,8 +480,83 @@ static void twitch_print_tags(const char* prefix, const char* stream){
 	}
 }
 
-static void twitch_tracker_update(void){
+static void twitch_tags_process(TwitchTag* tag, const char* chan, const char* name, int mode, const char* arg){
 
+	// make sure tag is valid
+	if(!tag){
+		if(mode == TAGS_APPEND){
+			TwitchTag newtag = { .name = strdup(name) };
+			sb_push(twitch_tracker_tags, newtag);
+			tag = &sb_last(twitch_tracker_tags);
+		} else {
+			ctx->send_msg(chan, "%s: You're already not tagged for any channels.", name);
+			return;
+		}
+	}
+
+	if(*arg){ // selective append / remove
+		char* list = strdupa(arg);
+		for(char* c = list; *c; ++c) *c = tolower(*c);
+
+		char* state;
+		for(char* c = strtok_r(list, " \t,#", &state); c; c = strtok_r(NULL, " \t,#", &state)){
+
+			bool is_tracked = false;
+			for(size_t i = 0; i < sb_count(twitch_keys); ++i){
+				if(twitch_vals[i].is_tracked && strcasecmp(c, twitch_keys[i]+1) == 0){
+					is_tracked = true;
+					break;
+				}
+			}
+
+			if(!is_tracked){
+				// XXX: Probably should buffer these channels up and send one message at the end instead.
+				//      This would prevent people making the bot spam loads of lines with a space-laden arg.
+				ctx->send_msg(chan, "%s: Warning: '%s' is not being tracked, skipped.", name, c);
+				continue;
+			}
+
+			char* entry = NULL;
+
+			{ // find given stream in current list of tags
+				char* p = NULL;
+				while((p = argz_next(tag->argz, tag->argz_len, p))){
+					if(strcmp(p, c) == 0){
+						entry = p;
+						break;
+					}
+				}
+			}
+
+			if(mode == TAGS_APPEND){
+				if(entry) continue;
+				argz_add(&tag->argz, &tag->argz_len, c);
+			} else {
+				if(!entry) continue;
+				argz_delete(&tag->argz, &tag->argz_len, entry);
+			}
+		}
+	}
+
+	if(!*arg || !tag->argz){ // untag / tag for every channel
+		free(tag->argz);
+		tag->argz_len = 0;
+
+		if(mode == TAGS_REMOVE){
+			free(tag->name);
+			sb_erase(twitch_tracker_tags, tag - twitch_tracker_tags);
+			ctx->send_msg(chan, "%s: You will no longer be tagged for any channels.", name);
+		} else {
+			ctx->send_msg(chan, "%s: You'll now be tagged for all channels.", name);
+		}
+	} else {
+		ctx->send_msg(chan, "%s: Successfully updated your tags.", name);
+	}
+
+	ctx->save_me();
+}
+
+static void twitch_tracker_update(void){
 	char topic[1024] = "\002\0030,4[LIVE]\017 ";
 
 	bool any_changed = false;
@@ -504,7 +597,7 @@ static void twitch_tracker_update(void){
 
 			if(changed){
 				if(!sent_ping){
-					twitch_print_tags("FAO: ", chan + 1);
+					twitch_tags_print("FAO: ", chan + 1);
 					sent_ping = true;
 				}
 				any_changed = true;
@@ -600,41 +693,28 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			}
 		}
 
-		if(strncasecmp(arg, " tagme", 6) == 0){
+		if(strcmp(arg, " tagged") == 0){
 
 			if(tag){
-				free(tag->tag_list);
-				tag->tag_list = NULL;
+				if(tag->argz){
+					char* list = alloca(tag->argz_len);
+					memcpy(list, tag->argz, tag->argz_len);
+					argz_stringify(list, tag->argz_len, ' ');
+					ctx->send_msg(chan, "%s: You are tagged for: %s", dispname, list);
+				} else {
+					ctx->send_msg(chan, "%s: You are tagged for all channels.", dispname);
+				}
 			} else {
-				TwitchTag newtag = { .name = strdup(name) };
-				sb_push(twitch_tracker_tags, newtag);
-				tag = &sb_last(twitch_tracker_tags);
+				ctx->send_msg(chan, "%s: You aren't tagged for any channels.", dispname);
 			}
 
-			const char* tag_chans = arg + 6;
-			if(*tag_chans == ' '){
-				size_t sz = strlen(tag_chans);
-				tag->tag_list = malloc(sz + 2);
-				memcpy(tag->tag_list, tag_chans, sz);
-				memcpy(tag->tag_list + sz, " ", 2);
-				ctx->send_msg(chan, "%s: You'll now be tagged when those specific streams go live!", dispname);
-			} else {
-				ctx->send_msg(chan, "%s: You'll now be tagged when any streams go live!", dispname);
-			}
+		} else if(strncasecmp(arg, " tagme", 6) == 0){
 
-			ctx->save_me();
+			twitch_tags_process(tag, chan, name, TAGS_APPEND, arg + 6);
 
-		} else if(strcasecmp(arg, " untagme") == 0){
+		} else if(strncasecmp(arg, " untagme", 8) == 0){
 
-			if(tag){
-				free(tag->name);
-				free(tag->tag_list);
-				sb_erase(twitch_tracker_tags, tag - twitch_tracker_tags);
-				ctx->send_msg(chan, "%s: OK, I've untagged you.", dispname);
-				ctx->save_me();
-			} else {
-				ctx->send_msg(chan, "%s: You're already not tagged.", dispname);
-			}
+			twitch_tags_process(tag, chan, name, TAGS_REMOVE, arg + 8);
 
 		} else if(strcasecmp(arg, " list") == 0){
 
@@ -682,12 +762,12 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 			for(TwitchInfo* t = twitch_vals; t < sb_end(twitch_vals); ++t){
 				if(!t->is_tracked) continue;
 				inso_strcat(chan_buf, sizeof(chan_buf), twitch_keys[t - twitch_vals] + 1);
-				inso_strcat(chan_buf, sizeof(chan_buf), " ");
+				inso_strcat(chan_buf, sizeof(chan_buf), "|");
 			}
 			ctx->send_msg(chan, "Tracked channels: %s", chan_buf);
 
 		} else {
-			ctx->send_msg(chan, "%s: Usage: !streams [list|tagme [chans...]|untagme|chans|add <chan> [name]|del <chan>]", dispname);
+			ctx->send_msg(chan, "%s: Usage: !streams [list|tagged|chans|tagme [chans...]|untagme [chans...]|add <chan> [name]|del <chan>]", dispname);
 		}
 	}
 }
@@ -982,11 +1062,16 @@ static bool twitch_save(FILE* f){
 	}
 
 	for(TwitchTag* tag = twitch_tracker_tags; tag < sb_end(twitch_tracker_tags); ++tag){
-		if(tag->tag_list){
-			fprintf(f, "TAG\t%s :%s\n", tag->name, tag->tag_list);
-		} else {
-			fprintf(f, "TAG\t%s\n", tag->name);
+		fprintf(f, "TAG\t%s", tag->name);
+
+		if(tag->argz){
+			fputc(' ', f);
+			char* p = NULL;
+			while((p = argz_next(tag->argz, tag->argz_len, p))){
+				fprintf(f, ":%s", p);
+			}
 		}
+		fputc('\n', f);
 	}
 
 	return true;
@@ -1007,7 +1092,7 @@ static void twitch_quit(void){
 
 	for(TwitchTag* t = twitch_tracker_tags; t < sb_end(twitch_tracker_tags); ++t){
 		free(t->name);
-		free(t->tag_list);
+		free(t->argz);
 	}
 	sb_free(twitch_tracker_tags);
 
