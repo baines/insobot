@@ -207,7 +207,9 @@ static token check_constants(const char** str, calc_state* state){
 		if(unicode_constants[i].codepoint == (uint32_t)wc){
 			int type = T_FLOAT;
 
-			if(state->prev.type & T_NUM){
+			if(unicode_constants[i].type == T_CONSTANT_EXP){
+				type = T_CONSTANT_EXP;
+			} else if(state->prev.type & T_NUM){
 				if(unicode_constants[i].type == OP_MUL){
 					return token_op(OP_MUL);
 				} else {
@@ -286,7 +288,7 @@ static token calc_next_token(const char** str, calc_state* state){
 		}
 	}
 
-	if(!strchr(digits, tolower(**str))){
+	if(**str != '.' && !strchr(digits, tolower(**str))){
 		longjmp(state->errbuf, ERR_TKN);
 	}
 
