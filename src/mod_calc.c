@@ -8,24 +8,26 @@
 #include <limits.h>
 
 #if __GNUC__ < 5
-#define MSB(l) (l ? LONG_BIT - __builtin_clzl(l & ~(1ul << (LONG_BIT-1))) : 0)
-#define __builtin_mul_overflow(_a,_b,_c) ({ \
-	long a = (_a), b = (_b), *c = (_c);     \
-	bool r = (MSB(a) + MSB(b) >= LONG_BIT); \
-	if(!r) *c = a*b; r;                     \
-})
-#define __builtin_add_overflow(_a,_b,_c) ({ \
-	long a = (_a), b = (_b), *c = (_c);     \
-	b <= 0                                  \
-	? (LONG_MIN - b <= a) ? *c=a+b,0:1      \
-	: (LONG_MAX - b >= a) ? *c=a+b,0:1;     \
-})
-#define __builtin_sub_overflow(_a,_b,_c) ({ \
-	long a = (_a), b = (_b), *c = (_c);     \
-	b <= 0                                  \
-	? (LONG_MAX + b >= a) ? *c=a-b,0:1      \
-	: (LONG_MIN + b <= a) ? *c=a-b,0:1;     \
-})
+#define MSB(l) (l ? LONG_BIT - __builtin_clzl(l) : 0)
+static inline bool mul_overflow(long _a, long _b, long* c){
+	unsigned long a = _a, b = _b;
+	return (MSB(a) + MSB(b) >= LONG_BIT) ? true : ((*c = a*b), false);
+}
+static inline bool add_overflow(long a, long b, long* c){
+	return b <= 0
+		? ((LONG_MIN - b) <= a ? ((*c=a+b),false) : true)
+		: ((LONG_MAX - b) >= a ? ((*c=a+b),false) : true);
+}
+static inline bool sub_overflow(long a, long b, long* c){
+	return b <= 0
+		? (LONG_MAX + b >= a) ? ((*c=a-b),false) : true
+		: (LONG_MIN + b <= a) ? ((*c=a-b),false) : true;
+}
+#undef MSB
+#else /* GNUC >= 5 */
+#define mul_overflow __builtin_mul_overflow
+#define add_overflow __builtin_add_overflow
+#define sub_overflow __builtin_sub_overflow
 #endif
 
 static void calc_cmd  (const char*, const char*, const char*, int);
@@ -123,6 +125,7 @@ typedef struct {
 	token prev;
 	long base;
 	jmp_buf errbuf;
+	bool eof;
 } calc_state;
 
 enum {
@@ -158,6 +161,7 @@ static struct {
 	float value;
 	int type;
 } unicode_constants[] = {
+	{ 'e'   , M_E     , OP_MUL },
 	{ 0x03C0, M_PI    , OP_MUL },
 	{ 0x03C4, M_PI*2.f, OP_MUL },
 	{ 0x00B2, 2       , T_CONSTANT_EXP },
@@ -191,12 +195,8 @@ static token check_constants(const char** str, calc_state* state){
 	size_t max = strlen(*str);
 	for(size_t i = 0; i < ARRAY_SIZE(constants); ++i){
 		if(max >= constants[i].str_len && strncmp(*str, constants[i].str, constants[i].str_len) == 0){
-			if(state->prev.type & T_NUM){
-				return token_op(OP_MUL);
-			} else {
-				*str += constants[i].str_len;
-				return (token){ T_FLOAT, { .f = constants[i].value }};
-			}
+			*str += constants[i].str_len;
+			return (token){ T_FLOAT, { .f = constants[i].value }};
 		}
 	}
 
@@ -207,14 +207,11 @@ static token check_constants(const char** str, calc_state* state){
 		if(unicode_constants[i].codepoint == (uint32_t)wc){
 			int type = T_FLOAT;
 
+			// FIXME: silly logic...
 			if(unicode_constants[i].type == T_CONSTANT_EXP){
 				type = T_CONSTANT_EXP;
-			} else if(state->prev.type & T_NUM){
-				if(unicode_constants[i].type == OP_MUL){
-					return token_op(OP_MUL);
-				} else {
-					type = unicode_constants[i].type;
-				}
+			} else if((state->prev.type & T_NUM) && unicode_constants[i].type != OP_MUL){
+				type = unicode_constants[i].type;
 			}
 
 			*str += n;
@@ -232,7 +229,10 @@ static bool is_unary(calc_state* state){
 static token calc_next_token(const char** str, calc_state* state){
 	char* p;
 
-	if(!**str) return (token){ T_PAREN_CLOSE };
+	if(!**str){
+		state->eof = true;
+		return (token){ T_PAREN_CLOSE };
+	}
 
 	while(**((uint8_t**)str) <= ' '){
 		++*str;
@@ -251,12 +251,7 @@ static token calc_next_token(const char** str, calc_state* state){
 		if(is_unary(state) && (*p == '+' || *p == '-')){ // unary +, -
 			return token_op(OP_UNARY + (p - ops));
 		} else if(p - ops > 10){
-			if(*p == '(' && (state->prev.type & T_NUM)){ // treat e.g. 2(1+1) as 2 * (1+1)
-				--*str;
-				return token_op(OP_MUL);
-			} else {
-				return (token){ T_PAREN_OPEN + (*p == ')') }; // parens
-			}
+			return (token){ T_PAREN_OPEN + (*p == ')') }; // parens
 		} else if(*p == '*' && **str == '*'){ // exp vs mul
 			++*str;
 			return token_op(OP_EXP);
@@ -292,7 +287,8 @@ static token calc_next_token(const char** str, calc_state* state){
 		longjmp(state->errbuf, ERR_TKN);
 	}
 
-	if(state->prev.type & T_NUM){
+	// implicit multiply for consecutive number tokens
+	if((state->prev.type & T_NUM) || state->prev.type == T_PAREN_CLOSE){
 		return token_op(OP_MUL);
 	}
 
@@ -349,10 +345,10 @@ static long lpow(long num, unsigned long exp, bool* oflow){
 
 	while(exp){
 		if(exp & 1){
-			if(__builtin_mul_overflow(result, num, &result)) goto overflow;
+			if(mul_overflow(result, num, &result)) goto overflow;
 		}
 		exp >>= 1;
-		if(__builtin_mul_overflow(num, num, &num)) goto overflow;
+		if(mul_overflow(num, num, &num)) goto overflow;
 	}
 
 	return result;
@@ -400,10 +396,10 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 		bool overflow = false;
 
 		switch(op){
-			case OP_ADD: overflow = __builtin_add_overflow(a, b, &result); break;
-			case OP_SUB: overflow = __builtin_sub_overflow(a, b, &result); break;
+			case OP_ADD: overflow = add_overflow(a, b, &result); break;
+			case OP_SUB: overflow = sub_overflow(a, b, &result); break;
 			case OP_DIV: result = a / b; break;
-			case OP_MUL: overflow = __builtin_mul_overflow(a, b, &result); break;
+			case OP_MUL: overflow = mul_overflow(a, b, &result); break;
 			case OP_MOD: result = a % b; break;
 			case OP_EXP: result = lpow(a, b, &overflow); break;
 			case OP_AND: result = a & b; break;
@@ -517,19 +513,21 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 		}
 
 		state.prev = t;
-	} while(sb_count(op_stack));
+	} while(!state.eof);
 
-	if(sb_count(num_stack)){
-		token t = sb_last(num_stack);
+	if(sb_count(op_stack)>0) longjmp(state.errbuf, ERR_PARENS);
+	if(!sb_count(num_stack)) longjmp(state.errbuf, ERR_UNKNOWN);
 
-		if(t.type == T_FLOAT){
-			ctx->send_msg(chan, "%s: %g.", name, t.data.f);
-		} else {
-			const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
-			ctx->send_msg(chan, fmt, name, t.data.l);
-		}
+	while(sb_count(num_stack) > 1){
+		calc_apply_op(OP_MUL, &num_stack, &state);
+	}
+
+	t = sb_last(num_stack);
+	if(t.type == T_FLOAT){
+		ctx->send_msg(chan, "%s: %g.", name, t.data.f);
 	} else {
-		ctx->send_msg(chan, "%s: wat?", name);
+		const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
+		ctx->send_msg(chan, fmt, name, t.data.l);
 	}
 
 out:
