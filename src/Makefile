@@ -41,7 +41,7 @@ ifndef lcairo
     module_c := $(filter-out mod_imgmacro.c,$(module_c))
 endif
 
-LIBS := ../lib/inso_common.a -lcurl $(lyajl) $(lz) $(lcairo)
+LIBS := ../lib/inso_common.a -lcurl -lm $(lyajl) $(lz) $(lcairo)
 
 # main rules
 
