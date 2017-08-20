@@ -6,6 +6,7 @@
 #include <math.h>
 #include <float.h>
 #include <limits.h>
+#include <complex.h>
 
 #if __GNUC__ < 5
 #define MSB(l) (l ? LONG_BIT - __builtin_clzl(l) : 0)
@@ -51,6 +52,7 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
+// Operators + Functions
 enum {
 	OP_ADD,    // +
 	OP_SUB,    // -
@@ -64,15 +66,80 @@ enum {
 	OP_SHR,    // >>
 	OP_SHL,    // <<
 
-	OP_UNARY = 0x10,
-	OP_NOP   = OP_UNARY, // also +
-	OP_NEG,              // also -
-
 	OP_PAREN_OPEN,
 	OP_PAREN_CLOSE,
 
+	OP_UNARY = 0x10,
+	OP_NOP   = OP_UNARY, // also +
+	OP_NEG, // also -
+
+	OP_FUNC    = 0x20,
+
+	OP_FN_SIN  = OP_FUNC | OP_UNARY,
+	OP_FN_COS,
+	OP_FN_TAN,
+	OP_FN_ASIN,
+	OP_FN_ACOS,
+	OP_FN_ATAN,
+	OP_FN_LOG2,
+	OP_FN_LOGE,
+	OP_FN_LOG10,
+	OP_FN_SQRT,
+	OP_FN_CBRT,
+	OP_FN_4RT,
+
 	OP_COUNT,
 };
+
+// Tokens
+enum {
+	T_NONE,
+
+	T_OP,
+	T_PAREN_OPEN,
+	T_PAREN_CLOSE,
+
+	T_CONSTANT_ADD,
+	T_CONSTANT_EXP,
+
+	T_NUM = 0x10,
+	T_LONG = T_NUM,
+	T_FLOAT,
+	T_COMPLEX,
+};
+
+// Errors
+enum {
+	ERR_NONE,
+	ERR_DBZ,
+	ERR_TKN,
+	ERR_PARENS,
+	ERR_NON_FLOAT,
+	ERR_NON_COMPLEX,
+	ERR_UNKNOWN,
+};
+
+// Types
+
+union num {
+	long l;
+	float f;
+	complex float c;
+};
+
+typedef struct {
+	long type;
+	union num data;
+} token;
+
+typedef struct {
+	token prev;
+	long base;
+	jmp_buf errbuf;
+	bool eof;
+} calc_state;
+
+// Data tables
 
 static int precedence[OP_COUNT] = {
 	[OP_NOP] = 8,
@@ -96,52 +163,12 @@ static bool right_assoc[OP_COUNT] = {
 	[OP_EXP] = true,
 };
 
-enum {
-	T_NONE,
-
-	T_OP,
-	T_PAREN_OPEN,
-	T_PAREN_CLOSE,
-
-	T_CONSTANT_ADD,
-	T_CONSTANT_EXP,
-
-	T_NUM = 0x10,
-	T_LONG = T_NUM,
-	T_FLOAT,
-};
-
-union num {
-	float f;
-	long l;
-};
-
-typedef struct {
-	long type;
-	union num data;
-} token;
-
-typedef struct {
-	token prev;
-	long base;
-	jmp_buf errbuf;
-	bool eof;
-} calc_state;
-
-enum {
-	ERR_NONE,
-	ERR_DBZ,
-	ERR_TKN,
-	ERR_PARENS,
-	ERR_NON_FLOAT,
-	ERR_UNKNOWN,
-};
-
 static const char* errmsg[] = {
 	[ERR_DBZ] = "\001ACTION bursts into flames after dividing by zero.\001",
 	[ERR_TKN] = "%s: Error: Unknown token '%.*s'.",
 	[ERR_PARENS] = "%s: Error: Unbalanced parentheses.",
 	[ERR_NON_FLOAT] = "%s: Cannot apply bitwise op to float.",
+	[ERR_NON_COMPLEX] = "%s: Cannot apply bitwise op to complex number.",
 	[ERR_UNKNOWN] = "%s: wat?",
 };
 
@@ -186,6 +213,26 @@ static struct {
 	{ 0x215E, 7.f/8.f , T_CONSTANT_ADD },
 };
 
+static struct {
+	const char* str;
+	size_t str_len;
+	int token;
+} functions[] = {
+	{ "log" , 3, OP_FN_LOG2  },
+	{ "ln"  , 2, OP_FN_LOGE  },
+	{ "lg"  , 2, OP_FN_LOG10 },
+	{ "sin" , 3, OP_FN_SIN   },
+	{ "cos" , 3, OP_FN_COS   },
+	{ "tan" , 3, OP_FN_TAN   },
+	{ "asin", 4, OP_FN_ASIN  },
+	{ "acos", 4, OP_FN_ACOS  },
+	{ "atan", 4, OP_FN_ATAN  },
+	{ "sqrt", 4, OP_FN_SQRT  },
+	{ "√"   , 3, OP_FN_SQRT  },
+	{ "∛"   , 3, OP_FN_CBRT  },
+	{ "∜"   , 3, OP_FN_4RT   },
+};
+
 static inline token token_op(long op){
 	return (token){ T_OP, { .l = op }};
 }
@@ -222,6 +269,19 @@ static token check_constants(const char** str, calc_state* state){
 	return (token){ T_NONE };
 }
 
+static token check_functions(const char** str, calc_state* state){
+	size_t max = strlen(*str);
+
+	for(size_t i = 0; i < ARRAY_SIZE(functions); ++i){
+		if(max >= functions[i].str_len && strncmp(*str, functions[i].str, functions[i].str_len) == 0){
+			*str += functions[i].str_len;
+			return (token){ T_OP, { .l = functions[i].token }};
+		}
+	}
+
+	return (token){ T_NONE };
+}
+
 static bool is_unary(calc_state* state){
 	return state->prev.type == T_OP || state->prev.type == T_PAREN_OPEN;
 }
@@ -229,22 +289,35 @@ static bool is_unary(calc_state* state){
 static token calc_next_token(const char** str, calc_state* state){
 	char* p;
 
+	// null byte in input == eof
 	if(!**str){
 		state->eof = true;
 		return (token){ T_PAREN_CLOSE };
 	}
 
+	// skip whitespace
 	while(**((uint8_t**)str) <= ' '){
 		++*str;
 	}
 
+	// named constants + functions
 	{
-		token t = check_constants(str, state);
-		if(t.type != T_NONE){
+		token t;
+		if((t = check_constants(str, state)), t.type != T_NONE){
+			return t;
+		}
+		if((t = check_functions(str, state)), t.type != T_NONE){
 			return t;
 		}
 	}
 
+	// complex numbers
+	if(**str == 'i' || **str == 'I'){
+		++*str;
+		return (token){ T_COMPLEX, { .c = I }};
+	}
+
+	// operators
 	if((p = strchr(ops, **str))){
 		++*str;
 
@@ -283,21 +356,18 @@ static token calc_next_token(const char** str, calc_state* state){
 		}
 	}
 
+	// unknown token check
 	if(**str != '.' && !strchr(digits, tolower(**str))){
 		longjmp(state->errbuf, ERR_TKN);
 	}
 
-	// implicit multiply for consecutive number tokens
-	if((state->prev.type & T_NUM) || state->prev.type == T_PAREN_CLOSE){
-		return token_op(OP_MUL);
-	}
-
+	// parse integers
 	while(**str && (p = strchr(digits, tolower(**str)))){
 		num = (num * base) + (p - digits);
 		++*str;
 	}
 
-	// real numbers
+	// parse real numbers
 	if(**str == '.'){
 		is_float = true;
 		++*str;
@@ -366,8 +436,23 @@ static token enfloaten(token t){
 	return t;
 }
 
+static token complexify(token t){
+	if(t.type == T_LONG){
+		t.data.c = (complex float)t.data.l;
+		t.type = T_COMPLEX;
+	}
+
+	if(t.type == T_FLOAT){
+		t.data.c = (complex float)t.data.f;
+		t.type = T_COMPLEX;
+	}
+
+	return t;
+}
+
 static void calc_apply_op(long op, token** nums, calc_state* state){
 	bool is_unary = op & OP_UNARY;
+	bool is_func  = op & OP_FUNC;
 
 	if(sb_count(*nums) < (2u - is_unary)){
 		longjmp(state->errbuf, ERR_UNKNOWN);
@@ -376,12 +461,21 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 	token ta = {};
 	token tb = sb_last(*nums); sb_pop(*nums);
 
+	if(is_func){
+		tb = enfloaten(tb);
+	}
+
 	if(!is_unary){
 		ta = sb_last(*nums); sb_pop(*nums);
 
 		if(ta.type != tb.type || op == OP_DIV || (op == OP_EXP && tb.type == T_LONG && tb.data.l < 0)){
 			ta = enfloaten(ta);
 			tb = enfloaten(tb);
+		}
+
+		if(ta.type != tb.type){
+			ta = complexify(ta);
+			tb = complexify(tb);
 		}
 
 		if((op == OP_DIV || op == OP_MOD)
@@ -426,21 +520,86 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 	if(tb.type == T_FLOAT){
 		float result, a = ta.data.f, b = tb.data.f;
 
+		float quot;
+		float rem = modff(b, &quot);
+
+		if((op == OP_EXP && a < 0 && rem > FLT_EPSILON) || (b < 0 && (op == OP_FN_SQRT || op == OP_FN_CBRT || op == OP_FN_4RT))){
+			ta = complexify(ta);
+			tb = complexify(tb);
+		} else {
+			switch(op){
+				case OP_ADD: result = a + b; break;
+				case OP_SUB: result = a - b; break;
+				case OP_DIV: result = a / b; break;
+				case OP_MUL: result = a * b; break;
+				case OP_MOD: result = fmodf(a, b); break;
+				case OP_EXP: result = powf(a, b); break;
+				case OP_NEG: result = -b; break;
+				case OP_NOP: result = b; break;
+				case OP_FN_SIN  : result = sinf(b); break;
+				case OP_FN_COS  : result = cosf(b); break;
+				case OP_FN_TAN  : result = tanf(b); break;
+				case OP_FN_ASIN : result = asinf(b); break;
+				case OP_FN_ACOS : result = acosf(b); break;
+				case OP_FN_ATAN : result = atanf(b); break;
+				case OP_FN_LOG2 : result = log2f(b); break;
+				case OP_FN_LOGE : result = logf(b); break;
+				case OP_FN_LOG10: result = log10f(b); break;
+				case OP_FN_SQRT : result = sqrt(b); break;
+				case OP_FN_CBRT : result = cbrt(b); break;
+				case OP_FN_4RT  : result = powf(b, 1.0f/4.0f); break;
+				default: {
+					longjmp(state->errbuf, ERR_NON_FLOAT);
+				};
+			}
+
+			if(is_func && fabsf(result) < FLT_EPSILON){
+				result = 0.f;
+			}
+
+			token t = { T_FLOAT, { .f = result }};
+			sb_push(*nums, t);
+		}
+	}
+
+	if(tb.type == T_COMPLEX){
+		complex float result, a = ta.data.c, b = tb.data.c;
+
 		switch(op){
 			case OP_ADD: result = a + b; break;
 			case OP_SUB: result = a - b; break;
 			case OP_DIV: result = a / b; break;
 			case OP_MUL: result = a * b; break;
-			case OP_MOD: result = fmodf(a, b); break;
-			case OP_EXP: result = powf(a, b); break;
+			//case OP_MOD: result = cmodf(a, b); break;
+			case OP_EXP: result = cpowf(a, b); break;
 			case OP_NEG: result = -b; break;
 			case OP_NOP: result = b; break;
+			case OP_FN_SIN  : result = csinf(b); break;
+			case OP_FN_COS  : result = ccosf(b); break;
+			case OP_FN_TAN  : result = ctanf(b); break;
+			case OP_FN_ASIN : result = casinf(b); break;
+			case OP_FN_ACOS : result = cacosf(b); break;
+			case OP_FN_ATAN : result = catanf(b); break;
+			case OP_FN_LOG2 : result = clogf(b)/logf(2.); break; // glibc forgot clog2f?
+			case OP_FN_LOGE : result = clogf(b); break;
+			case OP_FN_LOG10: result = clog10f(b); break;
+			case OP_FN_SQRT : result = csqrt(b); break;
+			case OP_FN_CBRT : result = cpowf(b, 1.0f/3.0f); break;
+			case OP_FN_4RT  : result = cpowf(b, 1.0f/4.0f); break;
 			default: {
-				longjmp(state->errbuf, ERR_NON_FLOAT);
+				longjmp(state->errbuf, ERR_NON_COMPLEX);
 			};
 		}
 
-		token t = { T_FLOAT, { .f = result }};
+		if(fabsf(crealf(result)) < FLT_EPSILON){
+			result = cimagf(result)*I;
+		}
+
+		if(fabsf(cimagf(result)) < FLT_EPSILON){
+			result = crealf(result);
+		}
+
+		token t = { T_COMPLEX, { .c = result }};
 		sb_push(*nums, t);
 	}
 }
@@ -486,6 +645,10 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 
 			sb_push(num_stack, t);
 
+			if(state.prev.type & T_NUM){
+				calc_apply_op(OP_MUL, &num_stack, &state);
+			}
+
 		} else if(t.type == T_OP){
 
 			while(sb_count(op_stack) && (precedence[sb_last(op_stack)] - precedence[t.data.l]) >= right_assoc[t.data.l]){
@@ -510,6 +673,12 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 			}
 
 			sb_pop(op_stack);
+
+			// check for function + exec it
+			if(sb_last(op_stack) & OP_FUNC){
+				calc_apply_op(sb_last(op_stack), &num_stack, &state);
+				sb_pop(op_stack);
+			}
 		}
 
 		state.prev = t;
@@ -523,7 +692,9 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 	}
 
 	t = sb_last(num_stack);
-	if(t.type == T_FLOAT){
+	if(t.type == T_COMPLEX){
+		ctx->send_msg(chan, "%s: %g%+gi", name, crealf(t.data.c), cimagf(t.data.c));
+	} else if(t.type == T_FLOAT){
 		ctx->send_msg(chan, "%s: %g.", name, t.data.f);
 	} else {
 		const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
