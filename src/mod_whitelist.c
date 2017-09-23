@@ -9,6 +9,7 @@ static void whitelist_cmd     (const char*, const char*, const char*, int);
 static bool whitelist_save    (FILE*);
 static void whitelist_mod_msg (const char*, const IRCModMsg*);
 static void whitelist_quit    (void);
+static void whitelist_modified(void);
 
 enum { WL_CHECK_SELF, WL_CHECK, WL_ADD, WL_DEL };
 
@@ -21,6 +22,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &whitelist_mod_msg,
 	.on_save    = &whitelist_save,
 	.on_quit    = &whitelist_quit,
+	.on_modified = &whitelist_modified,
 	.commands   = DEFINE_CMDS (
 		[WL_CHECK_SELF] = CONTROL_CHAR "amiwhitelisted",
 		[WL_CHECK]      = CONTROL_CHAR "wl "    CONTROL_CHAR "iswl " CONTROL_CHAR "wlcheck",
@@ -38,7 +40,7 @@ const IRCModuleCtx irc_mod_ctx = {
 static const IRCCoreCtx* ctx;
 
 enum {
-	ROLE_PLEBIAN     = 0,
+	ROLE_PLEBEIAN    = 0,
 	ROLE_WHITELISTED = (1 << 0),
 	ROLE_ADMIN       = (1 << 1) | ROLE_WHITELISTED,
 };
@@ -56,7 +58,7 @@ static void whitelist_load(void){
 	char role[32], name[64];
 
 	while(fscanf(f, "%31s %63s", role, name) == 2){
-		WLEntry wl = { .role = ROLE_PLEBIAN };
+		WLEntry wl = { .role = ROLE_PLEBEIAN };
 
 		if(strcasecmp(role, "ADMIN") == 0){
 			wl.role = ROLE_ADMIN;
@@ -64,7 +66,7 @@ static void whitelist_load(void){
 			wl.role = ROLE_WHITELISTED;
 		}
 		
-		if(wl.role != ROLE_PLEBIAN){
+		if(wl.role != ROLE_PLEBEIAN){
 			wl.name = strdup(name);
 			sb_push(wlist, wl);
 		}
@@ -116,6 +118,11 @@ static void whitelist_quit(void){
 		free(wlist[i].name);
 	}
 	sb_free(wlist);
+}
+
+static void whitelist_modified(void){
+	whitelist_quit();
+	whitelist_load();
 }
 
 static void whitelist_cmd(const char* chan, const char* name, const char* arg, int cmd){

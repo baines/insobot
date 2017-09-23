@@ -613,44 +613,45 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 	bool reload = false;
 	bool updated_filter = false;
 
-	ssize_t num_read = read(inotify.fd, &buff, sizeof(buff));
+	ssize_t num_read;
+	while((num_read = read(inotify.fd, &buff, sizeof(buff))) > 0){
+		for(char* p = buff; (p - buff) < num_read; p += (sizeof(*ev) + ev->len)){
+			ev = (struct inotify_event*)p;
 
-	for(char* p = buff; (p - buff) < num_read; p += (sizeof(*ev) + ev->len)){
-		ev = (struct inotify_event*)p;
+			if(ev->wd == inotify.module.wd){
+				if(!updated_filter){
+					updated_filter = true;
+					util_module_filter_update();
+				}
 
-		if(ev->wd == inotify.module.wd){
-			if(!updated_filter){
-				updated_filter = true;
-				util_module_filter_update();
-			}
+				Module* m = util_module_get(ev->name, MOD_GET_SONAME);
+				if(m){
+					m->needs_reload = true;
+				} else {
+					util_module_add(ev->name);
+				}
+				reload = true;
+			} else if(ev->wd == inotify.data.wd){
+				if(!memmem(ev->name, ev->len, ".data", 6)) continue;
+				fprintf(stderr, "%s was modified. %x\n", ev->name, ev->mask);
 
-			Module* m = util_module_get(ev->name, MOD_GET_SONAME);
-			if(m){
-				m->needs_reload = true;
-			} else {
-				util_module_add(ev->name);
-			}
-			reload = true;
-		} else if(ev->wd == inotify.data.wd){
-			if(!memmem(ev->name, ev->len, ".data", 6)) continue;
-			fprintf(stderr, "%s was modified.\n", ev->name);
+				Module* m = util_module_get(strndupa(ev->name, strlen(ev->name) - 5), MOD_GET_CTXNAME);
+				if(m){
+					m->data_modified = true;
+				}
+			} else if(ev->wd == inotify.ipc.wd){
+				struct sockaddr_un addr;
 
-			Module* m = util_module_get(strndupa(ev->name, strlen(ev->name) - 5), MOD_GET_CTXNAME);
-			if(m){
-				m->data_modified = true;
-			}
-		} else if(ev->wd == inotify.ipc.wd){
-			struct sockaddr_un addr;
+				assert(strlen(ev->name) + strlen(inotify.ipc.path) + 1 < sizeof(addr.sun_path));
 
-			assert(strlen(ev->name) + strlen(inotify.ipc.path) + 1 < sizeof(addr.sun_path));
+				strcpy(addr.sun_path, inotify.ipc.path);
+				strcat(addr.sun_path, ev->name);
 
-			strcpy(addr.sun_path, inotify.ipc.path);
-			strcat(addr.sun_path, ev->name);
-
-			if(ev->mask & IN_DELETE){
-				util_ipc_del(addr.sun_path);
-			} else {
-				util_ipc_add(addr.sun_path);
+				if(ev->mask & IN_DELETE){
+					util_ipc_del(addr.sun_path);
+				} else {
+					util_ipc_add(addr.sun_path);
+				}
 			}
 		}
 	}
