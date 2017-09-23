@@ -97,7 +97,7 @@ typedef struct {
 
 // Static Variables {{{
 
-static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", NULL };
+static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", "is", NULL };
 static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", "GitHub", NULL };
 static const char* skip_words[]    = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
 
@@ -353,7 +353,7 @@ static int markov_topic_cmp(const void* _a, const void* _b){
 
 // }}}
 
-// Generation {{{
+// Generation {{
 
 static size_t markov_gen(char* buffer, size_t buffer_len){
 	if(!buffer_len) return 0;
@@ -533,6 +533,14 @@ static bool markov_load(){
 	word_ht.memory = ht_alloc(word_ht.capacity);
 	GZREAD(f, word_ht.memory, word_ht.capacity);
 
+#if INSO_HT_VERSION == 2
+	chain_keys_ht.used     /= chain_keys_ht.elem_size;
+	chain_keys_ht.capacity /= chain_keys_ht.elem_size;
+
+	word_ht.used     /= word_ht.elem_size;
+	word_ht.capacity /= word_ht.elem_size;
+#endif
+
 #undef GZREAD
 
 	gzclose(f);
@@ -564,17 +572,33 @@ static bool markov_save(FILE* file){
 	GZWRITE(f, &word_size, sizeof(word_size));
 	GZWRITE(f, &val_size , sizeof(val_size));
 
+#if INSO_HT_VERSION == 2
+	{
+		uint32_t cap  = chain_keys_ht.capacity * chain_keys_ht.elem_size;
+		uint32_t used = chain_keys_ht.used     * chain_keys_ht.elem_size;
+		GZWRITE(f, &cap , 4);
+		GZWRITE(f, &used, 4);
+	}
+
+	{
+		uint32_t cap  = word_ht.capacity * word_ht.elem_size;
+		uint32_t used = word_ht.used     * word_ht.elem_size;
+		GZWRITE(f, &cap , 4);
+		GZWRITE(f, &used, 4);
+	}
+#else
 	GZWRITE(f, &chain_keys_ht.capacity, 4);
 	GZWRITE(f, &chain_keys_ht.used    , 4);
 
 	GZWRITE(f, &word_ht.capacity, 4);
 	GZWRITE(f, &word_ht.used    , 4);
+#endif
 
 	GZWRITE(f, word_mem + 1, word_size);
 	GZWRITE(f, chain_vals, sizeof(MarkovLinkVal) * val_size);
 
-	GZWRITE(f, chain_keys_ht.memory, chain_keys_ht.capacity);
-	GZWRITE(f, word_ht.memory, word_ht.capacity);
+	GZWRITE(f, chain_keys_ht.memory, chain_keys_ht.capacity * chain_keys_ht.elem_size);
+	GZWRITE(f, word_ht.memory, word_ht.capacity * word_ht.elem_size);
 
 #undef GZWRITE
 
