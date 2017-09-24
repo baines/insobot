@@ -50,6 +50,8 @@ static const IRCCoreCtx* ctx;
 typedef struct Chan {
 	char* name;
 	time_t last_mod;
+	time_t ratelimit_time;
+	int    ratelimit_count;
 } QChan;
 
 typedef struct Quote {
@@ -155,7 +157,7 @@ static QChan* quotes_get_chan(const char* default_chan, const char** arg, bool* 
 #endif
 
 	// if the arg starts with a #, parse the channel out of it
-	if(**arg == '#'){
+	if(arg && **arg == '#'){
 		const char* end = strchrnul(*arg, ' ');
 
 		char* new_chan = strndupa(*arg, end - *arg);
@@ -370,10 +372,28 @@ static void quotes_notify(const char* chan, const char* name, Quote* q){
 	}
 }
 
+static bool quotes_ratelimit(const char* chan){
+	QChan* qc = quotes_get_chan(chan, NULL, NULL);
+	time_t now = time(0);
+
+	if(now - qc->ratelimit_time < 30){
+		if(++qc->ratelimit_count > 3){
+			ctx->send_msg(chan, "To see more quotes, visit " QUOTES_URL);
+			return true;
+		}
+	} else {
+		qc->ratelimit_count = 1;
+	}
+
+	qc->ratelimit_time = now;
+	return false;
+}
+
 static void quotes_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
-	bool is_wlist = inso_is_wlist(ctx, name);
-	bool has_cmd_perms = strcasecmp(chan+1, name) == 0 || is_wlist;
+	bool is_admin = inso_is_admin(ctx, name);
+	bool is_wlist = is_admin || inso_is_wlist(ctx, name);
+	bool has_cmd_perms = is_wlist || strcasecmp(chan+1, name) == 0;
 
 	bool empty_arg = !*arg;
 	if(!empty_arg) ++arg;
@@ -390,7 +410,11 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 				char* end;
 				int id = strtol(arg, &end, 0);
 				if(end == arg || id < 0){
-					ctx->send_msg(chan, "%s: Quotes start at id 0.", name);
+					ctx->send_msg(chan, "%s: Quotes start at id 0. Use " CONTROL_CHAR "qs to search.", name);
+					break;
+				}
+
+				if(!is_admin && quotes_ratelimit(chan)){
 					break;
 				}
 
@@ -407,6 +431,10 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 		case GET_RANDOM: {
 			if(!sb_count(*quotes)){
 				ctx->send_msg(chan, "%s: No quotes found.", name);
+				break;
+			}
+
+			if(!is_admin && quotes_ratelimit(chan)){
 				break;
 			}
 
@@ -565,6 +593,10 @@ static void quotes_cmd(const char* chan, const char* name, const char* arg, int 
 
 			if(sb_count(*quotes) == 0){
 				ctx->send_msg(chan, "%s: There aren't any quotes to search.", name);
+				break;
+			}
+
+			if(!is_admin && quotes_ratelimit(chan)){
 				break;
 			}
 
