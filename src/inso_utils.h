@@ -40,6 +40,8 @@
 
 #define isizeof(x) ((int)(sizeof(x)))
 
+#define array_each(p, arr) for(typeof(*arr)* p = arr; p < arr + ARRAY_SIZE(arr); ++p)
+
 void   inso_curl_reset   (void* curl, const char* url, char** data);
 void*  inso_curl_init    (const char* url, char** data);
 long   inso_curl_perform (void* curl, char** data);

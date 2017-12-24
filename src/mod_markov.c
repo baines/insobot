@@ -285,8 +285,15 @@ static void markov_add(word_idx_t indices[static 3]){
 
 		for(uint32_t i = key->val_idx; i != UINT32_MAX; i = chain_vals[i].next){
 			if(chain_vals[i].word_idx == indices[2]){
-				// TODO: adjust all counts for this key >> 1?
-				if(chain_vals[i].count < 255) ++chain_vals[i].count;
+
+				if(chain_vals[i].count == 255){
+					// adjust all counts for this key >> 1
+					for(uint32_t j = key->val_idx; j != UINT32_MAX; j = chain_vals[j].next){
+						chain_vals[j].count = INSO_MAX(chain_vals[j].count >> 1, 1);
+					}
+				}
+
+				++chain_vals[i].count;
 				found = true;
 				break;
 			}

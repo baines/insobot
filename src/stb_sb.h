@@ -16,6 +16,8 @@
 #define sb_each   stb_sb_each
 #endif
 
+#define sb(type) type*
+
 #define stb_sb_free(a)         ((a) ? free(stb__sbraw(a)),(a)=0,0 : 0)
 #define stb_sb_push(a,v)       (stb__sbmaybegrow(a,1), (a)[stb__sbn(a)++] = (v))
 #define stb_sb_count(a)        ((a) ? stb__sbn(a) : 0)
