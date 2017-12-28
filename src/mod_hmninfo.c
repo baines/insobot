@@ -54,6 +54,7 @@ struct anno_meta {
 };
 
 static struct ep_guide {
+	const char*  channels;
 	const char*  project_id;
 	const char*  subproject_id;
 	const char*  ep_prefix;
@@ -63,7 +64,8 @@ static struct ep_guide {
 	sb(char)             an_text;
 	sb(struct anno_meta) an_meta;
 } ep_guides[] = {
-	{ "hero", "code", "episode/code/day", 4 },
+	{ "handmade_hero hero", "hero" , "code" , "episode/code/day", 4 },
+	{ "miotatsu"          , "riscy", "riscy", "episode/riscy/"  , 0 },
 };
 
 static void hmninfo_update_projects(void){
@@ -159,9 +161,7 @@ static void hmninfo_update_guides(void){
 	inso_curl_reset(curl, NULL, &data);
 	char urlbuf[256];
 
-	for(size_t i = 0; i < ARRAY_SIZE(ep_guides); ++i){
-		struct ep_guide* g = ep_guides + i;
-
+	array_each(g, ep_guides){
 		sb_free(data);
 		snprintf(urlbuf, sizeof(urlbuf), "https://%s.handmade.network/%s.index", g->project_id, g->subproject_id);
 		curl_easy_setopt(curl, CURLOPT_URL, urlbuf);
@@ -253,15 +253,13 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		assert(m);
 
 #if 0
-		{
-			int sz = strcspn(p, "\n");
-			printf("[https://%s.handmade.network/%s%s#%d] [%.*s]\n",
-			       guide->project_id,
-			       guide->ep_prefix,
-			       guide->ep_names + m->ep_off,
-			       m->time,
-			       sz, p);
-		}
+		int sz = strcspn(p, "\n");
+		printf("[https://%s.handmade.network/%s%s#%d] [%.*s]\n",
+		       guide->project_id,
+		       guide->ep_prefix,
+		       guide->ep_names + m->ep_off,
+		       m->time,
+		       sz, p);
 #endif
 		nmatches++;
 		last_match = m;
@@ -327,13 +325,18 @@ static bool hmninfo_init(const IRCCoreCtx* _ctx){
 }
 
 static void hmninfo_quit(void){
-
 	sb_each(p, projects){
 		free(p->name);
 		free(p->info);
 		free(p->slug);
 	}
 	sb_free(projects);
+
+	array_each(g, ep_guides){
+		sb_free(g->ep_names);
+		sb_free(g->an_text);
+		sb_free(g->an_meta);
+	}
 
 	regfree(&hmn_proj_regex);
 	curl_easy_cleanup(curl);
@@ -355,10 +358,31 @@ static void hmninfo_msg(const char* chan, const char* name, const char* msg){
 	}
 }
 
+static bool is_guide_chan(struct ep_guide* g, const char* chan){
+	size_t chan_len = strlen(chan);
+	const char* list = g->channels;
+
+	for(;;){
+		size_t len = strcspn(list, " ");
+
+		if(len == chan_len && strncmp(list, chan, len) == 0){
+			return true;
+		}
+
+		if(!list[len]){
+			break;
+		}
+
+		list += len + 1;
+	}
+
+	return false;
+}
+
 static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	if(cmd == HMN_UPDATE){
-		for(HMNProject* p = projects; p < sb_end(projects); ++p){
+		sb_each(p, projects){
 			free(p->name);
 			free(p->info);
 			free(p->slug);
@@ -373,7 +397,7 @@ static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int
 	} else if(cmd == HMN_ANNO_SEARCH){
 
 		const char* disp = inso_dispname(ctx, name);
-		const char* project = chan + 1;
+		const char* project = NULL;
 		char project_buf[128];
 		bool fallback = true;
 		int off = 0;
@@ -381,7 +405,7 @@ static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int
 		if(sscanf(arg, " ~%127s %n", project_buf, &off) == 1 && off){
 			fallback = false;
 			project = project_buf;
-			arg += off;
+			arg += (off-1);
 			hmn_msg_suppress = true;
 		}
 
@@ -393,7 +417,7 @@ static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int
 		struct ep_guide* guide = NULL;
 
 		array_each(g, ep_guides){
-			if(strcmp(project, g->project_id) == 0){
+			if((project && strcmp(project, g->project_id) == 0) || (!project && is_guide_chan(g, chan + 1))){
 				guide = g;
 				break;
 			}
