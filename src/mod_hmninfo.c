@@ -64,8 +64,13 @@ static struct ep_guide {
 	sb(char)             an_text;
 	sb(struct anno_meta) an_meta;
 } ep_guides[] = {
-	{ "handmade_hero hero", "hero" , "code" , "episode/code/day", 4 },
-	{ "miotatsu"          , "riscy", "riscy", "episode/riscy/"  , 0 },
+	{ "handmade_hero hero", "hero" , "code"      , "episode/code/day"      , 4 },
+	{ "handmade_hero hero", "hero" , "misc"      , "episode/misc/"         , 0 },
+	{ "handmade_hero hero", "hero" , "intro-to-c", "episode/intro-to-c/day", 10 },
+	{ "handmade_hero hero", "hero" , "chat"      , "episode/chat/"         , 0 },
+	{ "handmade_hero hero", "hero" , "ray"       , "episode/ray/"          , 0 },
+	{ "miotatsu"          , "riscy", "riscy"     , "episode/riscy/"        , 0 },
+	{ "miotatsu"          , "riscy", "book"      , "episode/book/"         , 0 },
 };
 
 static void hmninfo_update_projects(void){
@@ -276,12 +281,16 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 	char* regex_urlenc = curl_easy_escape(curl, regex, 0);
 
 	if(nmatches == 0){
-		ctx->send_msg(chan, "@%s: No dice, but maybe I missed something?: https://%s.handmade.network/episodes#%s", name, guide->project_id, regex_urlenc);
+		ctx->send_msg(chan,
+		              "@%s: No dice, but maybe I missed something?: https://%s.handmade.network/episode/%s#%s",
+		              name, guide->project_id, guide->subproject_id, regex_urlenc);
 	} else if(nmatches == 1){
 		assert(last_match);
 		const char* str = guide->an_text + last_match->str_off;
 		int sz = strchrnul(str, '\n') - str;
-		ctx->send_msg(chan, "@%s: 1 hit: https://%s.handmade.network/%s%s#%d [%.*s]", name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off, last_match->time, sz, str);
+		ctx->send_msg(chan,
+		              "@%s: 1 hit: https://%s.handmade.network/%s%s#%d [%.*s]",
+		              name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off, last_match->time, sz, str);
 	} else {
 		char ep_buf[32];
 		char* p = ep_buf;
@@ -303,7 +312,10 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 			}
 		}
 
-		ctx->send_msg(chan, "@%s: ~%d hits: https://%s.handmade.network/episodes#%s [eps: %s%s]", name, nmatches, guide->project_id, regex_urlenc, ep_buf, more_str);
+		const char* ep_plural = sb_count(ep_list) == 1 ? "" : "s";
+		ctx->send_msg(chan,
+		              "@%s: ~%d hits: https://%s.handmade.network/episode/%s#%s [ep%s: %s%s]",
+		              name, nmatches, guide->project_id, guide->subproject_id, regex_urlenc, ep_plural, ep_buf, more_str);
 	}
 
 	curl_free(regex_urlenc);
@@ -416,10 +428,21 @@ static void hmninfo_cmd(const char* chan, const char* name, const char* arg, int
 
 		struct ep_guide* guide = NULL;
 
+		// first try subprojects, for ~code, ~book etc.
 		array_each(g, ep_guides){
-			if((project && strcmp(project, g->project_id) == 0) || (!project && is_guide_chan(g, chan + 1))){
+			if((project && strcmp(project, g->subproject_id) == 0) || (!project && is_guide_chan(g, chan + 1))){
 				guide = g;
 				break;
+			}
+		}
+
+		// otherwise, try main projects like ~hero, and pick the first subproject if found.
+		if(!guide && project){
+			array_each(g, ep_guides){
+				if(strcmp(project, g->project_id) == 0){
+					guide = g;
+					break;
+				}
 			}
 		}
 
