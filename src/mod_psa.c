@@ -8,13 +8,14 @@
 #include <ctype.h>
 #include <regex.h>
 
-static void psa_add  (const char*, const char*, bool);
-static bool psa_init (const IRCCoreCtx*);
-static void psa_cmd  (const char*, const char*, const char*, int);
-static void psa_msg  (const char*, const char*, const char*);
-static void psa_tick (time_t);
-static bool psa_save (FILE*);
-static void psa_quit (void);
+static void psa_add    (const char*, const char*, bool);
+static bool psa_init   (const IRCCoreCtx*);
+static void psa_cmd    (const char*, const char*, const char*, int);
+static void psa_msg    (const char*, const char*, const char*);
+static void psa_tick   (time_t);
+static bool psa_save   (FILE*);
+static void psa_quit   (void);
+static void psa_reload (void);
 
 enum { PSA_ADD, PSA_DEL, PSA_LIST };
 
@@ -27,6 +28,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_tick  = &psa_tick,
 	.on_save  = &psa_save,
 	.on_quit  = &psa_quit,
+	.on_modified = &psa_reload,
 	.commands = DEFINE_CMDS (
 		[PSA_ADD]  = CMD("psa+"),
 		[PSA_DEL]  = CMD("psa-"),
@@ -58,10 +60,10 @@ typedef struct {
 static PSAData* psa_data;
 static time_t psa_last_update;
 
-static bool psa_init(const IRCCoreCtx* _ctx){
-	ctx = _ctx;
-
+static void psa_reload(void){
 	FILE* file = fopen(ctx->get_datafile(), "r");
+	assert(file);
+
 	char cmdline[512];
 	char chan[64];
 
@@ -71,8 +73,32 @@ static bool psa_init(const IRCCoreCtx* _ctx){
 	}
 
 	fclose(file);
+}
 
+static bool psa_init(const IRCCoreCtx* _ctx){
+	ctx = _ctx;
+	psa_reload();
 	return true;
+}
+
+static bool psa_delete(const char* chan, const char* id){
+	sb_each(p, psa_data){
+		if(strcmp(p->channel, chan) != 0 || strcmp(p->id, id) != 0){
+			continue;
+		}
+
+		free(p->channel);
+		free(p->message);
+		free(p->id);
+		free(p->trigger);
+		regfree(&p->trig_rx);
+		free(p->cmdline);
+		sb_erase(psa_data, p - psa_data);
+
+		return true;
+	}
+
+	return false;
 }
 
 static void psa_add(const char* chan, const char* arg, bool silent){
@@ -199,12 +225,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 			*c = tolower(*c);
 		}
 
-		for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
-			if(strcmp(p->channel, chan) == 0 && strcmp(p->id, psa.id) == 0){
-				sb_erase(psa_data, p - psa_data);
-				break;
-			}
-		}
+		psa_delete(chan, psa.id);
 
 		psa.cmdline = strdup(psa.cmdline);
 		psa.channel = strdup(chan);
@@ -245,23 +266,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 		case PSA_DEL: {
 			if(*arg++){
-				bool found = false;
-
-				for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
-					if(strcmp(p->channel, chan) == 0 && strcmp(p->id, arg) == 0){
-						free(p->channel);
-						free(p->message);
-						free(p->id);
-						free(p->trigger);
-						regfree(&p->trig_rx);
-						free(p->cmdline);
-						sb_erase(psa_data, p - psa_data);
-						found = true;
-						break;
-					}
-				}
-
-				if(found){
+				if(psa_delete(chan, arg)){
 					ctx->send_msg(chan, "%s: Deleted psa '%s'", name, arg);
 					ctx->save_me();
 				} else {
@@ -277,7 +282,7 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 			char* psa_ptr = psa_buf;
 			size_t psa_sz = sizeof(psa_buf);
 
-			for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+			sb_each(p, psa_data){
 				if(strcmp(p->channel, chan) != 0) continue;
 
 				char optbuf[128] = "";
@@ -324,7 +329,7 @@ static intptr_t psa_twitch_cb(intptr_t result, intptr_t arg){
 static void psa_msg(const char* chan, const char* name, const char* msg){
 	time_t now = time(0);
 
-	for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+	sb_each(p, psa_data){
 		if(strcmp(p->channel, chan) != 0) continue;
 
 		if(
@@ -349,7 +354,7 @@ static void psa_tick(time_t now){
 	if(now - psa_last_update < 60) return;
 	psa_last_update = now;
 
-	for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+	sb_each(p, psa_data){
 		if(now - p->last_posted > p->freq_mins * 60 && !p->trigger){
 			bool post = true;
 			if(p->when_live){
@@ -365,14 +370,14 @@ static void psa_tick(time_t now){
 }
 
 static bool psa_save(FILE* file){
-	for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+	sb_each(p, psa_data){
 		fprintf(file, "%s %s\n", p->channel, p->cmdline);
 	}
 	return true;
 }
 
 static void psa_quit(void){
-	for(PSAData* p = psa_data; p < sb_end(psa_data); ++p){
+	sb_each(p, psa_data){
 		free(p->channel);
 		free(p->id);
 		free(p->message);
