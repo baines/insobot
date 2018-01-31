@@ -15,6 +15,7 @@ static void twitch_tick    (time_t);
 static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
+static void twitch_unknown (const char*, const char*, const char**, size_t);
 
 enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
 
@@ -27,6 +28,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_save  = &twitch_save,
 	.on_quit  = &twitch_quit,
 	.on_mod_msg = &twitch_mod_msg,
+	.on_unknown = &twitch_unknown,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY]  = CMD("fnotify"),
 		[UPTIME]         = CMD("uptime" ),
@@ -1177,5 +1179,25 @@ static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 		};
 
 		msg->callback((intptr_t)&info, msg->cb_arg);
+	}
+}
+
+static void twitch_unknown(const char* ev, const char* origin, const char** params, size_t nparams){
+	if(nparams < 2 || strcmp(ev, "USERNOTICE") != 0) return;
+	const char* chan = params[0];
+	const char* name = NULL;
+
+	size_t i = 0;
+	const char *k, *v;
+	while(ctx->get_tag(i++, &k, &v)){
+		if(strcmp(k, "msg-id") == 0 && strcmp(v, "ritual") != 0) return;
+		if(strcmp(k, "msg-param-ritual-name") == 0 && strcmp(v, "new_chatter") != 0) return;
+		if(strcmp(k, "display-name") == 0){
+			name = v;
+		}
+	}
+
+	if(name){
+		ctx->send_msg(chan, "@%s: Welcome! VoHiYo", name);
 	}
 }

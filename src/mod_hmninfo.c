@@ -240,6 +240,8 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		return;
 	}
 
+	time_t start = time(0);
+
 	int nmatches = 0;
 	int prev_ep = -1;
 
@@ -252,6 +254,12 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 	while(regexec(&rx, str, 1, &match, 0) == 0){
 		const char* p = str + match.rm_so;
 		while(p > guide->an_text && p[-1] != '\n') --p;
+
+		time_t now = time(0);
+		if(now - start > 5){
+			ctx->send_msg(chan, "@%s: Sorry i'm either too slow for that regex or broken D:", name);
+			goto out;
+		}
 
 		int32_t off = p - guide->an_text;
 		struct anno_meta* m = bsearch(&off, guide->an_meta, sb_count(guide->an_meta), sizeof(*m), anno_bs);
@@ -269,7 +277,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		nmatches++;
 		last_match = m;
 
-		str += match.rm_eo;
+		str += INSO_MAX(1, match.rm_eo);
 		str += strcspn(str, "\n");
 
 		if(prev_ep != m->ep_off){
@@ -319,6 +327,8 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 	}
 
 	curl_free(regex_urlenc);
+
+out:
 	sb_free(ep_list);
 	regfree(&rx);
 }

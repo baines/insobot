@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 #include <ftw.h>
 #include "module.h"
+#include "module_msgs.h"
 #include "stb_sb.h"
 #include "inso_utils.h"
 #include "inso_tz.h"
@@ -352,6 +353,11 @@ static intptr_t note_callback(intptr_t result, intptr_t arg){
 	return 0;
 }
 
+static intptr_t twitch_callback(intptr_t result, intptr_t arg){
+	memcpy((TwitchInfoMsg*)arg, (TwitchInfoMsg*)result, sizeof(TwitchInfoMsg));
+	return 0;
+}
+
 static void print_time(const char* chan, const char* name){
 	time_t now = time(0);
 
@@ -401,11 +407,26 @@ static void print_time(const char* chan, const char* name){
 	time_t note_time = 0;
 	MOD_MSG(ctx, "note_get_stream_start", "#handmade_hero #hero", &note_callback, &note_time);
 
-	int diff = now - note_time;
+	// see if the stream is live and if so, when it started.
+	TwitchInfoMsg twitch_info = {};
+	MOD_MSG(ctx, "twitch_get_stream_info", "#handmade_hero", &twitch_callback, &twitch_info);
 
-	if(diff < ((stream_duration_mins-15)*60)){ // recent note found
-		diff += (15*60); // add 15 mins since the note marks the end of the prestream.
+	int secs_into_stream;
+	const char* source;
+
+	if(now - note_time < (stream_duration_mins-15)*60){ // recent note found
+
+		// add 15 mins since the note marks the end of the pre-stream.
+		secs_into_stream = (now - note_time) + (15*60);
+		source = "NOTE";
+
+	} else if(twitch_info.start){ // no note, but stream is live.
+
+		secs_into_stream = now - twitch_info.start;
+		source = "uptime";
+
 	} else if(index == -1){ // no note, and no streams
+
 		if(schedule_flags & SCHED_OLD){
 			ctx->send_msg(chan, "No more streams this week.");
 		} else if(schedule_flags & SCHED_OFF){
@@ -413,14 +434,17 @@ static void print_time(const char* chan, const char* name){
 		} else {
 			ctx->send_msg(chan, "The schedule hasn't been updated yet.");
 		}
+
 		return;
-	} else { // no note, but either an upcoming stream or during one
+
+	} else { // no note, but either an upcoming stream or during one (not found by mod_twitch)
 		note_time = 0;
-		diff = now - schedule[index];
+		secs_into_stream = now - schedule[index];
+		source = "schedule";
 	}
 
-	if(diff < 0){ // upcoming stream
-		int until = -diff;
+	if(secs_into_stream < 0){ // upcoming stream
+		int until = -secs_into_stream;
 
 		if(until / (60*60*24) == 1){
 			ctx->send_msg(chan, "No stream today, next one tomorrow.");
@@ -451,24 +475,31 @@ static void print_time(const char* chan, const char* name){
 		}
 	} else { // during stream
 		char* format;
-		int mins_in = diff / 60;
-		int duration = 15;
-		int mins_until_qa = stream_duration_mins - 15;
+		int mins_in = secs_into_stream / 60;
+		int mins_to_go = 15;
 
-		if(mins_in < 15){
-			format = "%d %s into the pre-stream Q&A. %d until start. %s";
-		} else if(mins_in < mins_until_qa){
-			mins_in -= 15;
-			duration = mins_until_qa - 15;
-			format = "%d %s into the main stream. %d until Q&A. %s";
-		} else {
-			mins_in -= mins_until_qa;
-			format = "%d %s into the Q&A, %d until end. %s";
+		int non_pre_duration = stream_duration_mins - 15;
+
+		// account for long pre-streams
+		if(note_time && twitch_info.start){
+			non_pre_duration -= ((note_time - twitch_info.start) / 60 - 15);
 		}
 
-		const char* suffix = note_time ? "(based on NOTE)" : "(based on schedule)";
+		printf("in: %d, to go: %d, msd: %d\n", mins_in, mins_to_go, non_pre_duration);
+
+		if(mins_in < 15){
+			format = "%d %s into the pre-stream Q&A. %d until start. (based on %s)";
+		} else if(mins_in < non_pre_duration){
+			mins_in -= 15;
+			mins_to_go = non_pre_duration - 15;
+			format = "%d %s into the main stream. %d until Q&A. (based on %s)";
+		} else {
+			mins_in -= non_pre_duration;
+			format = "%d %s into the Q&A, %d until end. (based on %s)";
+		}
+
 		const char* time_unit = mins_in == 1 ? "minute" : "minutes";
-		ctx->send_msg(chan, format, mins_in, time_unit, duration - mins_in, suffix);
+		ctx->send_msg(chan, format, mins_in, time_unit, mins_to_go - mins_in, source);
 	}
 }
 

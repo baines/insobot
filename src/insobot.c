@@ -1183,6 +1183,8 @@ IRC_STR_CALLBACK(on_nick) {
 }
 
 IRC_STR_CALLBACK(on_unknown) {
+	util_update_tags(params);
+
 	if(strcmp(event, "PONG") == 0){
 //		printf(":: PONG");
 		return;
