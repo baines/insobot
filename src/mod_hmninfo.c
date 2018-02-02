@@ -240,6 +240,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		return;
 	}
 
+	char* regex_urlenc = curl_easy_escape(curl, regex, 0);
 	time_t start = time(0);
 
 	int nmatches = 0;
@@ -255,25 +256,16 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		const char* p = str + match.rm_so;
 		while(p > guide->an_text && p[-1] != '\n') --p;
 
+		int32_t off = p - guide->an_text;
+		struct anno_meta* m = bsearch(&off, guide->an_meta, sb_count(guide->an_meta), sizeof(*m), anno_bs);
+
 		time_t now = time(0);
-		if(now - start > 5){
-			ctx->send_msg(chan, "@%s: Sorry i'm either too slow for that regex or broken D:", name);
+		if(!m || now - start > 5){
+			ctx->send_msg(chan, "@%s: ?? hits: https://%s.handmade.network/episode/%s#%s",
+			              name, guide->project_id, guide->subproject_id, regex_urlenc);
 			goto out;
 		}
 
-		int32_t off = p - guide->an_text;
-		struct anno_meta* m = bsearch(&off, guide->an_meta, sb_count(guide->an_meta), sizeof(*m), anno_bs);
-		assert(m);
-
-#if 0
-		int sz = strcspn(p, "\n");
-		printf("[https://%s.handmade.network/%s%s#%d] [%.*s]\n",
-		       guide->project_id,
-		       guide->ep_prefix,
-		       guide->ep_names + m->ep_off,
-		       m->time,
-		       sz, p);
-#endif
 		nmatches++;
 		last_match = m;
 
@@ -285,8 +277,6 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 			prev_ep = m->ep_off;
 		}
 	}
-
-	char* regex_urlenc = curl_easy_escape(curl, regex, 0);
 
 	if(nmatches == 0){
 		ctx->send_msg(chan,
@@ -326,9 +316,8 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		              name, nmatches, guide->project_id, guide->subproject_id, regex_urlenc, ep_plural, ep_buf, more_str);
 	}
 
-	curl_free(regex_urlenc);
-
 out:
+	curl_free(regex_urlenc);
 	sb_free(ep_list);
 	regfree(&rx);
 }

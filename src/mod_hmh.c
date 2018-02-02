@@ -9,6 +9,7 @@
 #include "stb_sb.h"
 #include "inso_utils.h"
 #include "inso_tz.h"
+#include "inso_xml.h"
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
@@ -17,7 +18,7 @@ static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
 static void hmh_ipc     (int who, const uint8_t* ptr, size_t sz);
 static void hmh_tick    (time_t);
 
-enum { CMD_SCHEDULE, CMD_TIME, CMD_OWLBOT, CMD_OWL_Y, CMD_OWL_N, CMD_QA };
+enum { CMD_SCHEDULE, CMD_TIME, CMD_OWLBOT, CMD_OWL_Y, CMD_OWL_N, CMD_QA, CMD_LATEST };
 
 const IRCModuleCtx irc_mod_ctx = {
 	.name       = "hmh",
@@ -34,7 +35,8 @@ const IRCModuleCtx irc_mod_ctx = {
 		[CMD_OWLBOT]   = CMD1("owlbot"),
 		[CMD_OWL_Y]    = "!owly !owlyes !owlyea",
 		[CMD_OWL_N]    = "!owln !owlno  !owlnay",
-		[CMD_QA]       = "!qa"
+		[CMD_QA]       = "!qa",
+		[CMD_LATEST]   = "!latest"
 	),
 	.cmd_help = DEFINE_CMDS (
 		[CMD_SCHEDULE] = "[TZ] | Shows the Handmade Hero schedule (optionally in the tzdb timezone [TZ], e.g. Europe/London",
@@ -42,7 +44,8 @@ const IRCModuleCtx irc_mod_ctx = {
 		[CMD_OWLBOT]   = "| Start a vote to make Owlbot light up, notifying casey of something important.",
 		[CMD_OWL_Y]    = "| Vote yes on an Owlbot vote.",
 		[CMD_OWL_N]    = "| Vote no on an Owlbot vote.",
-		[CMD_QA]       = "| Let the bot know that the Q&A has started."
+		[CMD_QA]       = "| Let the bot know that the Q&A has started.",
+		[CMD_LATEST]   = "| Show info about the most recent episode of hmh."
 	)
 };
 
@@ -67,6 +70,9 @@ static int    owlbot_nay;
 // TODO: factor this into main insobot
 enum { SERV_UNKNOWN, SERV_TWITCH, SERV_HMN };
 static int irc_server;
+
+static time_t last_yt_fetch;
+static char*  latest_ep_str;
 
 #if 0
 static bool is_upcoming_stream(void){
@@ -522,6 +528,50 @@ static void hmh_owlbot_start(void){
 	HMH_MSG("(/o.o): Owl vote started. Use !owly or !owln to vote whether or not to light The Owl and notify Casey of something important.");
 }
 
+static void hmh_fetch_latest(void){
+	sb(char) data = NULL;
+	CURL* curl = inso_curl_init("https://www.youtube.com/feeds/videos.xml?channel_id=UCaTznQhurW5AaiYPbhEA-KA", &data);
+
+	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, last_yt_fetch);
+
+	long status = inso_curl_perform(curl, &data);
+
+	if(status == 200){
+		uintptr_t* tokens = calloc(0x1000, sizeof(uintptr_t));
+		ixt_tokenize(data, tokens, 0x1000, IXTF_SKIP_BLANK | IXTF_TRIM);
+
+		static const char pre[] = "handmade hero day ";
+		bool found_entry = false;
+
+		for(uintptr_t* t = tokens; *t; ++t){
+
+			if(!found_entry && ixt_match(t, IXT_TAG_OPEN, "entry", NULL)){
+				found_entry = true;
+			} else if(found_entry && ixt_match(t, IXT_TAG_OPEN, "title", IXT_CONTENT, NULL)){
+				const char* title = (char*)t[3];
+
+				if(strncasecmp(title, pre, sizeof(pre)-1) == 0){
+					title += sizeof(pre) - 1;
+				}
+
+				free(latest_ep_str);
+				latest_ep_str = strdup(title);
+				last_yt_fetch = time(0);
+
+				break;
+			}
+		}
+
+		free(tokens);
+	} else if(status == 304){
+		last_yt_fetch = time(0);
+	}
+
+	curl_easy_cleanup(curl);
+	sb_free(data);
+}
+
 static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	int* owl_vote = &owlbot_nay;
@@ -566,6 +616,18 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		case CMD_QA: {
 			if(irc_server != SERV_TWITCH && inso_is_wlist(ctx, name)){
 				ctx->send_ipc(0, &cmd, sizeof(cmd));
+			}
+		} break;
+
+		case CMD_LATEST: {
+			if(time(0) - last_yt_fetch > (30*60*60)){
+				hmh_fetch_latest();
+			}
+
+			if(latest_ep_str){
+				ctx->send_msg(chan, "\035Previously on Handmade Hero...\035 [#%s]", latest_ep_str);
+			} else {
+				ctx->send_msg(chan, "@%s: Error fetching latest ep info :(", name);
 			}
 		} break;
 	}
