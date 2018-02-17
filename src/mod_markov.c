@@ -113,7 +113,7 @@ static struct random_data rng_state;
 static regex_t url_regex;
 
 static size_t max_chain_len = 16;
-static size_t msg_chance = 300;
+static size_t msg_chance = 150;
 
 static word_idx_t start_sym_idx;
 static word_idx_t end_sym_idx;
@@ -122,6 +122,9 @@ static uint32_t recent_hashes[128];
 static size_t   recent_hash_idx;
 
 static char** markov_nicks;
+
+static int    dict_fd;
+static size_t dict_fd_size;
 
 #if 0
 static MarkovTopic    markov_topics[64];
@@ -358,6 +361,41 @@ static int markov_topic_cmp(const void* _a, const void* _b){
 	return a->updated - b->updated;
 }
 
+static long word_bs(const char* word){
+	char buf[4096];
+	size_t lo = 0, hi = dict_fd_size;
+
+	if(dict_fd <= 0 || dict_fd_size == 0){
+		return 0;
+	}
+
+	while(lo < hi){
+		size_t mid = (lo+hi)>>1;
+
+		memset(buf, 0, sizeof(buf));
+		pread(dict_fd, buf, sizeof(buf), mid);
+
+		char *p, *prev_p = mid == 0 ? buf : rawmemchr(buf, '\n') + 1, *end = buf + sizeof(buf);
+
+		while((p = memchr(prev_p, '\n', end - prev_p))){
+			*p = '\0';
+
+			int cmp = strcmp(word, prev_p);
+			if(cmp < 0){
+				hi = mid;
+				break;
+			} else if(cmp == 0){
+				return mid + (prev_p - buf);
+			}
+
+			prev_p = p + 1;
+			lo = mid + sizeof(buf);
+		}
+	}
+
+	return -1;
+}
+
 // }}}
 
 // Generation {{
@@ -379,28 +417,41 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 
 		MarkovLinkVal* val = chain_vals + key->val_idx;
 		do {
-			if(val->word_idx == end_sym_idx) end_count = val->count;
+			if(val->word_idx == end_sym_idx){
+				end_count = val->count;
+			}
 			total += val->count;
 		} while(val->next != UINT32_MAX && (val = chain_vals + val->next));
 
 		assert(total);
-		ssize_t count = markov_rand(total);
 
 		should_end =
-			(links >= chain_len && end_count > (total / 2)) ||
-			(links >= chain_len * 1.5f && end_count) ||
-			(links >= chain_len * 2.0f);
+			(links >= (chain_len/2) && end_count > (total / 2)) ||
+			(links >= chain_len && end_count) ||
+			(links >= chain_len * 1.5f);
 
-		val = chain_vals + key->val_idx;
-		while((count -= val->count) >= 0){
-			val = chain_vals + val->next;
+		const char* word;
+
+		// try a few times to get a good word
+		for(size_t picks = 5; picks --> 0 ;){
+			ssize_t count = markov_rand(total);
+
+			val = chain_vals + key->val_idx;
+			while((count -= val->count) >= 0){
+				val = chain_vals + val->next;
+			}
+
+			word = word_mem + val->word_idx;
+
+			// seems good, exit loop
+			if(val->word_idx != end_sym_idx	&& (word[0] == ',' || word_bs(word) != -1)){
+				break;
+			}
 		}
 
 		if(val->word_idx == end_sym_idx){
 			break;
 		}
-
-		const char* word = word_mem + val->word_idx;
 
 		for(const char** c = bad_end_words; *c; ++c){
 			if(strcmp(*c, word) == 0){
@@ -664,6 +715,20 @@ static bool markov_init(const IRCCoreCtx* _ctx){
 	start_sym_idx = find_or_add_word("^", 1, NULL);
 	end_sym_idx   = find_or_add_word("$", 1, NULL);
 
+	if((dict_fd = open("/usr/share/dict/words", O_RDONLY)) == -1){
+		perror("mod_markov: open dict");
+	} else {
+		posix_fadvise(dict_fd, 0, 0, POSIX_FADV_RANDOM);
+
+		struct stat st;
+		if(fstat(dict_fd, &st) == -1){
+			perror("mod_markov: fstat");
+			return false;
+		} else {
+			dict_fd_size = st.st_size;
+		}
+	}
+
 	return true;
 }
 
@@ -803,6 +868,11 @@ static void markov_msg(const char* chan, const char* name, const char* _msg){
 				found_name = true;
 				break;
 			}
+		}
+
+		// less strong find
+		if(!found_name && strcasestr(msg, bot_name) && markov_rand(3) == 0){
+			found_name = true;
 		}
 
 		if(found_name && markov_rand(3)){
