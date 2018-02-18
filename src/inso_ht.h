@@ -56,7 +56,6 @@ static inline size_t inso_htpriv_align (size_t);
 
 void inso_ht_init(inso_ht* ht, size_t nmemb, size_t size, inso_ht_hash_fn hash_fn){
 	assert(ht);
-	memset(ht, 0, sizeof(*ht));
 
 	nmemb = inso_htpriv_align(nmemb);
 
@@ -101,7 +100,7 @@ void* inso_ht_put(inso_ht* ht, const void* elem){
 	assert(ht->memory);
 	inso_ht_tick(ht);
 	
-	if(ht->used && (float)ht->used / (float)ht->capacity > 0.75f){
+	if(ht->used && (float)ht->used > (float)ht->capacity * 0.75f){
 
 		while(inso_ht_tick(ht));
 
@@ -151,7 +150,7 @@ bool inso_ht_del(inso_ht* ht, size_t hash, inso_ht_cmp_fn cmp, void* param){
 	assert(ht->memory);
 	inso_ht_tick(ht);
 
-	size_t index;
+	intptr_t index;
 	if(inso_htpriv_get_i(ht, &index, hash, cmp, param)){
 		inso_htpriv_del_i(ht, index);
 		return true;
@@ -285,8 +284,8 @@ static inline size_t inso_htpriv_align(size_t i){
 
 static inline bool inso_htpriv_empty(inso_ht* ht, const char* ptr){
 
-	const size_t len4 = ht->elem_size >> 2;
-	for(const uint32_t *p = (const uint32_t*)ptr, *q = (const uint32_t*)(ptr + ht->elem_size); p < q; ++p){
+	const size_t len4 = ht->elem_size & ~3ul;
+	for(const uint32_t *p = (const uint32_t*)ptr, *q = (const uint32_t*)(ptr + len4); p < q; ++p){
 		if(*p) return false;
 	}
 
