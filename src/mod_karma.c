@@ -158,6 +158,15 @@ static bool karma_update(const char* chan, KEntry* actor, const char* target, bo
 			case 444: link = "https://youtu.be/8URkBbDsF9o"; break;
 			case 512: link = "https://youtu.be/dulxbKkj9Wg"; break;
 			case 666: link = "https://youtu.be/WxnN05vOuSM"; break;
+
+            case 747: {
+				switch(rand()%3){
+                    case 0: link = "https://youtu.be/_BLhtDETzJs"; break;
+                    case 1: link = "https://youtu.be/M1I3I7cuKWg"; break;
+                    case 2: link = "https://youtu.be/2cq3JgW7HFg"; break;
+                }
+            } break;
+
 			case 777: link = "https://youtu.be/gzfgUCOzUoY"; break;
 			case 888: link = "https://youtu.be/8NUesc8pXj4"; break;
 			case 925: link = "https://youtu.be/UbxUSsFXYo4"; break;
