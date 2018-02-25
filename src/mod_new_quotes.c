@@ -285,7 +285,7 @@ static Quote* quote_www_modify(QChan* chan, uint32_t id, const char* new_txt, ss
 	char* s = send_buf;
 
 	if(new_time >= 0){
-		s += snprintf(send_buf, sizeof(send_buf), "%u", id);
+		s += snprintf(send_buf, sizeof(send_buf), "%u", new_time);
 	}
 
 	*s++ = ':';
