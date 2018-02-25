@@ -620,7 +620,7 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		} break;
 
 		case CMD_LATEST: {
-			if(time(0) - last_yt_fetch > (30*60*60)){
+			if(time(0) - last_yt_fetch > (30*60)){
 				hmh_fetch_latest();
 			}
 
