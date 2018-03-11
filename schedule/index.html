@@ -141,12 +141,22 @@ var twitch_info = {};
 var gist_info = [];
 var streams = [];
 
-function name_color(name){
+function name_color(name, alpha){
 	var n = 0;
 	for(var i = 0; i < name.length; ++i){
 		n += name.charCodeAt(i);
 	}
-	return palette[n % palette.length];
+	var c = palette[n % palette.length];
+
+	if(typeof(alpha) != "undefined"){
+		return "rgba("
+			+ parseInt(c.substr(1,2), 16) + ", "
+			+ parseInt(c.substr(3,2), 16) + ", "
+			+ parseInt(c.substr(5,2), 16) + ", "
+			+ alpha + ")";
+	} else {
+		return c;
+	}
 }
 
 function remap_day(i){
@@ -270,6 +280,10 @@ function show_info(e){
 		});
 
 		info.appendChild(sched);
+
+		var source = document.createElement("div");
+		source.textContent = "Source: " + u.source;
+		info.appendChild(source);
 	};
 
 	var fn = function(){
@@ -291,7 +305,8 @@ function get_twitch_info(e){
 			twitch_info[e.user] = {
 				state: "loaded",
 				name: data.display_name,
-				bio: data.bio
+				bio: data.bio,
+				source: e.source
 			};
 
 			if(data.logo){
@@ -526,6 +541,7 @@ function get_duration(_start, _end){
 function calc_schedule(table, e){
 	var date_start = new Date(e.start);
 	var date_end   = new Date(e.end);
+	var date_now   = new Date();
 	var duration = get_duration(date_start, date_end);
 
 	var mask = get_fixed_mask(date_start, e.repeat);
@@ -559,7 +575,14 @@ function calc_schedule(table, e){
 				cell.setAttribute("style", "display: none;");
 				cell.setAttribute("user", e.user);
 			} else {
-				cell.setAttribute("style", "background-color: " + name_color(e.user) + ";");
+				var c1 = name_color(e.user, 1.0);
+				var c2 = name_color(e.user, 0.8);
+
+				if(e.repeat == 0 && date_now.getTime() > date_start.getTime()){
+					cell.setAttribute("style", "background: repeating-linear-gradient(-45deg, "+c1+", "+c1+" 10px, "+c2+" 10px, "+c2+" 20px);");
+				} else {
+					cell.setAttribute("style", "background-color: " + c1 + ";");
+				}
 				cell.setAttribute("user", e.user);
 				cell.textContent = e.user;
 				cell.addEventListener("mouseover", show_info);
@@ -634,7 +657,7 @@ function calc_schedule(table, e){
 
 		window.setInterval(update_next, 1000);
 	});
-	x.open("GET", "https://gist.githubusercontent.com/insofaras/c61f6b5a4dafd987cde5234eed5bfbba/raw?" + (new Date()).getTime());
+	x.open("GET", "https://dev.abaines.me.uk/schedule.json");
 	x.send();
 	document.getElementById("refresh").textContent = "Last refresh: " + new Date().toLocaleString();
 })();
