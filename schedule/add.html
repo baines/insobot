@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>insobot stream schedule - add schedule command generator</title>
+<style type="text/css">
+html {
+	font-family: 'Liberation Sans', Arial, Helvetica, sans-serif;
+	font-size: 12px;
+}
+body {
+	max-width: 500px;
+	margin: 0 auto;
+	background-color: #113322;
+	padding: 20px;
+}
+form, div {
+	width: 400px;
+	margin: 0 auto;
+	outline: 2px solid #ccc;
+	border-collapse: collapse;
+	background-color: #17171A;
+	padding: 5px;
+}
+div {
+	width: 500px;
+	margin-top: 20px;
+}
+h1 {
+	display: block;
+	font-size: 200%;
+	margin: 0px auto 20px auto;
+	text-align: center;
+	font-variant: small-caps;
+	color: #fff;
+}
+label, fieldset {
+	color: #fff;
+	font-weight: bold;
+	min-height: 32px;
+	padding: 5px 3px;
+}
+div {
+	color: #fff;
+}
+table {
+	width: 100%;
+	vertical-align: middle;
+}
+tr > td {
+	text-align: right;
+}
+tr > td:first-child {
+	text-align: left;
+}
+input {
+	padding: 2px;
+	border: 5px;
+	height: 20px;
+}
+small {
+	display: block;
+	padding-bottom: 3px;
+}
+input:invalid {
+	border: 5px #dd8888;
+}
+#output {
+	width: calc(100% - 4px);
+}
+#btn {
+	background-color: #eee;
+	display: block;
+	margin: 10px auto;
+	width: 50%;
+}
+</style>
+</head>
+<body>
+<h1>add a schedule</h1>
+<form>
+	<table>
+		 <tr>
+			 <td><label for="chan">Twitch channel name</label></td>
+			 <td><input id="chan" type="text" required></td></tr>
+		</tr>
+		 <tr>
+			 <td><label for="date">Start date</label></td>
+			 <td><input id="date" type="date" required></td></tr>
+		</tr>
+		 <tr>
+			 <td><label for="time">Start time</label></td>
+			 <td><input id="time" type="time" required></td></tr>
+		</tr>
+		 <tr>
+			 <td><label for="dur">Stream duration (minutes)</label></td>
+			 <td><input id="dur" type="number" required></td></tr>
+		</tr>
+		 <tr>
+			 <td><label for="title">Stream title</label></td>
+			 <td><input id="title" type="text"></td></tr>
+		</tr>
+	</table>
+	<fieldset>
+		<legend>Repeats every...</legend>
+		<label>Mon<input type="checkbox"></label>
+		<label>Tue<input type="checkbox"></label>
+		<label>Wed<input type="checkbox"></label>
+		<label>Thu<input type="checkbox"></label>
+		<label>Fri<input type="checkbox"></label>
+		<label>Sat<input type="checkbox"></label>
+		<label>Sun<input type="checkbox"></label>
+	</fieldset>
+	<input id="btn" type="submit" value="Generate insobot command">
+</form>
+<div>
+	<small>Copy/paste this to a channel insobot is in, such as #steams on irc.handmade.network</small>
+	<input id="output" type="text" readonly>
+</div>
+<script>
+function zero_pad(num, count){
+	var str = num.toString();
+	var diff = count - str.length;
+	while(diff-- > 0){
+		str = "0" + str;
+	}
+	return str;
+}
+
+var f = document.forms[0];
+f.addEventListener("submit", function(e){
+	e.preventDefault();
+
+	var beg = new Date(f[1].valueAsDate);
+	beg.setHours(f[2].valueAsDate.getUTCHours(), f[2].valueAsDate.getUTCMinutes());
+
+	var end = new Date(beg);
+	end.setMinutes(end.getUTCMinutes() + f[3].valueAsNumber);
+
+	var mask = 0;
+	var opts = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ];
+	var dayarr = [];
+	for(var i = 13; i --> 6 ;) {
+		mask = (mask << 1) | (f[i].checked ? 1 : 0);
+		if(f[i].checked){
+			dayarr.push(opts[i-6]);
+		}
+	}
+
+	var days = dayarr.reverse().join(",");
+	if(mask == 0){
+		days = f[1].value;
+	} else if(mask == 31){
+		days = "weekdays";
+	} else if(mask == 96){
+		days = "weekends";
+	} else if(mask == 127){
+		days = "daily";
+	}
+
+	var str = "!sched+ #"
+		+ f[0].value + " "
+		+ days + " "
+		+ zero_pad(beg.getUTCHours().toString()  , 2) + ":"
+		+ zero_pad(beg.getUTCMinutes().toString(), 2) + "-"
+		+ zero_pad(end.getUTCHours().toString()  , 2) + ":"
+		+ zero_pad(end.getUTCMinutes().toString(), 2);
+
+	if(f[4].value.length > 0){
+		str += " " + f[4].value;
+	}
+
+	document.getElementById("output").value = str;
+
+	return false;
+});
+</script>
+</body>
+</html>
