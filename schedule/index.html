@@ -632,9 +632,9 @@ function calc_schedule(table, e){
 			}
 		}
 
-		// remove old schedules (> 12h ago)
+		// remove old schedules (> 7d ago)
 		entries = entries.filter(function(e){
-			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (12*60*60*1000);
+			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (7*24*60*60*1000);
 		});
 
 		// sort entries by smallest duration first for slightly better layout
