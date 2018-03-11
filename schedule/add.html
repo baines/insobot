@@ -82,23 +82,23 @@ input:invalid {
 	<table>
 		 <tr>
 			 <td><label for="chan">Twitch channel name</label></td>
-			 <td><input id="chan" type="text" required></td></tr>
+			 <td><input id="chan" type="text" required pattern="[A-Za-z0-9_\-]+"></td>
 		</tr>
 		 <tr>
 			 <td><label for="date">Start date</label></td>
-			 <td><input id="date" type="date" required></td></tr>
+			 <td><input id="date" type="date" required></td>
 		</tr>
 		 <tr>
 			 <td><label for="time">Start time</label></td>
-			 <td><input id="time" type="time" required></td></tr>
+			 <td><input id="time" type="time" required></td>
 		</tr>
 		 <tr>
 			 <td><label for="dur">Stream duration (minutes)</label></td>
-			 <td><input id="dur" type="number" required></td></tr>
+			 <td><input id="dur" type="number" required></td>
 		</tr>
 		 <tr>
 			 <td><label for="title">Stream title</label></td>
-			 <td><input id="title" type="text"></td></tr>
+			 <td><input id="title" type="text"></td>
 		</tr>
 	</table>
 	<fieldset>
@@ -114,7 +114,7 @@ input:invalid {
 	<input id="btn" type="submit" value="Generate insobot command">
 </form>
 <div>
-	<small>Copy/paste this to a channel insobot is in, such as #steams on irc.handmade.network</small>
+	<small>Copy/paste this to a channel insobot is in, such as #streams on irc.handmade.network</small>
 	<input id="output" type="text" readonly>
 </div>
 <script>
