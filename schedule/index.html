@@ -83,7 +83,7 @@ body {
 h1 {
 	display: block;
 	font-size: 200%;
-	margin: 0px auto 10px auto;
+	margin: 0 auto 0 auto;
 	text-align: center;
 	font-variant: small-caps;
 	color: #fff;
@@ -96,12 +96,31 @@ h1 {
 	float: left;
 	color: #fff;
 }
-#irc a:link, #irc a:visited, #add a:link, #add a:visited {
+#irc a:link, #irc a:visited,
+#add a:link, #add a:visited,
+#showpast {
 	color: #fff;
 }
 #add {
 	float: right;
 	padding: 0 0 5px 0;
+	height: 15px;
+}
+#showpast {
+	display: block;
+	vertical-align: middle;
+	float: left;
+	padding: 0 15px 5px 0;
+	height: 15px;
+}
+#showpast input {
+	width: 12px;
+	height: 12px;
+	padding: 0;
+	margin: 0;
+	vertical-align: middle;
+	position: relative;
+	top: -1px;
 }
 #next {
 	min-height: 0;
@@ -117,6 +136,7 @@ h1 {
 </head>
 <body>
 <h1>insobot stream schedule</h1>
+<label id="showpast"><input type="checkbox" id="chkpast" checked>Show past streams</label>
 <div id="add"><a href="add.html">Add a schedule...</a></div>
 <table id="schedule" style="display: none"></table>
 <div id="next" style="display: none"></div>
@@ -595,70 +615,89 @@ function calc_schedule(table, e){
 	}
 }
 
+function reload(entries, showpast){
+	var table = document.getElementById("schedule");
+	while(table.firstChild) table.removeChild(table.firstChild);
+	streams = [];
+
+	table.cellPadding = 0;
+	table.cellSpacing = 0;
+
+	var thead = table.createTHead().insertRow();
+	thead.insertCell();
+
+	for(var i = 0; i < 24; ++i){
+		thead.insertCell().innerHTML = i;
+	}
+
+	var body = table.createTBody();
+	var days = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
+
+	for(var i = 0; i < 7; ++i){
+		var row = body.insertRow();
+		if(i % 2){
+			row.classList.add("alt");
+		}
+		var col = row.insertCell();
+		col.innerHTML = days[i];
+		col.setAttribute("day-index", i);
+
+		for(var j = 0; j < 24; ++j){
+			row.insertCell();
+		}
+	}
+
+	// remove old schedules (> 7d ago)
+	entries = entries.filter(function(e){
+		if(showpast){
+			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (7*24*60*60*1000);
+		} else {
+			return e.repeat != 0 || (new Date().getTime() < new Date(e.end).getTime());
+		}
+	});
+
+	// sort entries by smallest duration first for slightly better layout
+	entries.sort(function(a, b){
+		var a_dur = get_duration(new Date(a.start), new Date(a.end));
+		var b_dur = get_duration(new Date(b.start), new Date(b.end));
+		return a_dur - b_dur;
+	});
+
+	gist_info = entries;
+
+	entries.forEach(function(e){
+		get_twitch_info(e);
+		calc_schedule(table, e);
+	});
+
+	streams.sort(function(a, b){
+		return a.start - b.start;
+	});
+
+}
+
 (function(){
 	document.getElementById("info").textContent = "Mouse over items for more info.";
 	document.getElementById("schedule").removeAttribute("style");
 	document.getElementById("next").removeAttribute("style");
 
+	var entries;
+	var chk = document.getElementById("chkpast");
+
+	chk.addEventListener("change", function(ev){
+		reload(entries, ev.target.checked);
+	});
+
 	var x = new XMLHttpRequest();
 	x.addEventListener("load", function(){
-		var entries = JSON.parse(this.responseText);
-
-		var table = document.getElementById("schedule");
-		table.cellPadding = 0;
-		table.cellSpacing = 0;
-
-		var thead = table.createTHead().insertRow();
-		thead.insertCell();
-
-		for(var i = 0; i < 24; ++i){
-			thead.insertCell().innerHTML = i;
-		}
-
-		var body = table.createTBody();
-		var days = [ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ];
-
-		for(var i = 0; i < 7; ++i){
-			var row = body.insertRow();
-			if(i % 2){
-				row.classList.add("alt");
-			}
-			var col = row.insertCell();
-			col.innerHTML = days[i];
-			col.setAttribute("day-index", i);
-
-			for(var j = 0; j < 24; ++j){
-				row.insertCell();
-			}
-		}
-
-		// remove old schedules (> 7d ago)
-		entries = entries.filter(function(e){
-			return e.repeat != 0 || (new Date().getTime() - new Date(e.end).getTime()) < (7*24*60*60*1000);
-		});
-
-		// sort entries by smallest duration first for slightly better layout
-		entries.sort(function(a, b){
-			var a_dur = get_duration(new Date(a.start), new Date(a.end));
-			var b_dur = get_duration(new Date(b.start), new Date(b.end));
-			return a_dur - b_dur;
-		});
-
-		gist_info = entries;
-
-		entries.forEach(function(e){
-			get_twitch_info(e);
-			calc_schedule(table, e);
-		});
-
-		streams.sort(function(a, b){
-			return a.start - b.start;
-		});
-
-		window.setInterval(update_next, 1000);
+		entries = JSON.parse(this.responseText);
+		reload(entries, chk.checked);
 	});
 	x.open("GET", "https://dev.abaines.me.uk/schedule.json");
 	x.send();
+
+	window.setInterval(update_next, 1000);
+
 	document.getElementById("refresh").textContent = "Last refresh: " + new Date().toLocaleString();
 })();
 /* @license-end */
