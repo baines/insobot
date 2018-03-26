@@ -64,13 +64,14 @@ static struct ep_guide {
 	sb(char)             an_text;
 	sb(struct anno_meta) an_meta;
 } ep_guides[] = {
-	{ "handmade_hero hero", "hero" , "code"      , "episode/code/day"      , 4 },
-	{ "handmade_hero hero", "hero" , "misc"      , "episode/misc/"         , 0 },
-	{ "handmade_hero hero", "hero" , "intro-to-c", "episode/intro-to-c/day", 10 },
-	{ "handmade_hero hero", "hero" , "chat"      , "episode/chat/"         , 0 },
-	{ "handmade_hero hero", "hero" , "ray"       , "episode/ray/"          , 0 },
-	{ "miotatsu"          , "riscy", "riscy"     , "episode/riscy/"        , 0 },
-	{ "miotatsu"          , "riscy", "book"      , "episode/book/"         , 0 },
+	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 4 },
+	{ "handmade_hero hero", "hero"   , "misc"      , "episode/misc/"          , 0 },
+	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 10 },
+	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/"          , 0 },
+	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/"           , 0 },
+	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/"         , 0 },
+	{ "miotatsu"          , "riscy"  , "book"      , "episode/book/"          , 0 },
+	{ "pervognsen"        , "bitwise", "bitwise"   , "episode/bitwise/bitwise", 7 },
 };
 
 static void hmninfo_update_projects(void){
