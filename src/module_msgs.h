@@ -1,5 +1,6 @@
 #ifndef INSOBOT_MODULE_MSGS_H
 #define INSOBOT_MODULE_MSGS_H
+#include <stdint.h>
 
 //
 // Explanation
@@ -139,6 +140,7 @@ typedef struct {
 	time_t end;
 	const char* title;
 	uint8_t repeat;
+	char* source;
 } SchedMsg;
 
 // TWITCH:
@@ -149,7 +151,7 @@ typedef struct {
 //    *result* will be the epoch time that the user given in *arg* created their account.
 //  twitch_is_live:
 //    *result* will be true/false if any of the channels given in *arg* are live or not.
-//  twitch_get_info:
+//  twitch_get_stream_info:
 //    *result* will be a struct with stream info:
 
 typedef struct {
@@ -162,5 +164,5 @@ typedef struct {
 //    *result* will be true/false if the user given in *arg* is an admin or not.
 //  check_whitelist:
 //    *result* will be true/false if the user given in *arg* is whitelisted or not.
-//    
+
 #endif

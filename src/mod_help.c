@@ -18,7 +18,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &help_cmd,
 	.on_pm    = &help_pm,
 	.commands = DEFINE_CMDS (
-		[CMD_HELP]    = CMD1("help"),
+		[CMD_HELP]    = CMD("help"),
 		[CMD_BOTINFO] = CMD(DEFAULT_BOT_NAME),
 		[CMD_CMDS]    = CMD("commands")
 	),
@@ -181,7 +181,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 				inso_strcat(mod_names, sizeof(mod_names), (*m)->name);
 			}
 		}
-		ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module|command> for more info. (Works via PM/Whisper too!) Available modules: %s.", name, mod_names);
+		ctx->send_msg(chan, "%s: Use " CONTROL_CHAR "help <module|command> for more info. Available modules: %s.", name, mod_names);
 	}
 }
 

@@ -1,11 +1,14 @@
-#if !defined(INSO_TZ_H) && !defined(INSO_IMPL)
+#ifndef INSO_TZ_H
 #define INSO_TZ_H
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "module_msgs.h"
 
 bool tz_abbr2off(const char* abbr, int* offset_out);
+bool sched_has_date(const SchedMsg* sched, const struct tm* date, int* day_out);
 
 static inline char* tz_push(const char* tz){
 	char* oldtz = getenv("TZ");
@@ -41,6 +44,13 @@ static inline void tz_pop(char* oldtz){
 		unsetenv("TZ");
 	}
 	tzset();
+}
+
+enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
+
+// converts tm_wday which uses 0..6 = sun..sat, to 0..6 = mon..sun
+static inline int get_dow(const struct tm* tm){
+	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
 }
 
 #endif
@@ -267,6 +277,41 @@ bool tz_abbr2off(const char* abbr, int* offset){
 			return true;
 		}
 	}
+	return false;
+}
+
+// TODO: this should totally be somewhere else
+
+
+bool sched_has_date(const SchedMsg* sched, const struct tm* date, int* day_out){
+
+	struct tm sched_utc = {}, sched_local = {};
+	gmtime_r(&sched->start, &sched_utc);
+
+	char* tz = tz_push_off(date->tm_gmtoff);
+	localtime_r(&sched->start, &sched_local);
+	tz_pop(tz);
+
+	// we have to do some awkward adjusting here to make sure "today" in some
+	// arbitrary timezone lines up with "today" in UTC (stored in the mask)
+
+	int day = get_dow(date);
+	if(sched_local.tm_mday > sched_utc.tm_mday){
+		day = (day + 6) % 7;
+	} else if(sched_local.tm_mday < sched_utc.tm_mday){
+		day = (day + 1) % 7;
+	}
+
+	if(sched->repeat & (1 << day)){
+		if(day_out) *day_out = day;
+		return true;
+	}
+
+	if(sched_local.tm_year == date->tm_year && sched_local.tm_yday == date->tm_yday){
+		if(day_out) *day_out = -1;
+		return true;
+	}
+
 	return false;
 }
 

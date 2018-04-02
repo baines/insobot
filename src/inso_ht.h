@@ -194,7 +194,7 @@ static inline void* inso_htpriv_put(inso_ht* ht, const void* elem){
 	size_t hash  = ht->hash_fn(elem);
 
 	for(size_t count = 0; count < ht->capacity; ++count){
-		size_t i  = (hash + count) % ht->capacity;
+		size_t i  = (hash + count) & (ht->capacity - 1);
 		void* ptr = ht->memory + i * ht->elem_size;
 
 		if(inso_htpriv_empty(ht, ptr)){
@@ -220,7 +220,7 @@ static inline bool inso_htpriv_get_i(inso_ht* ht, intptr_t* idx, size_t hash, in
 		size_t limit = cap[n];
 
 		for(size_t count = 0; count < limit; ++count){
-			size_t i  = (hash + count) % limit;
+			size_t i  = (hash + count) & (limit - 1);
 			void* ptr = mem[n] + i * ht->elem_size;
 
 			if(inso_htpriv_empty(ht, ptr)) break;
@@ -248,7 +248,7 @@ static inline void inso_htpriv_del_i(inso_ht* ht, intptr_t idx){
 	INSO_HT_DBG("ht_del: starting. idx=%zu, cap=%zu\n", idx, ht->capacity);
 
 	for(size_t count = 1; count < ht->capacity; ++count){
-		size_t i  = (idx + count) % ht->capacity;
+		size_t i  = (idx + count) & (ht->capacity - 1);
 		void* ptr = ht->memory + i * ht->elem_size;
 
 		if(inso_htpriv_empty(ht, ptr)){
@@ -257,7 +257,7 @@ static inline void inso_htpriv_del_i(inso_ht* ht, intptr_t idx){
 		}
 
 		size_t hash = ht->hash_fn(ptr);
-		size_t idx2 = hash % ht->capacity;
+		size_t idx2 = hash & (ht->capacity - 1);
 
 		INSO_HT_DBG("hash=%zu, idx2=%zu, ", hash, idx2);
 

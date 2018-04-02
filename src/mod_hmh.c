@@ -30,9 +30,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_ipc     = &hmh_ipc,
 	.on_tick    = &hmh_tick,
 	.commands = DEFINE_CMDS (
-		[CMD_SCHEDULE] = CMD1("schedule"),
-		[CMD_TIME]     = CMD1("tm") CMD1("time") CMD1("when"),
-		[CMD_OWLBOT]   = CMD1("owlbot"),
+		[CMD_SCHEDULE] = CMD("schedule"),
+		[CMD_TIME]     = CMD("tm") CMD("time") CMD("when"),
+		[CMD_OWLBOT]   = CMD("owlbot"),
 		[CMD_OWL_Y]    = "!owly !owlyes !owlyea",
 		[CMD_OWL_N]    = "!owln !owlno  !owlnay",
 		[CMD_QA]       = "!qa",
@@ -50,8 +50,6 @@ const IRCModuleCtx irc_mod_ctx = {
 };
 
 static const IRCCoreCtx* ctx;
-
-enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
 
 static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
 //static const char schedule_url[] = "http://127.0.0.1:8000/broadcast.csv";
@@ -73,23 +71,6 @@ static int irc_server;
 
 static time_t last_yt_fetch;
 static char*  latest_ep_str;
-
-#if 0
-static bool is_upcoming_stream(void){
-	time_t now = time(0);
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		if((schedule[i] - now) > 0 || (now - schedule[i]) < 90*60){
-			return true;
-		}
-	}
-	return false;
-}
-#endif
-
-// converts tm_wday which uses 0..6 = sun..sat, to 0..6 = mon..sun
-static inline int get_dow(struct tm* tm){
-	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
-}
 
 static bool update_schedule(void){
 
@@ -191,6 +172,19 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		last_schedule_update = now;
 	}
 
+	struct tm week_start = {};
+	{
+		char* tz = tz_push(":US/Pacific");
+
+		localtime_r(&now, &week_start);
+		week_start.tm_mday -= get_dow(&week_start);
+		week_start.tm_isdst = -1;
+		mktime(&week_start);
+
+		tz_pop(tz);
+	}
+
+
 	//FIXME: None of this crap should be done here, do it in update_schedule! meh..
 	
 	enum { TIME_UNKNOWN = -1, TIME_OFF = -2 };
@@ -262,10 +256,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		switch(schedule[i]){
 			case 0 : lt.tm_hour = lt.tm_min = TIME_UNKNOWN; break;
 			case -1: lt.tm_hour = lt.tm_min = TIME_OFF; break;
-			default: {
-				localtime_r(schedule + i, &lt);
-				lt.tm_hour += (24 * (get_dow(&lt) - i));
-			} break;
+			default: localtime_r(schedule + i, &lt); break;
 		}
 
 		int time_bucket = -1;
@@ -289,7 +280,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 			times[time_bucket].min = lt.tm_min;
 		}
 
-		int day = i;
+		int day = get_dow(&lt);
 		times[time_bucket].bits |= (1 << day);
 
 		prev_bucket = time_bucket;
@@ -319,12 +310,6 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 			inso_strcat(msg_buf, sizeof(msg_buf), time_buf);
 		}
 	}
-
-	struct tm week_start = {};
-	localtime_r(&now, &week_start);
-	week_start.tm_mday -= get_dow(&week_start);
-	week_start.tm_isdst = -1;
-	mktime(&week_start);
 
 	char prefix[64], suffix[64];
 	strftime(prefix, sizeof(prefix), "%b %d"   , &week_start);
@@ -426,27 +411,30 @@ static void print_time(const char* chan, const char* name){
 		secs_into_stream = (now - note_time) + (15*60);
 		source = "NOTE";
 
-	} else if(twitch_info.start){ // no note, but stream is live.
-
-		secs_into_stream = now - twitch_info.start;
-		source = "uptime";
-
-	} else if(index == -1){ // no note, and no streams
-
-		if(schedule_flags & SCHED_OLD){
-			ctx->send_msg(chan, "No more streams this week.");
-		} else if(schedule_flags & SCHED_OFF){
-			ctx->send_msg(chan, "The stream is off this week, see twitter for details.");
-		} else {
-			ctx->send_msg(chan, "The schedule hasn't been updated yet.");
-		}
-
-		return;
-
-	} else { // no note, but either an upcoming stream or during one (not found by mod_twitch)
+	} else {
 		note_time = 0;
-		secs_into_stream = now - schedule[index];
-		source = "schedule";
+
+		if(twitch_info.start){ // no note, but stream is live.
+
+			secs_into_stream = now - twitch_info.start;
+			source = "uptime";
+
+		} else if(index == -1){ // no note, and no streams
+
+			if(schedule_flags & SCHED_OLD){
+				ctx->send_msg(chan, "No more streams this week.");
+			} else if(schedule_flags & SCHED_OFF){
+				ctx->send_msg(chan, "The stream is off this week, see twitter for details.");
+			} else {
+				ctx->send_msg(chan, "The schedule hasn't been updated yet.");
+			}
+
+			return;
+
+		} else { // no note, but either an upcoming stream or during one (not found by mod_twitch)
+			secs_into_stream = now - schedule[index];
+			source = "schedule";
+		}
 	}
 
 	if(secs_into_stream < 0){ // upcoming stream

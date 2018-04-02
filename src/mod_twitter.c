@@ -50,11 +50,6 @@ typedef struct {
 
 TwitterSchedule* schedules;
 
-enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
-static int get_dow(const struct tm* tm){
-	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
-}
-
 static bool twitter_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
@@ -100,37 +95,6 @@ static bool twitter_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
-static bool sched_has_date(const SchedMsg* sched, const struct tm* date, int* day_out){
-
-	struct tm sched_utc = {}, sched_local = {};
-	gmtime_r(&sched->start, &sched_utc);
-
-	char* tz = tz_push_off(date->tm_gmtoff);
-	localtime_r(&sched->start, &sched_local);
-	tz_pop(tz);
-
-	// we have to do some awkward adjusting here to make sure "today" in some
-	// arbitrary timezone lines up with "today" in UTC (stored in the mask)
-
-	int day = get_dow(date);
-	if(sched_local.tm_mday > sched_utc.tm_mday){
-		day = (day + 6) % 7;
-	} else if(sched_local.tm_mday < sched_utc.tm_mday){
-		day = (day + 1) % 7;
-	}
-
-	if(sched->repeat & (1 << day)){
-		if(day_out) *day_out = day;
-		return true;
-	}
-
-	if(sched_local.tm_year == date->tm_year && sched_local.tm_yday == date->tm_yday){
-		if(day_out) *day_out = -1;
-		return true;
-	}
-
-	return false;
-}
 
 typedef struct {
 	const char* title; // name of schedule to remove
@@ -303,7 +267,7 @@ static bool twitter_parse_reschedule(const TwitterSchedule* ts, const char* msg,
 	return found;
 }
 
-static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl_val data, time_t tweet_time){
+static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl_val data, time_t tweet_time, uint64_t id){
 	struct tm* days = NULL;
 	bool parsed = false;
 	bool modified = false;
@@ -348,6 +312,8 @@ static bool twitter_sched_parse(const TwitterSchedule* ts, const char* msg, yajl
 				.title = ts->title,
 				.repeat = mask,
 			};
+
+			asprintf_check(&sm.source, "https://twitter.com/statuses/%" PRIu64, id);
 
 			printf("twitter: add sched %s %zu %x\n", sm.user, (size_t)sm.start, sm.repeat);
 			MOD_MSG(ctx, "sched_add", &sm, 0, 0);
@@ -431,7 +397,9 @@ static void twitter_tick(time_t now){
 				strptime(created->u.string, "%a %b %d %T %z %Y", &tm);
 				time_t created_time = mktime(&tm);
 
-				if(created_time > ts->last_modified && twitter_sched_parse(ts, text->u.string, obj, created_time)){
+				if(created_time > ts->last_modified
+					&& twitter_sched_parse(ts, text->u.string, obj, created_time, id->u.number.i)){
+
 					ts->last_modified = created_time;
 					modified = true;
 

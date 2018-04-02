@@ -6,6 +6,7 @@
 #include <yajl/yajl_tree.h>
 #include <ctype.h>
 #include "inso_utils.h"
+#include "inso_tz.h"
 #include "module_msgs.h"
 #include <argz.h>
 
@@ -16,6 +17,7 @@ static bool twitch_save    (FILE*);
 static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 static void twitch_unknown (const char*, const char*, const char**, size_t);
+static void twitch_modified(void);
 
 enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
 
@@ -29,6 +31,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit  = &twitch_quit,
 	.on_mod_msg = &twitch_mod_msg,
 	.on_unknown = &twitch_unknown,
+	.on_modified = &twitch_modified,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY]  = CMD("fnotify"),
 		[UPTIME]         = CMD("uptime" ),
@@ -67,6 +70,7 @@ typedef struct {
 	time_t stream_start;
 	time_t last_uptime_check;
 	bool live_state_changed;
+	time_t prev_stream_start;
 
 	time_t last_vod_check;
 	char*  last_vod_msg;
@@ -131,17 +135,10 @@ static TwitchInfo* twitch_get_or_add(const char* chan){
 	return twitch_vals + sb_count(twitch_vals) - 1;
 }
 
-static bool twitch_init(const IRCCoreCtx* _ctx){
-	ctx = _ctx;
-
-	time_t now = time(0);
-	last_uptime_check = now;
-	last_follower_check = now;
-	last_tracker_update = now - 50;
-
-	FILE* f = fopen(ctx->get_datafile(), "r");
-
+static void twitch_load(FILE* f){
 	char line[1024];
+	time_t now = time(0);
+
 	while(fgets(line, sizeof(line), f)){
 		char buffer[256];
 		char* arg = NULL;
@@ -169,6 +166,42 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 			sb_push(twitch_tracker_tags, tag);
 		}
 	}
+}
+
+static void twitch_modified(void){
+	sb_each(t, twitch_vals){
+		t->is_tracked = false;
+		t->do_follower_notify = false;
+		free(t->tracked_name);
+		t->tracked_name = NULL;
+	}
+
+	sb_each(c, twitch_tracker_chans){
+		free(*c);
+	}
+	sb_free(twitch_tracker_chans);
+
+	sb_each(t, twitch_tracker_tags){
+		free(t->name);
+		free(t->argz);
+	}
+	sb_free(twitch_tracker_tags);
+
+	FILE* f = fopen(ctx->get_datafile(), "r");
+	twitch_load(f);
+	fclose(f);
+}
+
+static bool twitch_init(const IRCCoreCtx* _ctx){
+	ctx = _ctx;
+
+	time_t now = time(0);
+	last_uptime_check = now;
+	last_follower_check = now;
+	last_tracker_update = now - 50;
+
+	FILE* f = fopen(ctx->get_datafile(), "r");
+	twitch_load(f);
 	fclose(f);
 
 	curl = curl_easy_init();
@@ -312,6 +345,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 		TwitchInfo* t = twitch_vals + indices[i];
 		if(t->last_uptime_check != now){
 			t->live_state_changed = t->stream_start != 0;
+			t->prev_stream_start = t->stream_start;
 			t->stream_start = 0;
 			t->last_uptime_check = now;
 		}
@@ -558,12 +592,70 @@ static void twitch_tags_process(TwitchTag* tag, const char* chan, const char* na
 	ctx->save_me();
 }
 
+typedef struct TwitchSchedArg {
+	TwitchInfo* info;
+	bool found;
+} TwitchSchedArg;
+
+static intptr_t twitch_sched_cb(SchedMsg* sched, TwitchSchedArg* arg){
+	TwitchInfo* t = arg->info;
+
+	struct tm twitch_tm;
+	struct tm sched_tm;
+
+	gmtime_r(&t->prev_stream_start, &twitch_tm);
+	gmtime_r(&sched->start, &sched_tm);
+
+	if(!sched_has_date(sched, &twitch_tm, NULL)){
+		return SCHED_ITER_CONTINUE;
+	}
+
+	int twitch_mins = twitch_tm.tm_hour * 60 + twitch_tm.tm_min;
+	int sched_mins = sched_tm.tm_hour * 60 + twitch_tm.tm_min;
+	int diff = labs(twitch_mins - sched_mins) % 1440;
+
+	if(diff < 70){
+		return SCHED_ITER_CONTINUE;
+	}
+
+	arg->found = true;
+	return SCHED_ITER_STOP;
+}
+
+static void twitch_tracker_schedule_update(TwitchInfo* t){
+	const char* name = twitch_keys[t-twitch_vals]+1;
+	TwitchSchedArg arg = { t };
+
+	time_t now = time(0);
+
+	if(now - t->prev_stream_start < (15*60)){
+		return;
+	}
+
+	MOD_MSG(ctx, "sched_iter", twitch_keys[t-twitch_vals]+1, &twitch_sched_cb, &arg);
+	if(arg.found){
+		return;
+	}
+
+	SchedMsg new_sched = {
+		.user = name,
+		.start = t->prev_stream_start,
+		.end = time(0),
+		.title = t->stream_title,
+	};
+
+	// TODO: link to vod?
+	asprintf_check(&new_sched.source, "Twitch IRC tracker");
+	MOD_MSG(ctx, "sched_add", &new_sched, NULL, NULL);
+}
+
 static void twitch_tracker_update(void){
 	char topic[1024] = "\002\0030,4[LIVE]\017 ";
 
 	bool any_changed = false;
 	bool any_live = false;
 	bool sent_ping = false;
+	bool sched_needs_save = false;
 
 	size_t* track_indices = NULL;
 	size_t index_count = 0;
@@ -614,11 +706,18 @@ static void twitch_tracker_update(void){
 			} else {
 				TWITCH_TRACKER_MSG("\00314%s is no longer live.", chan + 1);
 			}
+
+			twitch_tracker_schedule_update(t);
+			sched_needs_save = true;
 		}
 	}
 
 	if(!any_changed){
 		return;
+	}
+
+	if(sched_needs_save){
+		MOD_MSG(ctx, "sched_save", NULL, NULL, NULL);
 	}
 
 	char topic_cmd[1024];

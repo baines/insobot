@@ -142,7 +142,7 @@ struct IRCModMsg_ {
 };
 
 #define MOD_MSG(ctx, cmd, arg, cb, cb_arg) (ctx)->send_mod_msg(\
-	&(IRCModMsg){ (cmd), (intptr_t)(arg), (cb), (intptr_t)(cb_arg) }\
+	&(IRCModMsg){ (cmd), (intptr_t)(arg), (intptr_t(*)())(cb), (intptr_t)(cb_arg) }\
 )
 
 #define DEFINE_CMDS(...) (const char*[]) {\

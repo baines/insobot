@@ -76,6 +76,10 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 			p += match.rm_eo;
 		}
 	}
+
+	if(getenv("IRC_IS_TWITCH")){
+		ctx->strip_colors(msg);
+	}
 }
 
 static void filter_mod_msg(const char* sender, const IRCModMsg* msg){

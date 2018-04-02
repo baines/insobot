@@ -9,6 +9,14 @@
 #include "inso_utils.h"
 #include "inso_gist.h"
 #include "inso_tz.h"
+#include <curl/curl.h>
+
+//#define SCHEDULE_USE_GIST
+
+#ifndef SCHEDULE_USE_GIST
+	#define inso_gist_lock(...)
+	#define inso_gist_unlock(...)
+#endif
 
 static bool sched_init (const IRCCoreCtx*);
 static void sched_cmd  (const char*, const char*, const char*, int);
@@ -53,6 +61,7 @@ typedef struct {
 	time_t end;
 	char* title;
 	uint8_t repeat;
+	char* source;
 } SchedEntry;
 
 typedef struct {
@@ -65,20 +74,23 @@ static char**       sched_keys;
 static SchedEntry** sched_vals;
 static inso_gist*   gist;
 
+static CURL*        curl;
+static time_t       prev_get;
+
+static const char*  sched_auth;
+static const char*  sched_url_get;
+static const char*  sched_url_api;
+
 static SchedOffset* sched_offsets;
 static time_t       offset_expiry;
 
-enum { MON, TUE, WED, THU, FRI, SAT, SUN, DAYS_IN_WEEK };
 static const char* days[] = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
-
-static int get_dow(struct tm* tm){
-	return tm->tm_wday ? tm->tm_wday - 1 : SUN;
-}
 
 static void sched_free(void){
 	for(size_t i = 0; i < sb_count(sched_keys); ++i){
 		for(size_t j = 0; j < sb_count(sched_vals[i]); ++j){
 			free(sched_vals[i][j].title);
+			free(sched_vals[i][j].source);
 		}
 		sb_free(sched_vals[i]);
 		free(sched_keys[i]);
@@ -158,6 +170,9 @@ static void sched_offsets_update(void){
 }
 
 static bool sched_reload(void){
+	char* data = NULL;
+
+#if SCHEDULE_USE_GIST
 	inso_gist_file* files = NULL;
 	int ret = inso_gist_load(gist, &files);
 
@@ -173,7 +188,6 @@ static bool sched_reload(void){
 
 	puts("mod_schedule: doing full reload");
 
-	char* data = NULL;
 	for(inso_gist_file* f = files; f; f = f->next){
 		if(strcmp(f->name, "schedule.json") != 0){
 			continue;
@@ -182,6 +196,26 @@ static bool sched_reload(void){
 			break;
 		}
 	}
+
+	inso_gist_file_free(files);
+#else
+	inso_curl_reset(curl, sched_url_get, &data);
+	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, prev_get);
+	long ret = inso_curl_perform(curl, &data);
+
+	if(ret == 304){
+		puts("mod_schedule: not modified.");
+		return true;
+	}
+
+	if(ret != 200){
+		printf("mod_schedule: curl error: %ld\n", ret);
+		return false;
+	}
+
+	curl_easy_getinfo(curl, CURLOPT_FILETIME, &prev_get);
+#endif
 
 	if(!data){
 		puts("mod_schedule: data null?!");
@@ -193,10 +227,10 @@ static bool sched_reload(void){
 		puts("mod_schedule: data is not an array?!");
 		return false;
 	}
-	
+
 	sched_free();
 
-	enum { K_USER, K_START, K_END, K_TITLE, K_REPEAT };
+	enum { K_USER, K_START, K_END, K_TITLE, K_REPEAT, K_SOURCE };
 
 	struct {
 		const char** path;
@@ -207,17 +241,28 @@ static bool sched_reload(void){
 		{ (const char*[]){ "end"   , NULL }, yajl_t_string },
 		{ (const char*[]){ "title" , NULL }, yajl_t_string },
 		{ (const char*[]){ "repeat", NULL }, yajl_t_number },
+		{ (const char*[]){ "source", NULL }, yajl_t_string },
 	};
 
 	for(size_t i = 0; i < root->u.array.len; ++i){
-		yajl_val vals[5];
-		for(size_t j = 0; j < ARRAY_SIZE(vals); ++j){
-			vals[j] = yajl_tree_get(root->u.array.values[i], keys[j].path, keys[j].type);
-			if(!vals[j]) printf("mod_schedule: parse error %zu/%zu\n", i, j);
+		yajl_val vals[6] = {};
+		bool skip = false;
+
+		array_each(k, keys){
+			vals[k-keys] = yajl_tree_get(root->u.array.values[i], k->path, k->type);
+			if(!vals[k-keys]){
+				fprintf(stderr, "mod_schedule: parse error item %zd, key: %s\n", i, k->path[0]);
+				skip = true;
+			}
+		}
+
+		if(skip){
+			continue;
 		}
 
 		SchedEntry entry = {
 			.title  = strdup(vals[K_TITLE]->u.string),
+			.source = strdup(vals[K_SOURCE]->u.string),
 			.repeat = vals[K_REPEAT]->u.number.i,
 		};
 
@@ -238,7 +283,6 @@ static bool sched_reload(void){
 	}
 
 	yajl_tree_free(root);
-	inso_gist_file_free(files);
 	sched_offsets_update();
 
 	return true;
@@ -247,6 +291,7 @@ static bool sched_reload(void){
 static bool sched_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 
+#if SCHEDULE_USE_GIST
 	char* gist_id = getenv("INSOBOT_SCHED_GIST_ID");
 	if(!gist_id || !*gist_id){
 		fputs("mod_schedule: INSOBOT_SCHED_GIST_ID undefined, can't continue.\n", stderr);
@@ -266,12 +311,23 @@ static bool sched_init(const IRCCoreCtx* _ctx){
 	}
 
 	gist = inso_gist_open(gist_id, gist_user, gist_token);
+#else
+	sched_auth    = getenv("INSOBOT_SCHEDULE_AUTH");
+	sched_url_get = getenv("INSOBOT_SCHEDULE_URL_GET");
+	sched_url_api = getenv("INSOBOT_SCHEDULE_URL_API");
+
+	if(!sched_auth || !sched_url_get || !sched_url_api){
+		fputs("mod_schedule: INSOBOT_SCHEDULE_{AUTH,URL_GET,URL_API} missing. can't continue\n", stderr);
+		return false;
+	}
+
+	curl = curl_easy_init();
+#endif
+
 	return sched_reload();
 }
 
 static void sched_upload(void){
-	inso_gist_file* file = NULL;
-
 	yajl_gen json = yajl_gen_alloc(NULL);
 	yajl_gen_config(json, yajl_gen_beautify, 1);
 
@@ -299,6 +355,10 @@ static void sched_upload(void){
 			yajl_gen_string(json, "repeat", 6);
 			yajl_gen_integer(json, sched_vals[i][j].repeat);
 
+			yajl_gen_string(json, "source", 6);
+			const char* src = sched_vals[i][j].source ?: "";
+			yajl_gen_string(json, src, strlen(src));
+
 			yajl_gen_map_close(json);
 		}
 	}
@@ -307,16 +367,20 @@ static void sched_upload(void){
 	size_t json_len = 0;
 	const unsigned char* json_data = NULL;
 	yajl_gen_get_buf(json, &json_data, &json_len);
+
+#if SCHEDULE_USE_GIST
+	inso_gist_file* file = NULL;
 	inso_gist_file_add(&file, "schedule.json", json_data);
-	yajl_gen_free(json);
-
-#if 1
 	inso_gist_save(gist, "insobot stream schedule", file);
-#else
-	printf("schedule.json: [%s]\n", file->content);
-#endif
 	inso_gist_file_free(file);
+#else
+	inso_curl_reset(curl, sched_url_api, NULL);
+	curl_easy_setopt(curl, CURLOPT_USERPWD, sched_auth);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+	curl_easy_perform(curl);
+#endif
 
+	yajl_gen_free(json);
 	sched_offsets_update();
 }
 
@@ -549,6 +613,15 @@ static void sched_add(const char* chan, const char* name, const char* _arg){
 		.end    = timegm(&date) + end_mins   * 60,
 		.repeat = day_mask,
 	};
+
+	{
+		time_t now = time(0);
+		char now_str[32];
+		struct tm tm;
+		gmtime_r(&now, &tm);
+		strftime(now_str, sizeof(now_str), "%F", &tm);
+		asprintf_check(&sched.source, "!sched+ by %s on %s.", name, now_str);
+	}
 
 	// parse title
 	char* title = NULL;
@@ -956,9 +1029,11 @@ static void sched_quit(void){
 
 static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 
-	// XXX: we might need to pull from the gist here...
+	bool is_msg_iter = strcmp(msg->cmd, "sched_iter") == 0;
+	bool is_msg_add  = strcmp(msg->cmd, "sched_add") == 0;
+	bool is_msg_save = strcmp(msg->cmd, "sched_save") == 0;
 
-	if(strcmp(msg->cmd, "sched_iter") == 0){
+	if(is_msg_iter){
 		const char* name = (const char*)msg->arg;
 		bool iter_all = true;
 		int index = 0;
@@ -982,6 +1057,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 				result.end    = ent->end;
 				result.title  = ent->title;
 				result.repeat = ent->repeat;
+				result.source = ent->source;
 
 				SchedIterCmd cmd = msg->callback((intptr_t)&result, msg->cb_arg);
 
@@ -990,6 +1066,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 				ent->start  = result.start;
 				ent->end    = result.end;
 				ent->repeat = result.repeat;
+				ent->source = result.source; // TODO: should freeing work like title?
 
 				if(result.title != ent->title){
 					free(ent->title);
@@ -1015,7 +1092,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 		return;
 	}
 
-	if(strcmp(msg->cmd, "sched_add") == 0){
+	else if(is_msg_add){
 		SchedMsg* request = (SchedMsg*)msg->arg;
 		SchedEntry sched = {};
 
@@ -1057,6 +1134,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 		sched.end    = request->end;
 		sched.repeat = request->repeat & 0x7f;
 		sched.title  = strdup(title);
+		sched.source = request->source ?: strdup(sender);
 
 		index = sched_get_add(user);
 		sb_push(sched_vals[index], sched);
@@ -1064,7 +1142,7 @@ static void sched_mod_msg(const char* sender, const IRCModMsg* msg){
 		return;
 	}
 
-	if(strcmp(msg->cmd, "sched_save") == 0){
+	else if(is_msg_save){
 		sched_upload();
 		return;
 	}

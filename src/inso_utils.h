@@ -244,7 +244,10 @@ CURL* inso_curl_init(const char* url, char** data){
 
 long inso_curl_perform(CURL* curl, char** data){
 	CURLcode curl_ret = curl_easy_perform(curl);
-	sb_push(*data, 0);
+
+	if(data){
+		sb_push(*data, 0);
+	}
 
 	long http_ret = 0;
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_ret);
