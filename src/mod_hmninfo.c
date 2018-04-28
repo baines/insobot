@@ -64,12 +64,12 @@ static struct ep_guide {
 	sb(char)             an_text;
 	sb(struct anno_meta) an_meta;
 } ep_guides[] = {
-	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 4 },
+	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 3 },
 	{ "handmade_hero hero", "hero"   , "misc"      , "episode/misc/"          , 0 },
-	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 10 },
-	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/"          , 0 },
-	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/"           , 0 },
-	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/"         , 0 },
+	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 3 },
+	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/"          , 4 },
+	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/"           , 3 },
+	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/"         , 5 },
 	{ "miotatsu"          , "riscy"  , "book"      , "episode/book/"          , 0 },
 	{ "pervognsen"        , "bitwise", "bitwise"   , "episode/bitwise/bitwise", 7 },
 };
@@ -212,7 +212,10 @@ static void hmninfo_update_guides(void){
 					ep_index = sb_count(g->ep_names);
 
 					size_t sz = strlen(epname) + 1;
-					assert(sz > g->ep_name_skip);
+					if(!ib_assert(sz > g->ep_name_skip)){
+						continue;
+					}
+
 					memcpy(sb_add(g->ep_names, sz), epname + g->ep_name_skip, sz - g->ep_name_skip);
 
 				} else if(strcmp(line, "markers:") == 0){
@@ -227,10 +230,17 @@ static void hmninfo_update_guides(void){
 	sb_free(data);
 }
 
-static int anno_bs(const void* _a, const void* _b){
-	int32_t off = *(int32_t*)_a;
-	const struct anno_meta* meta = _b;
-	return off - meta->str_off;
+static int anno_bs(const int32_t* off, const struct anno_meta* meta){
+	return *off - meta->str_off;
+}
+
+struct ep_hit {
+	int off;
+	int count;
+};
+
+static int ep_hit_sort(struct ep_hit* a, struct ep_hit* b){
+	return b->count - a->count;
 }
 
 static void anno_search(struct ep_guide* guide, const char* chan, const char* name, const char* regex){
@@ -247,7 +257,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 	int nmatches = 0;
 	int prev_ep = -1;
 
-	sb(int) ep_list = NULL;
+	sb(struct ep_hit) ep_list = NULL;
 
 	struct anno_meta* last_match = NULL;
 	regmatch_t match = {};
@@ -258,7 +268,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		while(p > guide->an_text && p[-1] != '\n') --p;
 
 		int32_t off = p - guide->an_text;
-		struct anno_meta* m = bsearch(&off, guide->an_meta, sb_count(guide->an_meta), sizeof(*m), anno_bs);
+		struct anno_meta* m = bsearch(&off, guide->an_meta, sb_count(guide->an_meta), sizeof(*m), (int(*)())anno_bs);
 
 		time_t now = time(0);
 		if(!m || now - start > 5){
@@ -274,8 +284,11 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		str += strcspn(str, "\n");
 
 		if(prev_ep != m->ep_off){
-			sb_push(ep_list, m->ep_off);
+			struct ep_hit hit = { m->ep_off, 1 };
+			sb_push(ep_list, hit);
 			prev_ep = m->ep_off;
+		} else {
+			sb_last(ep_list).count++;
 		}
 	}
 
@@ -284,36 +297,43 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		              "@%s: No dice, but maybe I missed something?: https://%s.handmade.network/episode/%s#%s",
 		              name, guide->project_id, guide->subproject_id, regex_urlenc);
 	} else if(nmatches == 1){
-		assert(last_match);
+		if(!ib_assert(last_match)){
+			goto out;
+		}
+
 		const char* str = guide->an_text + last_match->str_off;
 		int sz = strchrnul(str, '\n') - str;
 		ctx->send_msg(chan,
-		              "@%s: 1 hit: https://%s.handmade.network/%s%s#%d [%.*s]",
+		              "@%s:\0033 1 hit\017: https://%s.handmade.network/%s%s#%d \0032[%.*s]",
 		              name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off, last_match->time, sz, str);
 	} else {
-		char ep_buf[32];
+		char ep_buf[64];
 		char* p = ep_buf;
 		const char* more_str = "";
 
-		sb_each(ep, ep_list){
-			const char* name = guide->ep_names + *ep;
-			size_t len = strlen(name);
+		qsort(ep_list, sb_count(ep_list), sizeof(struct ep_hit), (int(*)())&ep_hit_sort);
 
-			if((p + len + 2) >= ep_buf + sizeof(ep_buf)){
-				more_str = " and more...";
+		sb_each(ep, ep_list){
+			char tmp[32];
+			int len = snprintf(tmp, sizeof(tmp), "\0038 %s\017\0033:%d\0031🎯\017", guide->ep_names + ep->off, ep->count);
+			if(!ib_assert(len > 0)){
+				goto out;
+			}
+
+			if(p + len + 1 >= ep_buf + sizeof(ep_buf)){
+				more_str = " \035and more...\035";
 				break;
 			} else {
 				if(p != ep_buf){
 					*p++ = ',';
-					*p++ = ' ';
 				}
-				p = stpcpy(p, name);
+				p = stpcpy(p, tmp);
 			}
 		}
 
 		const char* ep_plural = sb_count(ep_list) == 1 ? "" : "s";
 		ctx->send_msg(chan,
-		              "@%s: ~%d hits: https://%s.handmade.network/episode/%s#%s [ep%s: %s%s]",
+		              "@%s:\0033 ~%d hits\017: https://%s.handmade.network/episode/%s#%s \0031ep%s\017:%s%s",
 		              name, nmatches, guide->project_id, guide->subproject_id, regex_urlenc, ep_plural, ep_buf, more_str);
 	}
 

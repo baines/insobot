@@ -42,6 +42,18 @@
 
 #define array_each(p, arr) for(typeof(*arr)* p = arr; p < arr + ARRAY_SIZE(arr); ++p)
 
+#define ib_assert(cond) ({ \
+	bool __ib_cond_res = (cond); \
+	if(!__ib_cond_res){ \
+		fprintf(stderr, "%s:%d: %s: Assertion '%s' failed.\n", __FILE__, __LINE__, __func__, #cond); \
+		const char* dbgchan = getenv("INSOBOT_DEBUG_CHAN"); \
+		if(dbgchan){ \
+			ctx->send_msg(dbgchan, "%s:%d: %s: Assertion '%s' failed.", __FILE__, __LINE__, __func__, #cond); \
+		} \
+	} \
+	__ib_cond_res; \
+})
+
 void   inso_curl_reset   (void* curl, const char* url, char** data);
 void*  inso_curl_init    (const char* url, char** data);
 long   inso_curl_perform (void* curl, char** data);

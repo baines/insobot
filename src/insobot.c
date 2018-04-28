@@ -472,6 +472,11 @@ static void util_module_save(Module* m){
 static Module* util_module_get(const char* name, int type){
 	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
 		const char* base_path = basename(m->lib_path);
+
+		if(type == MOD_GET_CTXNAME && !m->ctx){ // can happen inside inotify loop
+			continue;
+		}
+
 		const char* comparison
 			= (type == MOD_GET_CTXNAME)	? m->ctx->name
 			: (type == MOD_GET_SONAME)  ? base_path
@@ -629,6 +634,8 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 					m->needs_reload = true;
 				} else {
 					util_module_add(ev->name);
+					// XXX: Careful, this leaves some parts of the new irc_module null
+					//      if util_module_get is called later in the loop, it must check this
 				}
 				reload = true;
 			} else if(ev->wd == inotify.data.wd){

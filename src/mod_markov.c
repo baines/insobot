@@ -97,7 +97,7 @@ typedef struct {
 
 // Static Variables {{{
 
-static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", "is", NULL };
+static const char* bad_end_words[] = { "and", "the", "a", "as", "if", "i", ",", "/", "is", "of", "to", "who", "my", "your", "their", "in", "on", "its", "it's", "with", "because", "but", "for", "are", "which", "what", "who", "than", NULL };
 static const char* ignores[]       = { "hmh_bot", "hmd_bot", "drakebot_", "GitHub", NULL };
 static const char* skip_words[]    = { "p", "d", "b", "o", "-p", "-d", "-b", "-o", NULL };
 
@@ -426,9 +426,8 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		assert(total);
 
 		should_end =
-			(links >= (chain_len/2) && end_count > (total / 2)) ||
-			(links >= chain_len && end_count) ||
-			(links >= chain_len * 1.5f);
+			(end_count > (total / 2)) ||
+			(links >= chain_len * 2);
 
 		const char* word;
 
@@ -444,7 +443,7 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 			word = word_mem + val->word_idx;
 
 			// seems good, exit loop
-			if(val->word_idx != end_sym_idx	&& (word[0] == ',' || word_bs(word) != -1)){
+			if(val->word_idx == end_sym_idx	|| (word[0] == ',' || word_bs(word) != -1)){
 				break;
 			}
 		}
@@ -466,7 +465,9 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 		inso_strcat(buffer, buffer_len, word);
 
 		key = find_key(key->word_idx_2, val->word_idx);
-		assert(key);
+		if(!ib_assert(key)){
+			break;
+		}
 
 		++links;
 	} while(!should_end);
@@ -800,16 +801,21 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 		case MARKOV_STATUS: {
 			if(!admin) break;
 
+			size_t nwords, nkeys, nvals = sbmm_count(chain_vals);
+#if INSO_HT_VERSION >= 2
+			nwords = word_ht.used;
+			nkeys  = chain_keys_ht.used;
+#else
+			nwords = word_ht.used / word_ht.elem_size;
+			nkeys  = chain_keys_ht.used / chain_keys_ht.elem_size;
+#endif
 			ctx->send_msg(
 				chan,
 				"%s: markov status: [words: %zu/%.2fMB] [keys: %zu/%.2fMB] [vals: %zu/%.2fMB]",
 				name,
-				word_ht.used / word_ht.elem_size,
-				(sbmm_count(word_mem) + word_ht.used) / (1024.f*1024.f),
-				chain_keys_ht.used / chain_keys_ht.elem_size,
-				chain_keys_ht.used / (1024.f*1024.f),
-				sbmm_count(chain_vals),
-				(sbmm_count(chain_vals) * sizeof(MarkovLinkVal)) / (1024.f*1024.f)
+				nwords,	(nwords * sizeof(WordInfo) + sbmm_count(word_mem)) / (1024.f*1024.f),
+				nkeys , (nkeys  * sizeof(MarkovLinkKey)) / (1024.f*1024.f),
+				nvals ,	(nvals  * sizeof(MarkovLinkVal)) / (1024.f*1024.f)
 			);
 
 		} break;
@@ -1041,8 +1047,13 @@ static void markov_mod_msg(const char* sender, const IRCModMsg* msg){
 }
 
 static void markov_stdin(const char* msg){
+	int chance;
+
 	if(strcmp(msg, "msave") == 0){
 		ctx->save_me();
+	} else if(sscanf(msg, "mgap %d", &chance) == 1 && chance > 0){
+		msg_chance = chance;
+		printf("chance = %zu\n", msg_chance);
 	}
 }
 
