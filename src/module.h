@@ -90,7 +90,11 @@ struct IRCCoreCtx_ {
 	intptr_t       (*get_info)     (int id); // see IRC_INFO enum below
 	const char*    (*get_username) (void);
 	const char*    (*get_datafile) (void);
+
 	IRCModuleCtx** (*get_modules)  (bool channel_mods_only); // null terminated
+#define GET_MODULES_CHAN_SPECIFIC true
+#define GET_MODULES_ALL false
+
 	const char**   (*get_channels) (void); // null terminated
 	const char**   (*get_nicks)    (const char* chan, int* count_out);
 	void           (*join)         (const char* chan);

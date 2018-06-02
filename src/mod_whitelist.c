@@ -74,16 +74,17 @@ static void whitelist_load(void){
 
 	fclose(f);
 
+	const char* owner = getenv("IRC_ADMIN");
 	bool found_owner = false;
 	for(WLEntry* wle = wlist; wle < sb_end(wlist); ++wle){
-		if(strcasecmp(BOT_OWNER, wle->name) == 0){
+		if(owner && strcasecmp(owner, wle->name) == 0){
 			found_owner = true;
 			break;
 		}
 	}
 
-	if(!found_owner){
-		WLEntry wl = { .name = strdup(BOT_OWNER), .role = ROLE_ADMIN };
+	if(owner && !found_owner){
+		WLEntry wl = { .name = strdup(owner), .role = ROLE_ADMIN };
 		sb_push(wlist, wl);
 		ctx->save_me();
 	}

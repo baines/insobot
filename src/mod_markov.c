@@ -821,7 +821,10 @@ static void markov_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case MARKOV_SAVE: {
-			if(strcmp(name, BOT_OWNER) != 0) break;
+			const char* owner = getenv("IRC_ADMIN");
+			if(!owner || strcmp(name, owner) != 0)
+				break;
+
 			ctx->save_me();
 			ctx->send_msg(chan, "%s: save complete.", name);
 		} break;

@@ -1,8 +1,11 @@
 #!/bin/bash
 
+## BASIC CONFIGURATION -- CHANGE THESE
+
 export IRC_SERV="ip or hostname to connect to"
 export IRC_USER="the irc nick of the bot"
 export IRC_CHAN="#achannel,#anotherchannel"
+export IRC_ADMIN="insofaras" # the owner of the bot / probably your nick
 
 # you might need this if the server doesn't run on 6667
 # export IRC_PORT="1234"
@@ -16,7 +19,11 @@ export IRC_CHAN="#achannel,#anotherchannel"
 # if your connection is over SSL / TLS, export this (don't use a # in the hostname)
 # export IRC_ENABLE_SSL=1
 
-# mod_twitch needs this from 8th aug 2016
+
+## ADVANCED / MODULE-SPECIFIC CONFIGURATION
+
+# mod_twitch needs this from 8th aug 2016 in order to use the twitch HTTP API.
+# this is used to get uptime info etc..
 # https://www.twitch.tv/settings/connections
 # export INSOBOT_TWITCH_CLIENT_ID="something"
 # if you want !title to work, it'll also need a twitch OAuth token set in this:

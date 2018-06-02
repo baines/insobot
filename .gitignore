@@ -33,3 +33,5 @@ modules
 data
 *.sh
 src/config.mk
+utils/schedule_api
+utils/mod_core_upgrade

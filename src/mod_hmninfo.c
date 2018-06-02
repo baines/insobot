@@ -212,11 +212,7 @@ static void hmninfo_update_guides(void){
 					ep_index = sb_count(g->ep_names);
 
 					size_t sz = strlen(epname) + 1;
-					if(!ib_assert(sz > g->ep_name_skip)){
-						continue;
-					}
-
-					memcpy(sb_add(g->ep_names, sz), epname + g->ep_name_skip, sz - g->ep_name_skip);
+					memcpy(sb_add(g->ep_names, sz), epname, sz);
 
 				} else if(strcmp(line, "markers:") == 0){
 					state = S_MARKERS;
@@ -304,7 +300,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		const char* str = guide->an_text + last_match->str_off;
 		int sz = strchrnul(str, '\n') - str;
 		ctx->send_msg(chan,
-		              "@%s:\0033 1 hit\017: https://%s.handmade.network/%s%s#%d \0032[%.*s]",
+		              "@%s:\0033 1 hit\017: https://%s.handmade.network/%s%s#%d \00311[%.*s]",
 		              name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off, last_match->time, sz, str);
 	} else {
 		char ep_buf[64];
@@ -315,7 +311,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 
 		sb_each(ep, ep_list){
 			char tmp[32];
-			int len = snprintf(tmp, sizeof(tmp), "\0038 %s\017\0033:%d\0031🎯\017", guide->ep_names + ep->off, ep->count);
+			int len = snprintf(tmp, sizeof(tmp), "\0038 %s\017 \0033(%d)\017", guide->ep_names + ep->off + guide->ep_name_skip, ep->count);
 			if(!ib_assert(len > 0)){
 				goto out;
 			}
@@ -333,7 +329,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 
 		const char* ep_plural = sb_count(ep_list) == 1 ? "" : "s";
 		ctx->send_msg(chan,
-		              "@%s:\0033 ~%d hits\017: https://%s.handmade.network/episode/%s#%s \0031ep%s\017:%s%s",
+		              "@%s:\0033 ~%d hits\017: https://%s.handmade.network/episode/%s#%s \0032ep%s\017:%s%s",
 		              name, nmatches, guide->project_id, guide->subproject_id, regex_urlenc, ep_plural, ep_buf, more_str);
 	}
 

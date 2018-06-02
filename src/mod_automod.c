@@ -1,4 +1,5 @@
 #include "module.h"
+
 #include <regex.h>
 #include <string.h>
 #include <wchar.h>
@@ -247,8 +248,8 @@ static intptr_t get_karma_cb(intptr_t result, intptr_t arg){
 	return 0;
 }
 
-static intptr_t get_user_cb(intptr_t result, intptr_t arg){
-	if(result) *(time_t*)arg = result;
+static intptr_t get_user_cb(time_t result, time_t* arg){
+	if(result) *arg = result;
 	return 0;
 }
 
@@ -277,7 +278,7 @@ static int am_score_links(const Suspect* s, const char* msg, size_t len){
 
 		// new account?
 		if(is_twitch){
-			time_t user_created_date = 0;
+			time_t user_created_date = now;
 			MOD_MSG(ctx, "twitch_get_user_date", s->name, &get_user_cb, &user_created_date);
 
 			printf("twitch user time: %zu\n", (size_t)(now - user_created_date));

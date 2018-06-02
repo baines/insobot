@@ -151,24 +151,24 @@ static char* insobot_path;
 	ret;                                                                      \
 })
 
-#define IRC_MOD_CALL_ALL(ptr, args)                             \
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){ \
-		IRC_MOD_CALL(m, ptr, args);                             \
+#define IRC_MOD_CALL_ALL(ptr, args) \
+	sb_each(m, irc_modules){        \
+		IRC_MOD_CALL(m, ptr, args); \
 	}
 
-#define IRC_MOD_CALL_ALL_CHECK(ptr, args, id)                   \
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){ \
-		if(                                                     \
-			(m->ctx->flags & IRC_MOD_GLOBAL) ||                 \
-			util_check_perms(m->ctx->name, params[0], id)       \
-		){                                                      \
-			IRC_MOD_CALL(m, ptr, args);                         \
-		}                                                       \
+#define IRC_MOD_CALL_ALL_CHECK(ptr, args, id)             \
+	sb_each(m, irc_modules){                              \
+		if(                                               \
+			(m->ctx->flags & IRC_MOD_GLOBAL) ||           \
+			util_check_perms(m->ctx->name, params[0], id) \
+		){                                                \
+			IRC_MOD_CALL(m, ptr, args);                   \
+		}                                                 \
 	}
 
-#define IRC_MOD_CALL_ALL_ABI(ptr, args, abi)                    \
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){ \
-		if(ABI_CHECK(m, abi)) IRC_MOD_CALL(m, ptr, args);       \
+#define IRC_MOD_CALL_ALL_ABI(ptr, args, abi)              \
+	sb_each(m, irc_modules){                              \
+		if(ABI_CHECK(m, abi)) IRC_MOD_CALL(m, ptr, args); \
 	}
 
 #define ABI_FILTER  24
@@ -318,7 +318,7 @@ static inline const char* util_env_else(const char* env, const char* def){
 
 static bool util_check_perms(const char* mod, const char* chan, int id){
 	bool ret = true;
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		if(!m->ctx->on_meta) continue;
 		ret &= IRC_MOD_CALL(m, on_meta, (mod, chan, id));
 	}
@@ -470,7 +470,7 @@ static void util_module_save(Module* m){
 }
 
 static Module* util_module_get(const char* name, int type){
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		const char* base_path = basename(m->lib_path);
 
 		if(type == MOD_GET_CTXNAME && !m->ctx){ // can happen inside inotify loop
@@ -495,7 +495,7 @@ static int util_mod_sort(const void* a, const void* b){
 
 static void util_reload_modules(const IRCCoreCtx* core_ctx){
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		if(!m->needs_reload) continue;
 
 		const char* mod_name = basename(m->lib_path);
@@ -565,7 +565,9 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		}
 	}
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	qsort(irc_modules, sb_count(irc_modules), sizeof(*irc_modules), &util_mod_sort);
+
+	sb_each(m, irc_modules){
 		if(!m->needs_reload) continue;
 		m->needs_reload = false;
 
@@ -595,8 +597,6 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			}
 		}
 	}
-
-	qsort(irc_modules, sb_count(irc_modules), sizeof(*irc_modules), &util_mod_sort);
 }
 
 static void util_inotify_add(INotifyWatch* watch, const char* path, uint32_t flags){
@@ -663,7 +663,7 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 		}
 	}
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		if(!m->data_modified) continue;
 		m->data_modified = false;
 
@@ -811,7 +811,7 @@ static void util_ipc_recv(void){
 
 	IPCAddress* peer = util_ipc_add(addr.sun_path);
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		if(strncmp(buffer, m->ctx->name, num) == 0){
 			printf("Got IPC msg from %d for %s\n", peer->id, m->ctx->name);
 			const size_t off = strlen(m->ctx->name) + 1;
@@ -1055,7 +1055,7 @@ IRC_STR_CALLBACK(on_chat_msg) {
 
 	send_msg_called = false;
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		bool global = m->ctx->flags & IRC_MOD_GLOBAL;
 		if(global || util_check_perms(m->ctx->name, _chan, IRC_CB_CMD)){
 			util_dispatch_cmds(m, _chan, _name, _msg);
@@ -1258,9 +1258,8 @@ static const char* core_get_username(void){
 	return bot_nick;
 }
 
-//FIXME: would it be better to return a malloc'd string instead?
+// FIXME: this function is bad and should return a FILE* instead
 static char datafile_buff[PATH_MAX];
-
 static const char* core_get_datafile(void){
 	Module* caller = sb_last(mod_call_stack);
 
@@ -1273,8 +1272,9 @@ static const char* core_get_datafile(void){
 	}
 
 	if(access(datafile_buff, R_OK | W_OK) != 0){
-		fprintf(stderr, "FATAL: We don't have rw permission on '%s'! Please chown/chmod it.\n", datafile_buff);
-		exit(0); // use 0 so we don't get auto-restarted..
+		fprintf(stderr, "ERROR: We don't have rw permission on '%s'! Please chown/chmod it.\n", datafile_buff);
+		// gcc calls me names if i dare use tmpnam for this dumb fallback, so let's do something even worse...
+		snprintf(datafile_buff, sizeof(datafile_buff), "/tmp/insobot-%s.%ld.%d.data", caller->ctx->name, (long)time(0), rand());
 	}
 
 	return datafile_buff;
@@ -1286,7 +1286,7 @@ static IRCModuleCtx** core_get_modules(bool chan_only){
 	if(chan_mod_list) stb__sbn(chan_mod_list) = 0;
 	if(global_mod_list) stb__sbn(global_mod_list) = 0;
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		// XXX: don't return modules with a lower ABI than the caller for safety.
 		if(caller && caller->ctx_size > m->ctx_size) continue;
 
@@ -1575,7 +1575,11 @@ int main(int argc, char** argv){
 	signal(SIGSEGV, &util_handle_sig);
 	signal(SIGINT , &util_handle_sig);
 	signal(SIGPIPE, SIG_IGN);
-	assert(setlocale(LC_CTYPE, "C.UTF-8"));
+
+	if(!setlocale(LC_CTYPE, "C.UTF-8")){
+		fprintf(stderr, "Warning: Couldn't set \"C.UTF-8\" locale. Hopefully your default is UTF-8.\n");
+		setlocale(LC_CTYPE, "");
+	}
 
 	insobot_path = strdup(our_path);
 
@@ -1660,6 +1664,21 @@ int main(int argc, char** argv){
 	
 	if(sb_count(irc_modules) == 0){
 		errx(0, "No modules could be loaded.");
+	}
+
+	bool found_core = false;
+	sb_each(m, irc_modules){
+		if(strcmp(m->ctx->name, "core") == 0){
+			found_core = true;
+			break;
+		}
+	}
+
+	if(!found_core){
+		fprintf(stderr, "\n"
+		        "*** mod_core not found. You should add 'core' to MODULES. ***\n"
+		        "    If this was intentional, edit %s:%d :)\n", __FILE__, __LINE__);
+		exit(0);
 	}
 
 	// irc init
@@ -1835,7 +1854,7 @@ int main(int argc, char** argv){
 
 	// clean stuff up so real leaks are more obvious in valgrind
 
-	for(Module* m = irc_modules; m < sb_end(irc_modules); ++m){
+	sb_each(m, irc_modules){
 		util_module_save(m);
 		IRC_MOD_CALL(m, on_quit, ());
 		free(m->lib_path);

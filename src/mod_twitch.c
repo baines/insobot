@@ -741,7 +741,8 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		}
 	}
 
-	if(strcmp(name, BOT_OWNER) == 0){
+	const char* owner = getenv("IRC_ADMIN");
+	if(owner && strcmp(name, owner) == 0){
 		if(strcasecmp(arg, " enable") == 0 && enabled_index == -1){
 			sb_push(twitch_tracker_chans, strdup(chan));
 			ctx->send_msg(chan, "Enabled twitch tracker.");

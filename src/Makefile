@@ -9,8 +9,8 @@ common_h := $(wildcard inso_*.h)
 common_o := $(patsubst %.h,../lib/%.o,$(common_h))
 
 # Use this to only build certain modules; here is a reasonable default set.
-MODULES := admin alias chans filter haiku help imgmacro info karma linkinfo\
- markov meta poll psa new_quotes twitch whitelist
+MODULES := core alias filter haiku help imgmacro info karma linkinfo\
+ markov poll psa twitch whitelist
 
 # You can define it (and other stuff) in src/config.mk to avoid makefile changes
 #  in git from overwriting your settings.
@@ -74,6 +74,6 @@ all: ../insobot $(module_o)
 # misc
 
 clean:
-	$(RM) $(module_o) $(common_o) ../lib/inso_common.a ../insobot
+	$(RM) ../modules/*.so $(common_o) ../lib/inso_common.a ../insobot
 
 .PHONY: all clean

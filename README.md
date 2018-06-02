@@ -23,7 +23,6 @@ NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
 
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
-| **mod_admin**    | Administrative commands | join       \<channel\>      | Force join a channel              | ADMIN      |
 | **mod_alias**    | Adds short ! macros     | alias      \<key\> \<val\>  | Adds a channel-specific alias     | WLIST      |
 |                  |                         | galias     \<key\> \<val\>  | Adds an alias for all channels    | WLIST      |
 |                  |                         | unalias    \<key\>          | Removes a channel-specific alias  | WLIST      |
@@ -32,6 +31,12 @@ NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
 |                  |                         | lsalias                     | Lists current aliases             | WLIST      |
 | **mod_automod**  | Automatic moderation    | b  \<user\> [sec]           | Times out \<user\> (default 10s)  | WLIST      |
 |                  |                         | ub \<user\>                 | Removes timeout on \<user\>       | WLIST      |
+| **mod_core**     | Core functionality      | m                           | Shows list of modules             | WLIST      |
+|                  |                         | mon \<mod\>                 | Enables module \<mod\>            | WLIST      |
+|                  |                         | moff \<mod\>                | Disables module \<mod\>           | WLIST      |
+|                  |                         | minfo \<mod\>               | Show module's description         | WLIST      |
+|                  |                         | join \<chan\>               | Joins the given channel           | ADMIN      |
+|                  |                         | leave \<chan\>              | Leaves the current channel        | ADMIN      |
 | **mod_haiku**    | Poorly generates haikus | haiku                       | Let the poetry flow               | WLIST      |
 |                  |                         | scount \<word\>             | Show syllable guesstimate         | WLIST      |
 | **mod_help**     | Lists commands          | help [module]               | Shows commands (for [module])     | NORMAL     |
@@ -50,10 +55,6 @@ NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
 |                  |                         | interval \<n\>              | Sets the rate of random messages  | ADMIN      |
 |                  |                         | len                         | Sets average sentence length      | ADMIN      |
 |                  |                         | status                      | Prints markov status info         | ADMIN      |
-| **mod_meta**     | Manages other modules   | m                           | Shows list of modules             | WLIST      |
-|                  |                         | mon \<mod\>                 | Enables module \<mod\>            | WLIST      |
-|                  |                         | moff \<mod\>                | Disables module \<mod\>           | WLIST      |
-|                  |                         | minfo \<mod\>               | Show module's description         | WLIST      |
 | **mod_poll**     | Create polls            | poll+ q? opt0 \| .. \| optn | Create a new poll                 | WLIST      |
 |                  |                         | poll- [\#id]                | Close a poll by id (or latest)    | WLIST      |
 |                  |                         | poll [\#id]                 | Show poll status                  | WLIST      |
