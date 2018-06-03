@@ -405,7 +405,9 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 	*buffer = 0;
 
 	MarkovLinkKey* key = find_key(start_sym_idx, start_sym_idx);
-	assert(key);
+	if(!ib_assert(key)){
+		return 0;
+	}
 
 	int chain_len = 1 + markov_rand(max_chain_len);
 	int links = 0;
@@ -423,7 +425,9 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 			total += val->count;
 		} while(val->next != UINT32_MAX && (val = chain_vals + val->next));
 
-		assert(total);
+		if(!ib_assert(total)){
+			return 0;
+		}
 
 		should_end =
 			(end_count > (total / 2)) ||
@@ -488,6 +492,7 @@ static bool markov_gen_formatted(char* msg, size_t msg_len){
 
 		do {
 			tmp_len = markov_gen(buff, buff_len);
+			if(!tmp_len) return false;
 
 			if(*buff == ','){
 				tmp_len -= 2;
