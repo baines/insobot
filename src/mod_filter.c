@@ -3,10 +3,12 @@
 #include "stb_sb.h"
 #include <regex.h>
 #include <string.h>
+#include <ctype.h>
 
 static bool filter_init    (const IRCCoreCtx*);
 static void filter_exec    (size_t, const char*, char*, size_t);
 static void filter_mod_msg (const char*, const IRCModMsg*);
+static void filter_msg     (const char*, const char*, const char*);
 static void filter_quit    (void);
 
 const IRCModuleCtx irc_mod_ctx = {
@@ -15,6 +17,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.flags      = IRC_MOD_GLOBAL,
 	.on_init    = &filter_init,
 	.on_filter  = &filter_exec,
+	.on_msg     = &filter_msg,
 	.on_mod_msg = &filter_mod_msg,
 	.on_quit    = &filter_quit,
 };
@@ -22,6 +25,8 @@ const IRCModuleCtx irc_mod_ctx = {
 static const IRCCoreCtx* ctx;
 static regex_t* regexen;
 static size_t* permits;
+
+static bool caps_convert;
 
 static bool filter_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -61,6 +66,7 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 	sb_each(p, permits){
 		if(*p == msg_id){
 			sb_erase(permits, p - permits);
+			caps_convert = false;
 			return;
 		}
 	}
@@ -77,8 +83,34 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 		}
 	}
 
+	if(caps_convert){
+		for(char* c = msg; *c; ++c){
+			*c = toupper(*c);
+		}
+		caps_convert = false;
+	}
+
 	if(getenv("IRC_IS_TWITCH")){
 		ctx->strip_colors(msg);
+	}
+}
+
+static void filter_msg(const char* chan, const char* nick, const char* msg){
+	bool all_caps = false;
+
+	if(*msg == *CONTROL_CHAR || *msg == *CONTROL_CHAR_2){
+		all_caps = true;
+
+		for(const char* m = msg; *m && *m != ' '; ++m){
+			if(islower(*m)){
+				all_caps = false;
+				break;
+			}
+		}
+	}
+
+	if(all_caps){
+		caps_convert = true;
 	}
 }
 
