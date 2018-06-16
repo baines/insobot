@@ -86,6 +86,9 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 	if(caps_convert){
 		for(char* c = msg; *c; ++c){
 			*c = toupper(*c);
+			if(*c == '.' && (c[1] == 0 || c[1] == ' ')){
+				*c = '!';
+			}
 		}
 		caps_convert = false;
 	}
@@ -96,21 +99,17 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 }
 
 static void filter_msg(const char* chan, const char* nick, const char* msg){
-	bool all_caps = false;
+	caps_convert = false;
 
 	if(*msg == *CONTROL_CHAR || *msg == *CONTROL_CHAR_2){
-		all_caps = true;
+		caps_convert = true;
 
-		for(const char* m = msg; *m && *m != ' '; ++m){
-			if(islower(*m)){
-				all_caps = false;
+		for(const char* m = msg+1; *m && *m != ' '; ++m){
+			if(!isupper(*m)){
+				caps_convert = false;
 				break;
 			}
 		}
-	}
-
-	if(all_caps){
-		caps_convert = true;
 	}
 }
 
