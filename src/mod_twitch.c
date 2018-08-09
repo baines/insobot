@@ -61,6 +61,12 @@ static time_t last_tracker_update;
 static CURL* curl;
 static struct curl_slist* twitch_headers;
 
+enum stream_state_change {
+	SSC_UNCHANGED,
+	SSC_LIVE_CHANGE,
+	SSC_TITLE_CHANGE,
+};
+
 // TwitchInfo -> data for uptime, follow notifier, vod + tracker
 
 typedef struct {
@@ -69,7 +75,9 @@ typedef struct {
 
 	time_t stream_start;
 	time_t last_uptime_check;
-	bool live_state_changed;
+
+	enum stream_state_change live_state_changed;
+
 	time_t prev_stream_start;
 
 	time_t last_vod_check;
@@ -275,11 +283,13 @@ twitch_curl(char** data, long last_time, const char* fmt, ...){
 static void twitch_check_uptime(size_t count, size_t* indices){
 	if(count == 0) return;
 
-	char chan_buffer[1024] = {};
+	char chan_buffer[2048] = {};
 	for(size_t i = 0; i < count; ++i){
 		inso_strcat(chan_buffer, sizeof(chan_buffer), twitch_keys[indices[i]] + 1);
 		inso_strcat(chan_buffer, sizeof(chan_buffer), ",");
 	}
+
+	//printf("chan buf (%zu): [%s]\n", strlen(chan_buffer), chan_buffer);
 
 	char* data = NULL;
 	yajl_val root = NULL;
@@ -331,6 +341,9 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 
 				if(title){
 					if(info->stream_title){
+						if(strcmp(info->stream_title, title->u.string) != 0){
+							info->live_state_changed |= SSC_TITLE_CHANGE;
+						}
 						free(info->stream_title);
 					}
 					info->stream_title = strdup(title->u.string);
@@ -357,7 +370,7 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 
 unchanged:
 	for(size_t i = 0; i < count; ++i){
-		twitch_vals[indices[i]].live_state_changed = 0;
+		twitch_vals[indices[i]].live_state_changed = SSC_UNCHANGED;
 	}
 }
 
@@ -611,10 +624,12 @@ static intptr_t twitch_sched_cb(SchedMsg* sched, TwitchSchedArg* arg){
 	}
 
 	int twitch_mins = twitch_tm.tm_hour * 60 + twitch_tm.tm_min;
-	int sched_mins = sched_tm.tm_hour * 60 + twitch_tm.tm_min;
+	int sched_mins = sched_tm.tm_hour * 60 + sched_tm.tm_min;
 	int diff = labs(twitch_mins - sched_mins) % 1440;
 
-	if(diff < 70){
+	printf("sched_cb: has date t=[%d:%d] s=[%d:%d] d=%d\n", twitch_tm.tm_hour, twitch_tm.tm_min, sched_tm.tm_hour, sched_tm.tm_min, diff);
+
+	if(diff > 70){
 		return SCHED_ITER_CONTINUE;
 	}
 
@@ -682,14 +697,14 @@ static void twitch_tracker_update(void){
 		const char* chan = twitch_keys[i];
 		TwitchInfo* t    = twitch_vals + i;
 
-		bool changed = t->live_state_changed;
+		enum stream_state_change changed = t->live_state_changed;
 
 		if(t->stream_start != 0){
 			any_live = true;
 			inso_strcat(topic, sizeof(topic), chan + 1);
 			inso_strcat(topic, sizeof(topic), " ");
 
-			if(changed){
+			if(changed & SSC_LIVE_CHANGE){
 				if(!sent_ping){
 					twitch_tags_print("FAO: ", chan + 1);
 					sent_ping = true;
@@ -698,8 +713,11 @@ static void twitch_tracker_update(void){
 
 				const char* display_name = t->tracked_name ? t->tracked_name : chan + 1;
 				TWITCH_TRACKER_MSG("\0038%s\017 is now live -\00310 http://twitch.tv/%s \017- \"%s\"", display_name, chan + 1, t->stream_title ? t->stream_title : "");
+			} else if(changed & SSC_TITLE_CHANGE){
+				const char* display_name = t->tracked_name ? t->tracked_name : chan + 1;
+				TWITCH_TRACKER_MSG("\0033%s\017 (\00310http://twitch.tv/%s)\017 changed title: \"%s\"", display_name, chan + 1, t->stream_title ? t->stream_title : "");
 			}
-		} else if(changed){
+		} else if(changed & SSC_LIVE_CHANGE){
 			any_changed = true;
 			if(t->tracked_name){
 				TWITCH_TRACKER_MSG("\00314%s (%s) is no longer live.", t->tracked_name, chan + 1);
@@ -741,8 +759,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		}
 	}
 
-	const char* owner = getenv("IRC_ADMIN");
-	if(owner && strcmp(name, owner) == 0){
+	if(strcmp(name, BOT_OWNER) == 0){
 		if(strcasecmp(arg, " enable") == 0 && enabled_index == -1){
 			sb_push(twitch_tracker_chans, strdup(chan));
 			ctx->send_msg(chan, "Enabled twitch tracker.");
@@ -910,7 +927,7 @@ static void twitch_set_title(const char* chan, const char* name, const char* msg
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_headers);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
 
-	curl_easy_perform(curl);
+	CURLcode err = curl_easy_perform(curl);
 
 	free(url);
 	free(data);
@@ -925,8 +942,8 @@ static void twitch_set_title(const char* chan, const char* name, const char* msg
 	} else if(http_code == 403){
 		ctx->send_msg(chan, "%s: I don't have permission to update the title.", dispname);
 	} else {
-		ctx->send_msg(chan, "%s: Error updating title for channel \"%s\".", dispname, chan+1);
-		fprintf(stderr, "response: [%s]\n", response);
+		ctx->send_msg(chan, "%s: Error updating title for channel (%ld) \"%s\".", dispname, http_code, chan+1);
+		fprintf(stderr, "response: [%s], curl=[%d] [%s]\n", response, err, curl_easy_strerror(err));
 	}
 
 	sb_free(response);

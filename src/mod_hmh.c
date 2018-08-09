@@ -10,6 +10,7 @@
 #include "inso_utils.h"
 #include "inso_tz.h"
 #include "inso_xml.h"
+#include "inso_json.h"
 
 static void hmh_cmd     (const char*, const char*, const char*, int);
 static bool hmh_init    (const IRCCoreCtx*);
@@ -51,11 +52,10 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 
-static const char schedule_url[] = "https://handmadehero.org/broadcast.csv";
-//static const char schedule_url[] = "http://127.0.0.1:8000/broadcast.csv";
+static const char schedule_url[] = "https://db.mollyrocket.com/hhlive";
 
 static time_t last_schedule_update;
-static time_t schedule[DAYS_IN_WEEK];
+static sb(time_t) schedule;
 static time_t schedule_week;
 
 static char* tz_buf;
@@ -71,6 +71,8 @@ static int irc_server;
 
 static time_t last_yt_fetch;
 static char*  latest_ep_str;
+
+#define CLEAR_SCHEDULE()({ if(schedule){ stb__sbn(schedule) = 0; } })
 
 static bool update_schedule(void){
 
@@ -90,9 +92,6 @@ static bool update_schedule(void){
 
 	if(curl_ret != 0){
 		fprintf(stderr, "Error getting schedule: %s\n", curl_easy_strerror(curl_ret));
-		if(now - schedule[0] > (13*12*60*60)){
-			memset(schedule, 0, sizeof(schedule));
-		}
 		sb_free(data);
 		return false;
 	}
@@ -110,25 +109,40 @@ static bool update_schedule(void){
 		week_end = week_start + (7*24*60*60);
 
 		if(week_start != schedule_week){
-			memset(schedule, 0, sizeof(schedule));
+			CLEAR_SCHEDULE();
 		}
+
 		schedule_week = week_start;
 	}
 
 	if(http_code == 304){
 		fprintf(stderr, "mod_hmh: Not modified.\n");
 	} else {
-		memset(schedule, 0, sizeof(schedule));
+		CLEAR_SCHEDULE();
 
-		char* state;
-		char* line = strtok_r(data, "\r\n", &state);
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		if(!YAJL_IS_OBJECT(root)){
+			fprintf(stderr, "mod_hmh: curl data not json object.\n");
+			goto out;
+		}
 
-		for(; line; line = strtok_r(NULL, "\r\n", &state)){
+		yajl_val dates = YAJL_GET(root, yajl_t_array, ("upcomingDates"));
+		if(!dates){
+			fprintf(stderr, "mod_hmh: couldn't get date array.\n");
+			goto out;
+		}
+
+		for(size_t i = 0; i < dates->u.array.len; ++i){
+			yajl_val date = dates->u.array.values[i];
+			if(!YAJL_IS_STRING(date)){
+				fprintf(stderr, "mod_hmh: dates array contains non-string?\n");
+				break;
+			}
 
 			struct tm scheduled_tm = {};
-			char* title = strptime(line, "%Y-%m-%d,%H:%M", &scheduled_tm);
-			if(!title || *title != ','){
-				printf("mod_hmh: error parsing csv, line was [%s]\n", line);
+			char* title = strptime(date->u.string, "%Y-%m-%d,%H:%M", &scheduled_tm);
+			if(!title || *title != '\0'){
+				printf("mod_hmh: error parsing date: [%s]\n", date->u.string);
 				break;
 			}
 
@@ -136,16 +150,12 @@ static bool update_schedule(void){
 			time_t sched = mktime(&scheduled_tm);
 
 			if(sched >= week_start && sched < week_end){
-				int sched_idx = get_dow(&scheduled_tm);
-				if(strcmp(title + 1, "off") == 0){
-					schedule[sched_idx] = -1;
-				} else {
-					schedule[sched_idx] = sched;
-				}
+				sb_push(schedule, sched);
 			}
 		}
 	}
 
+out:
 	tz_pop(tz);
 	sb_free(data);
 	return true;
@@ -159,44 +169,15 @@ static intptr_t check_alias_cb(intptr_t result, intptr_t arg){
 static void print_schedule(const char* chan, const char* name, const char* arg){
 	time_t now = time(0);
 
-	bool empty_sched = true;
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		if(schedule[i] != 0){
-			empty_sched = false;
-			break;
-		}
-	}
+	bool empty_sched = sb_count(schedule) == 0;
 
 	const long lim = empty_sched ? 30 : 1800;
 	if(now - last_schedule_update > lim && update_schedule()){
 		last_schedule_update = now;
 	}
 
-	struct tm week_start = {};
-	{
-		char* tz = tz_push(":US/Pacific");
+	// parse args (timezone and/or 'terse' for old-style day grouping)
 
-		localtime_r(&now, &week_start);
-		week_start.tm_mday -= get_dow(&week_start);
-		week_start.tm_isdst = -1;
-		mktime(&week_start);
-
-		tz_pop(tz);
-	}
-
-
-	//FIXME: None of this crap should be done here, do it in update_schedule! meh..
-	
-	enum { TIME_UNKNOWN = -1, TIME_OFF = -2 };
-
-	struct {
-		int hour;
-		int min;
-		uint8_t bits;
-	} times[DAYS_IN_WEEK] = {};
-
-	int time_count = 0;
-	int prev_bucket = -1;
 	bool terse = false;
 	
 	if(*arg == ' ' && strncasecmp(arg + 1, "terse", 5) == 0){
@@ -250,66 +231,89 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	}
 
 	// group days by equal times
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
+
+	enum { TIME_UNKNOWN = -1, TIME_OFF = -2 };
+
+	struct time_bucket {
+		int hour;
+		int min;
+		uint8_t bits;
+	};
+
+	struct time_bucket* buckets = calloc(sb_count(schedule), sizeof(struct time_bucket));
+	struct time_bucket* prev_bucket = NULL;
+	int time_count = 0;
+
+	sb_each(s, schedule){
 		struct tm lt = {};
 
-		switch(schedule[i]){
+		switch(*s){
 			case 0 : lt.tm_hour = lt.tm_min = TIME_UNKNOWN; break;
 			case -1: lt.tm_hour = lt.tm_min = TIME_OFF; break;
-			default: localtime_r(schedule + i, &lt); break;
+			default: {
+				localtime_r(s, &lt);
+			} break;
 		}
 
-		int time_bucket = -1;
+		struct time_bucket* bucket = NULL;
 
 		if(terse){
-			for(int j = 0; j < time_count; ++j){
-				if(lt.tm_hour == times[j].hour && lt.tm_min == times[j].min){
-					time_bucket = j;
+			for(int i = 0; i < time_count; ++i){
+				if(lt.tm_hour == buckets[i].hour && lt.tm_min == buckets[i].min){
+					bucket = buckets + i;
 					break;
 				}
 			}
 		} else {
-			if(prev_bucket != -1 && lt.tm_hour == times[prev_bucket].hour && lt.tm_min == times[prev_bucket].min){
-				time_bucket = prev_bucket;
+			if(prev_bucket && lt.tm_hour == prev_bucket->hour && lt.tm_min == prev_bucket->min){
+				bucket = prev_bucket;
 			}
 		}
 
-		if(time_bucket < 0){
-			time_bucket = time_count++;
-			times[time_bucket].hour = lt.tm_hour;
-			times[time_bucket].min = lt.tm_min;
+		if(!bucket){
+			bucket = buckets + time_count++;
+			bucket->hour = lt.tm_hour;
+			bucket->min = lt.tm_min;
 		}
 
 		int day = get_dow(&lt);
-		times[time_bucket].bits |= (1 << day);
+		bucket->bits |= (1 << day);
 
-		prev_bucket = time_bucket;
+		prev_bucket = bucket;
 	}
+
+	// generate and output the schedule string
 
 	empty_sched = true;
 	const char* days[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 	char msg_buf[256] = {};
 
 	for(int i = 0; i < time_count; ++i){
-		if(times[i].hour == TIME_UNKNOWN) continue;
+		if(buckets[i].hour == TIME_UNKNOWN) continue;
 		empty_sched = false;
 
 		inso_strcat(msg_buf, sizeof(msg_buf), "[");
 		for(int j = 0; j < DAYS_IN_WEEK; ++j){
-			if(times[i].bits & (1 << j)){
+			if(buckets[i].bits & (1 << j)){
 				inso_strcat(msg_buf, sizeof(msg_buf), days[j]);
 				inso_strcat(msg_buf, sizeof(msg_buf), " ");
 			}
 		}
 
-		if(times[i].hour == TIME_OFF){
+		if(buckets[i].hour == TIME_OFF){
 			inso_strcat(msg_buf, sizeof(msg_buf), "OFF] ");
 		} else {
 			char time_buf[32];
-			snprintf(time_buf, sizeof(time_buf), "%02d:%02d] ", times[i].hour, times[i].min);
+			snprintf(time_buf, sizeof(time_buf), "%02d:%02d] ", buckets[i].hour, buckets[i].min);
 			inso_strcat(msg_buf, sizeof(msg_buf), time_buf);
 		}
 	}
+
+	struct tm week_start = {};
+	localtime_r(&now, &week_start);
+	week_start.tm_mday -= get_dow(&week_start);
+	week_start.tm_isdst = -1;
+	mktime(&week_start);
 
 	char prefix[64], suffix[64];
 	strftime(prefix, sizeof(prefix), "%b %d"   , &week_start);
@@ -328,8 +332,8 @@ static bool is_during_stream(void){
 	time_t now = time(0);
 
 	bool live = false;
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		int diff = now - schedule[i];
+	sb_each(s, schedule){
+		int diff = now - *s;
 		if(diff > 0 && diff < (60*90)){
 			live = true;
 			break;
@@ -354,14 +358,7 @@ static void print_time(const char* chan, const char* name){
 
 	// test for empty schedule, and attempt update
 	{
-		bool empty_sched = true;
-		for(int i = 0; i < DAYS_IN_WEEK; ++i){
-			if(schedule[i] != 0){
-				empty_sched = false;
-				break;
-			}
-		}
-
+		bool empty_sched = sb_count(schedule) == 0;
 		const long lim = empty_sched ? 30 : 1800;
 		if(now - last_schedule_update > lim && update_schedule()){
 			last_schedule_update = now;
@@ -381,13 +378,14 @@ static void print_time(const char* chan, const char* name){
 
 	uint32_t schedule_flags = 0;
 	int index = -1;
-	for(int i = 0; i < DAYS_IN_WEEK; ++i){
-		if(schedule[i] == 0) continue;
 
-		if(schedule[i] == -1){
+	sb_each(s, schedule){
+		if(!*s) continue;
+
+		if(*s == -1){
 			schedule_flags |= SCHED_OFF;
-		} else if(schedule[i] > (now - (stream_duration_mins*60))){
-			index = i;
+		} else if(*s > (now - (stream_duration_mins*60))){
+			index = s - schedule;
 			break;
 		} else {
 			schedule_flags |= SCHED_OLD;
