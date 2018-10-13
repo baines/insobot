@@ -238,7 +238,7 @@ size_t inso_curl_callback(char* ptr, size_t sz, size_t nmemb, void* data){
 void inso_curl_reset(CURL* curl, const char* url, char** data){
 	curl_easy_reset(curl);
 
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0);
 	curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "insobot");
 	curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1);

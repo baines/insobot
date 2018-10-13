@@ -749,7 +749,7 @@ static void twitch_tracker_update(void){
 	}
 }
 
-static void twitch_tracker_cmd(const char* chan, const char* name, const char* arg, bool wlist){
+static void twitch_tracker_cmd(const char* chan, const char* name, const char* arg, int perms){
 
 	int enabled_index = -1;
 	for(char** c = twitch_tracker_chans; c < sb_end(twitch_tracker_chans); ++c){
@@ -759,7 +759,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		}
 	}
 
-	if(strcmp(name, BOT_OWNER) == 0){
+	if(perms == 2){ // admin
 		if(strcasecmp(arg, " enable") == 0 && enabled_index == -1){
 			sb_push(twitch_tracker_chans, strdup(chan));
 			ctx->send_msg(chan, "Enabled twitch tracker.");
@@ -780,7 +780,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 	char buffer[256];
 	char* optional_name = NULL;
 
-	if(wlist && sscanf(arg, " add %255s %m[^\n]", buffer, &optional_name) >= 1){
+	if(perms && sscanf(arg, " add %255s %m[^\n]", buffer, &optional_name) >= 1){
 
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = true;
@@ -792,7 +792,7 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 		ctx->send_msg(chan, "Now tracking channel %s", buffer);
 		ctx->save_me();
 
-	} else if(wlist && sscanf(arg, " del %255s", buffer) == 1){
+	} else if(perms && sscanf(arg, " del %255s", buffer) == 1){
 
 		TwitchInfo* t = twitch_get_or_add(buffer);
 		t->is_tracked = false;
@@ -1036,7 +1036,7 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 		} break;
 
 		case TWITCH_TRACKER: {
-			twitch_tracker_cmd(chan, name, arg, is_wlist);
+			twitch_tracker_cmd(chan, name, arg, is_admin + is_wlist);
 		} break;
 
 		case TWITCH_TITLE: {

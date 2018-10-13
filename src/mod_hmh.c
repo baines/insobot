@@ -240,7 +240,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		uint8_t bits;
 	};
 
-	struct time_bucket* buckets = calloc(sb_count(schedule), sizeof(struct time_bucket));
+	struct time_bucket* buckets = calloc(sb_count(schedule), sizeof(*buckets));
 	struct time_bucket* prev_bucket = NULL;
 	int time_count = 0;
 
@@ -308,6 +308,8 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 			inso_strcat(msg_buf, sizeof(msg_buf), time_buf);
 		}
 	}
+
+	free(buckets);
 
 	struct tm week_start = {};
 	localtime_r(&now, &week_start);

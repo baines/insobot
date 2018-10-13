@@ -67,10 +67,11 @@ static struct ep_guide {
 	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 3 },
 	{ "handmade_hero hero", "hero"   , "misc"      , "episode/misc/"          , 0 },
 	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 3 },
-	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/"          , 4 },
-	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/"           , 3 },
-	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/"         , 5 },
-	{ "miotatsu"          , "riscy"  , "book"      , "episode/book/"          , 0 },
+	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/chat"      , 4 },
+	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/ray"        , 3 },
+	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/riscy"    , 5 },
+	{ "miotatsu"          , "riscy"  , "coad"      , "episode/coad/coad"      , 4 },
+	{ "miotatsu"          , "riscy"  , "reader"    , "episode/reader/reader"  , 6 },
 	{ "pervognsen"        , "bitwise", "bitwise"   , "episode/bitwise/bitwise", 7 },
 };
 
@@ -301,7 +302,7 @@ static void anno_search(struct ep_guide* guide, const char* chan, const char* na
 		int sz = strchrnul(str, '\n') - str;
 		ctx->send_msg(chan,
 		              "@%s:\0033 1 hit\017: https://%s.handmade.network/%s%s#%d \00311[%.*s]",
-		              name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off, last_match->time, sz, str);
+		              name, guide->project_id, guide->ep_prefix, guide->ep_names + last_match->ep_off + guide->ep_name_skip, last_match->time, sz, str);
 	} else {
 		char ep_buf[64];
 		char* p = ep_buf;
