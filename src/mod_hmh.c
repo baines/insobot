@@ -80,8 +80,6 @@ static bool update_schedule(void){
 	char* data = NULL;
 
 	CURL* curl = inso_curl_init(schedule_url, &data);
-	curl_easy_setopt(curl, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
-	curl_easy_setopt(curl, CURLOPT_TIMEVALUE, (long) last_schedule_update);
 
 	int curl_ret = curl_easy_perform(curl);
 	long http_code = 0;
@@ -115,43 +113,39 @@ static bool update_schedule(void){
 		schedule_week = week_start;
 	}
 
-	if(http_code == 304){
-		fprintf(stderr, "mod_hmh: Not modified.\n");
-	} else {
-		CLEAR_SCHEDULE();
+	CLEAR_SCHEDULE();
 
-		yajl_val root = yajl_tree_parse(data, NULL, 0);
-		if(!YAJL_IS_OBJECT(root)){
-			fprintf(stderr, "mod_hmh: curl data not json object.\n");
-			goto out;
+	yajl_val root = yajl_tree_parse(data, NULL, 0);
+	if(!YAJL_IS_OBJECT(root)){
+		fprintf(stderr, "mod_hmh: curl data not json object.\n");
+		goto out;
+	}
+
+	yajl_val dates = YAJL_GET(root, yajl_t_array, ("upcomingDates"));
+	if(!dates){
+		fprintf(stderr, "mod_hmh: couldn't get date array.\n");
+		goto out;
+	}
+
+	for(size_t i = 0; i < dates->u.array.len; ++i){
+		yajl_val date = dates->u.array.values[i];
+		if(!YAJL_IS_STRING(date)){
+			fprintf(stderr, "mod_hmh: dates array contains non-string?\n");
+			break;
 		}
 
-		yajl_val dates = YAJL_GET(root, yajl_t_array, ("upcomingDates"));
-		if(!dates){
-			fprintf(stderr, "mod_hmh: couldn't get date array.\n");
-			goto out;
+		struct tm scheduled_tm = {};
+		char* title = strptime(date->u.string, "%Y-%m-%d,%H:%M", &scheduled_tm);
+		if(!title || *title != '\0'){
+			printf("mod_hmh: error parsing date: [%s]\n", date->u.string);
+			break;
 		}
 
-		for(size_t i = 0; i < dates->u.array.len; ++i){
-			yajl_val date = dates->u.array.values[i];
-			if(!YAJL_IS_STRING(date)){
-				fprintf(stderr, "mod_hmh: dates array contains non-string?\n");
-				break;
-			}
+		scheduled_tm.tm_isdst = -1;
+		time_t sched = mktime(&scheduled_tm);
 
-			struct tm scheduled_tm = {};
-			char* title = strptime(date->u.string, "%Y-%m-%d,%H:%M", &scheduled_tm);
-			if(!title || *title != '\0'){
-				printf("mod_hmh: error parsing date: [%s]\n", date->u.string);
-				break;
-			}
-
-			scheduled_tm.tm_isdst = -1;
-			time_t sched = mktime(&scheduled_tm);
-
-			if(sched >= week_start && sched < week_end){
-				sb_push(schedule, sched);
-			}
+		if(sched >= week_start && sched < week_end){
+			sb_push(schedule, sched);
 		}
 	}
 
