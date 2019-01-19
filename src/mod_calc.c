@@ -53,6 +53,8 @@ const IRCModuleCtx irc_mod_ctx = {
 static const IRCCoreCtx* ctx;
 
 // Operators + Functions
+static const char ops[] = "+-/*%*&|^><()     !";
+
 enum {
 	OP_ADD,    // +
 	OP_SUB,    // -
@@ -72,8 +74,12 @@ enum {
 	OP_UNARY = 0x10,
 	OP_NOP   = OP_UNARY, // also +
 	OP_NEG, // also -
+	OP_FACT,
 
 	OP_FUNC    = 0x20,
+	OP_FN_MIN,
+	OP_FN_MAX,
+	OP_FN_POW,
 
 	OP_FN_SIN  = OP_FUNC | OP_UNARY,
 	OP_FN_COS,
@@ -87,6 +93,7 @@ enum {
 	OP_FN_SQRT,
 	OP_FN_CBRT,
 	OP_FN_4RT,
+	OP_FN_EXP,
 
 	OP_COUNT,
 };
@@ -95,10 +102,14 @@ enum {
 enum {
 	T_NONE,
 
+	T_BEGIN,
+	T_END,
+
 	T_OP,
 	T_PAREN_OPEN,
 	T_PAREN_CLOSE,
 
+	T_CONSTANT_MUL,
 	T_CONSTANT_ADD,
 	T_CONSTANT_EXP,
 
@@ -116,6 +127,7 @@ enum {
 	ERR_PARENS,
 	ERR_NON_FLOAT,
 	ERR_NON_COMPLEX,
+	ERR_BIG_FACT,
 	ERR_UNKNOWN,
 };
 
@@ -137,6 +149,7 @@ typedef struct {
 	long base;
 	jmp_buf errbuf;
 	bool eof;
+	bool got_comma;
 } calc_state;
 
 // Data tables
@@ -155,6 +168,7 @@ static int precedence[OP_COUNT] = {
 	[OP_AND] = 3,
 	[OP_XOR] = 2,
 	[OP_OR]  = 1,
+	// functions = 0,
 	[OP_PAREN_OPEN] = -1,
 	[OP_PAREN_CLOSE] = -1,
 };
@@ -167,12 +181,11 @@ static const char* errmsg[] = {
 	[ERR_DBZ] = "\001ACTION bursts into flames after dividing by zero.\001",
 	[ERR_TKN] = "%s: Error: Unknown token '%.*s'.",
 	[ERR_PARENS] = "%s: Error: Unbalanced parentheses.",
-	[ERR_NON_FLOAT] = "%s: Cannot apply bitwise op to float.",
-	[ERR_NON_COMPLEX] = "%s: Cannot apply bitwise op to complex number.",
+	[ERR_NON_FLOAT] = "%s: Cannot apply bitwise op / factorial to float.",
+	[ERR_NON_COMPLEX] = "%s: Cannot apply bitwise op / comparison to complex number.",
+	[ERR_BIG_FACT] = "%s: I ain't got time for that.",
 	[ERR_UNKNOWN] = "%s: wat?",
 };
-
-static const char ops[] = "+-/*%*&|^><()";
 
 static struct {
 	const char* str;
@@ -188,9 +201,9 @@ static struct {
 	float value;
 	int type;
 } unicode_constants[] = {
-	{ 'e'   , M_E     , OP_MUL },
-	{ 0x03C0, M_PI    , OP_MUL },
-	{ 0x03C4, M_PI*2.f, OP_MUL },
+	{ 'e'   , M_E     , T_CONSTANT_MUL },
+	{ 0x03C0, M_PI    , T_CONSTANT_MUL },
+	{ 0x03C4, M_PI*2.f, T_CONSTANT_MUL },
 	{ 0x00B2, 2       , T_CONSTANT_EXP },
 	{ 0x00B3, 3       , T_CONSTANT_EXP },
 	{ 0x00BC, 1.f/4.f , T_CONSTANT_ADD },
@@ -231,6 +244,10 @@ static struct {
 	{ "√"   , 3, OP_FN_SQRT  },
 	{ "∛"   , 3, OP_FN_CBRT  },
 	{ "∜"   , 3, OP_FN_4RT   },
+	{ "min" , 3, OP_FN_MIN   },
+	{ "max" , 3, OP_FN_MAX   },
+	{ "exp" , 3, OP_FN_EXP   },
+	{ "pow" , 3, OP_FN_POW   },
 };
 
 static inline token token_op(long op){
@@ -243,7 +260,10 @@ static token check_constants(const char** str, calc_state* state){
 	for(size_t i = 0; i < ARRAY_SIZE(constants); ++i){
 		if(max >= constants[i].str_len && strncmp(*str, constants[i].str, constants[i].str_len) == 0){
 			*str += constants[i].str_len;
-			return (token){ T_FLOAT, { .f = constants[i].value }};
+			return (token){
+				.type = state->prev.type & T_NUM ? T_CONSTANT_MUL : T_FLOAT,
+				.data = { .f = constants[i].value }
+			};
 		}
 	}
 
@@ -252,13 +272,14 @@ static token check_constants(const char** str, calc_state* state){
 
 	for(size_t i = 0; i < ARRAY_SIZE(unicode_constants); ++i){
 		if(unicode_constants[i].codepoint == (uint32_t)wc){
-			int type = T_FLOAT;
+			int type;
 
-			// FIXME: silly logic...
 			if(unicode_constants[i].type == T_CONSTANT_EXP){
 				type = T_CONSTANT_EXP;
-			} else if((state->prev.type & T_NUM) && unicode_constants[i].type != OP_MUL){
+			} else if(state->prev.type & T_NUM){
 				type = unicode_constants[i].type;
+			} else {
+				type = T_FLOAT;
 			}
 
 			*str += n;
@@ -283,7 +304,15 @@ static token check_functions(const char** str, calc_state* state){
 }
 
 static bool is_unary(calc_state* state){
-	return state->prev.type == T_OP || state->prev.type == T_PAREN_OPEN;
+	if(state->got_comma){
+		state->got_comma = false;
+		return true;
+	}
+
+	return state->prev.type == T_OP
+		|| state->prev.type == T_PAREN_OPEN
+		|| state->prev.type == T_BEGIN
+		;
 }
 
 static token calc_next_token(const char** str, calc_state* state){
@@ -292,21 +321,26 @@ static token calc_next_token(const char** str, calc_state* state){
 	// null byte in input == eof
 	if(!**str){
 		state->eof = true;
-		return (token){ T_PAREN_CLOSE };
+		return (token){ T_END };
 	}
 
-	// skip whitespace
-	while(**((uint8_t**)str) <= ' '){
+	// skip whitespace and commas
+	while(**((uint8_t**)str) <= ' ' || **str == ','){
+		// small hack for unary ops in function arguments
+		if(**str == ','){
+			state->got_comma = true;
+		}
+
 		++*str;
 	}
 
 	// named constants + functions
 	{
 		token t;
-		if((t = check_constants(str, state)), t.type != T_NONE){
+		if((t = check_functions(str, state)), t.type != T_NONE){
 			return t;
 		}
-		if((t = check_functions(str, state)), t.type != T_NONE){
+		if((t = check_constants(str, state)), t.type != T_NONE){
 			return t;
 		}
 	}
@@ -323,7 +357,7 @@ static token calc_next_token(const char** str, calc_state* state){
 
 		if(is_unary(state) && (*p == '+' || *p == '-')){ // unary +, -
 			return token_op(OP_UNARY + (p - ops));
-		} else if(p - ops > 10){
+		} else if(p - ops > 10 && p - ops < 13){
 			return (token){ T_PAREN_OPEN + (*p == ')') }; // parens
 		} else if(*p == '*' && **str == '*'){ // exp vs mul
 			++*str;
@@ -428,6 +462,29 @@ overflow:
 	return 0;
 }
 
+static float facts[50] = { 1 };
+static float factorial(float num, calc_state* state){
+	if(modff(num, &num) > FLT_EPSILON){
+		longjmp(state->errbuf, ERR_NON_FLOAT);
+	}
+
+	long n = num;
+
+	if(num < 0){
+		longjmp(state->errbuf, ERR_UNKNOWN);
+	}
+
+	if(num >= 50){
+		longjmp(state->errbuf, ERR_BIG_FACT);
+	}
+
+	if(facts[n] != 0){
+		return facts[n];
+	}
+
+	return facts[n] = factorial(n - 1, state) * n;
+}
+
 static token enfloaten(token t){
 	if(t.type == T_LONG){
 		t.data.f = (float)t.data.l;
@@ -483,6 +540,8 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 			    (tb.type == T_LONG && !tb.data.l))){
 			longjmp(state->errbuf, ERR_DBZ);
 		}
+	} else if(op == OP_FACT){
+		tb = enfloaten(tb);
 	}
 
 	if(tb.type == T_LONG){
@@ -548,6 +607,11 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 				case OP_FN_SQRT : result = sqrt(b); break;
 				case OP_FN_CBRT : result = cbrt(b); break;
 				case OP_FN_4RT  : result = powf(b, 1.0f/4.0f); break;
+				case OP_FN_EXP  : result = expf(b); break;
+				case OP_FN_MIN  : result = INSO_MIN(a, b); break;
+				case OP_FN_MAX  : result = INSO_MAX(a, b); break;
+				case OP_FN_POW  : result = powf(a, b); break;
+				case OP_FACT    : result = factorial(b, state); break;
 				default: {
 					longjmp(state->errbuf, ERR_NON_FLOAT);
 				};
@@ -584,8 +648,10 @@ static void calc_apply_op(long op, token** nums, calc_state* state){
 			case OP_FN_LOGE : result = clogf(b); break;
 			case OP_FN_LOG10: result = clog10f(b); break;
 			case OP_FN_SQRT : result = csqrt(b); break;
+			case OP_FN_EXP  : result = cexpf(b); break;
 			case OP_FN_CBRT : result = cpowf(b, 1.0f/3.0f); break;
 			case OP_FN_4RT  : result = cpowf(b, 1.0f/4.0f); break;
+			case OP_FN_POW  : result = cpowf(a, b); break;
 			default: {
 				longjmp(state->errbuf, ERR_NON_COMPLEX);
 			};
@@ -614,7 +680,7 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 	token* num_stack = NULL;
 
 	token t;
-	calc_state state = { .prev = { T_PAREN_OPEN }};
+	calc_state state = { .prev = { T_BEGIN }};
 
 	int err;
 	if((err = setjmp(state.errbuf))){
@@ -622,8 +688,6 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 		ctx->send_msg(chan, errmsg[err], name, tlen, arg);
 		goto out;
 	}
-
-	sb_push(op_stack, OP_PAREN_OPEN);
 
 	do {
 		t = calc_next_token(&arg, &state);
@@ -633,6 +697,12 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 			t.type = T_FLOAT;
 			sb_push(num_stack, t);
 			calc_apply_op(OP_ADD, &num_stack, &state);
+
+		} else if(t.type == T_CONSTANT_MUL){
+
+			t.type = T_FLOAT;
+			sb_push(num_stack, t);
+			calc_apply_op(OP_MUL, &num_stack, &state);
 
 		} else if(t.type == T_CONSTANT_EXP){
 
@@ -645,23 +715,34 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 
 			sb_push(num_stack, t);
 
-			if(state.prev.type & T_NUM){
-				calc_apply_op(OP_MUL, &num_stack, &state);
-			}
-
 		} else if(t.type == T_OP){
 
-			while(sb_count(op_stack) && (precedence[sb_last(op_stack)] - precedence[t.data.l]) >= right_assoc[t.data.l]){
-				calc_apply_op(sb_last(op_stack), &num_stack, &state);
+			for(;;){
+				if(t.data.l & OP_FUNC)
+					break;
+
+				if(sb_count(op_stack) == 0)
+					break;
+
+				long stack_op = sb_last(op_stack);
+
+				int cur_prec = precedence[stack_op];
+				int new_prec = precedence[t.data.l];
+
+				if(new_prec + right_assoc[t.data.l] > cur_prec)
+					break;
+
+				calc_apply_op(stack_op, &num_stack, &state);
 				sb_pop(op_stack);
 			}
+
 			sb_push(op_stack, t.data.l);
 
 		} else if(t.type == T_PAREN_OPEN){
 
 			sb_push(op_stack, OP_PAREN_OPEN);
 
-		} else { // close paren
+		} else if(t.type == T_PAREN_CLOSE){
 
 			while(sb_count(op_stack) && sb_last(op_stack) != OP_PAREN_OPEN){
 				calc_apply_op(sb_last(op_stack), &num_stack, &state);
@@ -679,25 +760,46 @@ static void calc_cmd(const char* chan, const char* name, const char* arg, int cm
 				calc_apply_op(sb_last(op_stack), &num_stack, &state);
 				sb_pop(op_stack);
 			}
+
+		} else if(t.type == T_END){
+
+			while(sb_count(op_stack)){
+				long op = sb_last(op_stack);
+
+				if(op == OP_PAREN_OPEN){
+					longjmp(state.errbuf, ERR_PARENS);
+				}
+
+				calc_apply_op(op, &num_stack, &state);
+				sb_pop(op_stack);
+			}
+
 		}
 
 		state.prev = t;
 	} while(!state.eof);
 
-	if(sb_count(op_stack)>0) longjmp(state.errbuf, ERR_PARENS);
-	if(!sb_count(num_stack)) longjmp(state.errbuf, ERR_UNKNOWN);
-
-	while(sb_count(num_stack) > 1){
-		calc_apply_op(OP_MUL, &num_stack, &state);
-	}
+	if(sb_count(op_stack) > 0) longjmp(state.errbuf, ERR_PARENS);
+	if(sb_count(num_stack) != 1) longjmp(state.errbuf, ERR_UNKNOWN);
 
 	t = sb_last(num_stack);
 	if(t.type == T_COMPLEX){
-		ctx->send_msg(chan, "%s: %g%+gi", name, crealf(t.data.c), cimagf(t.data.c));
+		float real = crealf(t.data.c);
+		if(fabs(real) < 5*FLT_EPSILON)
+			real = 0;
+
+		float imag = cimagf(t.data.c);
+		if(fabs(imag) < 5*FLT_EPSILON)
+			imag = 0;
+
+		ctx->send_msg(chan, "%s: %g%+gi", name, real, imag);
 	} else if(t.type == T_FLOAT){
+		if(fabs(t.data.f) < 5*FLT_EPSILON)
+			t.data.f = 0;
+
 		ctx->send_msg(chan, "%s: %g.", name, t.data.f);
 	} else {
-		const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %ld.";
+		const char* fmt = state.base == 16 ? "%s: %#lx." : "%s: %'ld.";
 		ctx->send_msg(chan, fmt, name, t.data.l);
 	}
 

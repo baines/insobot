@@ -292,8 +292,8 @@ static inline bool inso_htpriv_empty(inso_ht* ht, const char* ptr){
 	char a = 0;
 	const char* p = ptr + len4;
 	switch(ht->elem_size & 3){
-		case 3: a |= *p++;
-		case 2: a |= *p++;
+		case 3: a |= *p++; /* fallthrough */
+		case 2: a |= *p++; /* fallthrough */
 		case 1: a |= *p++;
 	}
 

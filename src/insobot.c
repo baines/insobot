@@ -1581,6 +1581,8 @@ int main(int argc, char** argv){
 		setlocale(LC_CTYPE, "");
 	}
 
+	setlocale(LC_NUMERIC, "");
+
 	insobot_path = strdup(our_path);
 
 	// inotify init
