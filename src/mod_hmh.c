@@ -19,6 +19,7 @@ static void hmh_mod_msg (const char* sender, const IRCModMsg* msg);
 static void hmh_ipc     (int who, const uint8_t* ptr, size_t sz);
 static void hmh_tick    (time_t);
 
+
 enum { CMD_SCHEDULE, CMD_TIME, CMD_OWLBOT, CMD_OWL_Y, CMD_OWL_N, CMD_QA, CMD_LATEST };
 
 const IRCModuleCtx irc_mod_ctx = {
@@ -71,6 +72,8 @@ static int irc_server;
 
 static time_t last_yt_fetch;
 static char*  latest_ep_str;
+
+static const char* hmh_get_channel(void);
 
 #define CLEAR_SCHEDULE()({ if(schedule){ stb__sbn(schedule) = 0; } })
 
@@ -173,7 +176,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	// parse args (timezone and/or 'terse' for old-style day grouping)
 
 	bool terse = false;
-	
+
 	if(*arg == ' ' && strncasecmp(arg + 1, "terse", 5) == 0){
 		terse = true;
 		arg += 6;
@@ -314,7 +317,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	char prefix[64], suffix[64];
 	strftime(prefix, sizeof(prefix), "%b %d"   , &week_start);
 	strftime(suffix, sizeof(suffix), "%Z/UTC%z", &week_start);
-	
+
 	if(!empty_sched){
 		ctx->send_msg(chan, "Schedule for week of %s: %s(%s)", prefix, msg_buf, suffix);
 	} else {
@@ -502,7 +505,7 @@ static bool check_for_alias(const char* keys, const char* chan, const char* cc){
 	}
 }
 
-#define HMH_MSG(...) ({ ctx->send_msg(irc_server == SERV_TWITCH ? "#handmade_hero" : "#hero", __VA_ARGS__); })
+#define HMH_MSG(...) ({ ctx->send_msg(hmh_get_channel(), __VA_ARGS__); })
 
 static void hmh_owlbot_start(void){
 	owlbot_timer = time(0);
@@ -554,6 +557,22 @@ static void hmh_fetch_latest(void){
 	sb_free(data);
 }
 
+static const char* hmh_get_channel(void){
+	return irc_server == SERV_TWITCH
+		? "#handmade_hero"
+		: irc_server == SERV_HMN
+		? "#hero"
+		: NULL
+		;
+}
+
+static void hmh_qa_msg(void){
+	const char* chan = hmh_get_channel();
+	if(chan){
+		ctx->send_msg(chan, "=== Q&A Session. Prefix questions with Q: ===");
+	}
+}
+
 static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd){
 
 	int* owl_vote = &owlbot_nay;
@@ -572,10 +591,12 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		} break;
 
 		case CMD_OWLBOT: {
-			if(owlbot_timer || !inso_is_wlist(ctx, name)) break;
-			if(irc_server == SERV_UNKNOWN) break;
-			if(irc_server == SERV_TWITCH && strcmp(chan, "#handmade_hero") != 0) break;
-			if(irc_server == SERV_HMN && strcmp(chan, "#hero") != 0) break;
+			if(owlbot_timer || !inso_is_wlist(ctx, name))
+				break;
+
+			const char* c = hmh_get_channel();
+			if(!c || strcmp(c, chan) != 0)
+				break;
 
 			ctx->send_ipc(0, "owl !", 6);
 			hmh_owlbot_start();
@@ -583,6 +604,7 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 		case CMD_OWL_Y:
 			owl_vote = &owlbot_yea;
+			/* fallthru */
 		case CMD_OWL_N:	{
 			if(!owlbot_timer) break;
 
@@ -596,8 +618,9 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 		} break;
 
 		case CMD_QA: {
-			if(irc_server != SERV_TWITCH && inso_is_wlist(ctx, name)){
+			if(inso_is_wlist(ctx, name)){
 				ctx->send_ipc(0, &cmd, sizeof(cmd));
+				hmh_qa_msg();
 			}
 		} break;
 
@@ -688,7 +711,13 @@ static void hmh_ipc(int who, const uint8_t* ptr, size_t sz){
 			case 'y': owlbot_yea++; break;
 			case 'n': owlbot_nay++; break;
 		}
-	} else if(irc_server == SERV_TWITCH && sz == sizeof(int)){
-		ctx->send_msg("#handmade_hero", "=== Q&A Session. Prefix questions with Q: ===");
+	} else if(sz == sizeof(int)){
+
+		int cmd;
+		memcpy(&cmd, ptr, sizeof(int));
+
+		if(cmd == CMD_QA){
+			hmh_qa_msg();
+		}
 	}
 }

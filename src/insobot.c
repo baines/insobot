@@ -100,7 +100,8 @@ static char* modules_include;
 static char* modules_exclude;
 
 static const char *user, *pass, *serv, *port;
-static char* bot_nick;
+static char*  bot_nick;
+static size_t bot_host_len;
 
 static char**  channels;
 static char*** chan_nicks;
@@ -131,7 +132,7 @@ static char* insobot_path;
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
 	event_type     event,   \
-	const char*    origin,  \
+	const char*    origin_full,\
 	const char**   params,  \
 	unsigned int   count    \
 )
@@ -533,7 +534,7 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 			if(dladdr1(m->ctx, &unused, (void**)&sym, RTLD_DL_SYMENT) == 0){
 				errmsg = "dladdr1 failed.";
 			} else if(sym->st_size < (sizeof(void*)*23)) {
-				
+
 				// NOTE: ABI Table for IRCModuleCtx:
 				//
 				//       | sizeof(void*) | last field |
@@ -1033,6 +1034,8 @@ IRC_STR_CALLBACK(on_connect) {
 	free(bot_nick);
 	bot_nick = strdup(params[0]);
 
+	printf("connect origin = %s\n", origin_full);
+
 	IRC_MOD_CALL_ALL(on_connect, (serv));
 }
 
@@ -1041,7 +1044,10 @@ IRC_STR_CALLBACK(on_chat_msg) {
 
 	util_update_tags(params);
 
-	const char *_chan = params[0], *_name = origin;
+	char _name[128] = "";
+	irc_target_get_nick(origin_full, _name, sizeof(_name));
+
+	const char *_chan = params[0];
 
 	size_t msglen = strlen(params[1]);
 	char*  msgbuf = alloca(msglen+2);
@@ -1071,7 +1077,10 @@ IRC_STR_CALLBACK(on_action) {
 
 	util_update_tags(params);
 
-	const char *_chan = params[0], *_name = origin;
+	char _name[128] = "";
+	irc_target_get_nick(origin_full, _name, sizeof(_name));
+
+	const char *_chan = params[0];
 	char* _msg = strdupa(params[1]);
 	util_trim_end_spaces(_msg, strlen(_msg));
 
@@ -1079,11 +1088,13 @@ IRC_STR_CALLBACK(on_action) {
 }
 
 IRC_STR_CALLBACK(on_pm){
-	if(count < 2 || !params[1] || !origin) return;
+	if(count < 2 || !params[1] || !origin_full) return;
 
 	util_update_tags(params);
 
-	const char* _name = origin;
+	char _name[128] = "";
+	irc_target_get_nick(origin_full, _name, sizeof(_name));
+
 	char* _msg = strdupa(params[1]);
 	util_trim_end_spaces(_msg, strlen(_msg));
 
@@ -1091,7 +1102,11 @@ IRC_STR_CALLBACK(on_pm){
 }
 
 IRC_STR_CALLBACK(on_join) {
-	if(count < 1 || !origin || !params[0]) return;
+	if(count < 1 || !origin_full || !params[0]) return;
+
+	char origin[128] = "";
+	irc_target_get_nick(origin_full, origin, sizeof(origin));
+
 	fprintf(stderr, "JOIN: %s %s\n", params[0], origin);
 
 	int chan_i, nick_i;
@@ -1100,7 +1115,7 @@ IRC_STR_CALLBACK(on_join) {
 	if(chan_i == -1){
 		sb_last(channels) = strdup(params[0]);
 		chan_i = sb_count(channels) - 1;
-		
+
 		sb_push(channels, 0);
 		sb_push(chan_nicks, 0);
 	}
@@ -1109,10 +1124,18 @@ IRC_STR_CALLBACK(on_join) {
 		sb_push(chan_nicks[chan_i], strdup(origin));
 	}
 
-	// if we're joining the debug channel, set the global so we know we can now send stuff
-	const char* c = getenv("INSOBOT_DEBUG_CHAN");
-	if(c && strcmp(origin, bot_nick) == 0 && strcmp(params[0], c) == 0){
-		debug_chan = c;
+	if(strcmp(origin, bot_nick) == 0){
+
+		// if we're joining the debug channel, set the global so we know we can now send stuff
+		const char* c = getenv("INSOBOT_DEBUG_CHAN");
+		if(c && strcmp(params[0], c) == 0){
+			debug_chan = c;
+		}
+
+		if(strlen(origin_full) > strlen(origin)){
+			bot_host_len = strlen(origin_full);
+			printf("new host len: %zu\n", bot_host_len);
+		}
 	}
 
 	//XXX: can't use CHECK here unless our own name bypasses it FIXME
@@ -1120,7 +1143,10 @@ IRC_STR_CALLBACK(on_join) {
 }
 
 IRC_STR_CALLBACK(on_part) {
-	if(count < 1 || !origin || !params[0]) return;
+	if(count < 1 || !origin_full || !params[0]) return;
+
+	char origin[128] = "";
+	irc_target_get_nick(origin_full, origin, sizeof(origin));
 
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
@@ -1146,7 +1172,10 @@ IRC_STR_CALLBACK(on_part) {
 }
 
 IRC_STR_CALLBACK(on_quit) {
-	if(!origin) return;
+	if(!origin_full) return;
+
+	char origin[128] = "";
+	irc_target_get_nick(origin_full, origin, sizeof(origin));
 
 	util_update_tags(params);
 
@@ -1166,7 +1195,10 @@ IRC_STR_CALLBACK(on_quit) {
 }
 
 IRC_STR_CALLBACK(on_nick) {
-	if(count < 1 || !origin || !params[0]) return;
+	if(count < 1 || !origin_full || !params[0]) return;
+
+	char origin[128] = "";
+	irc_target_get_nick(origin_full, origin, sizeof(origin));
 
 	util_update_tags(params);
 
@@ -1192,6 +1224,9 @@ IRC_STR_CALLBACK(on_nick) {
 IRC_STR_CALLBACK(on_unknown) {
 	util_update_tags(params);
 
+	char origin[128] = "";
+	irc_target_get_nick(origin_full, origin, sizeof(origin));
+
 	if(strcmp(event, "PONG") == 0){
 //		printf(":: PONG");
 		return;
@@ -1208,16 +1243,16 @@ IRC_STR_CALLBACK(on_unknown) {
 }
 
 IRC_STR_CALLBACK(on_invite) {
-	if(count < 2 || !origin || !params[1]) return;
-	printf("We got invited to [%s] by [%s]\n", params[1], origin);
+	if(count < 2 || !origin_full || !params[1]) return;
+	printf("We got invited to [%s] by [%s]\n", params[1], origin_full);
 	core_join(params[1]);
 }
 
 IRC_NUM_CALLBACK(on_numeric) {
 	static const char nick_start_symbols[] = "[]\\`_^{|}";
-	
+
 	if(event == LIBIRC_RFC_RPL_NAMREPLY && count >= 4 && params[3]){
-		char *names = strdup(params[3]), 
+		char *names = strdup(params[3]),
 		     *state = NULL,
 		     *n     = strtok_r(names, " ", &state);
 
@@ -1227,10 +1262,10 @@ IRC_NUM_CALLBACK(on_numeric) {
 			}
 			irc_on_join(session, "join", n, (const char**)(params + 2), 1);
 		} while((n = strtok_r(NULL, " ", &state)));
-		
+
 		free(names);
 	} else {
-		printf(":: [%03u] :: %s", event, origin);
+		printf(":: [%03u] :: %s", event, origin_full);
 		for(size_t i = 0; i < count; ++i){
 			printf(" :: %s", params[i]);
 		}
@@ -1336,7 +1371,7 @@ static void core_join(const char* chan){
 	if(chan_i == -1){
 		sb_last(channels) = strdup(chan);
 		chan_i = sb_count(channels) - 1;
-		
+
 		sb_push(channels, 0);
 
 		sb_push(chan_nicks, 0);
@@ -1346,7 +1381,7 @@ static void core_join(const char* chan){
 }
 
 static void core_part(const char* chan){
-	
+
 	util_cmd_enqueue(IRC_CMD_PART, chan, NULL);
 
 	for(char** c = channels; *c; ++c){
@@ -1362,15 +1397,42 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 	if(!chan || !fmt) return 0;
 
 	size_t id = 0;
-	char buff[1024];
+	char buff[8192];
 	va_list v;
 
 	va_start(v, fmt);
-	if(vsnprintf(buff, sizeof(buff), fmt, v) > 0){
-		id = util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
-	}
-	va_end(v);
+	int total_len = vsnprintf(buff, sizeof(buff), fmt, v);
+	if(total_len < 0)
+		goto end;
 
+	if(total_len > (int)sizeof(buff))
+		total_len = sizeof(buff);
+
+	if(!bot_host_len){
+		id = util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
+	} else {
+		char tmp[512];
+		int max_msg_len = 512 - (sizeof("PRIVMSG :\r\n") + strlen(chan) + bot_host_len);
+
+		if(max_msg_len < 64)
+			max_msg_len = 64;
+
+		char* p = buff;
+		char* e = buff + total_len;
+
+		while(p - e){
+			int n = INSO_MIN(max_msg_len, total_len);
+			memcpy(tmp, p, n);
+			tmp[n] = '\0';
+
+			util_cmd_enqueue(IRC_CMD_MSG, chan, tmp);
+
+			p += n;
+		}
+	}
+
+end:
+	va_end(v);
 	send_msg_called = true;
 
 	return id;
@@ -1663,7 +1725,7 @@ int main(int argc, char** argv){
 	// initial load of modules
 
 	util_reload_modules(&core_ctx);
-	
+
 	if(sb_count(irc_modules) == 0){
 		errx(0, "No modules could be loaded.");
 	}
@@ -1713,8 +1775,6 @@ int main(int argc, char** argv){
 			exit(1);
 		}
 
-		irc_option_set(irc_ctx, LIBIRC_OPTION_STRIPNICKS);
-
 		char* libirc_serv;
 		if(getenv("IRC_ENABLE_SSL")){
 			puts("Using ssl connection...");
@@ -1744,7 +1804,7 @@ int main(int argc, char** argv){
 
 			int max_fd = 0;
 			fd_set in, out;
-	
+
 			FD_ZERO(&in);
 			FD_ZERO(&out);
 
@@ -1839,7 +1899,7 @@ int main(int argc, char** argv){
 				perror("select");
 			}
 		}
-	
+
 		irc_destroy_session(irc_ctx);
 		timerclear(&idle_tv);
 		ping_sent = 0;
