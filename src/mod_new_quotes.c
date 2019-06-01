@@ -378,7 +378,9 @@ static bool quotes_ratelimit(const char* chan){
 
 	if(now - qc->ratelimit_time < 30){
 		if(++qc->ratelimit_count > 3){
-			ctx->send_msg(chan, "To see more quotes, visit " QUOTES_URL);
+			if(qc->ratelimit_count == 4){
+				ctx->send_msg(chan, "To see more quotes, visit " QUOTES_URL);
+			}
 			return true;
 		}
 	} else {
