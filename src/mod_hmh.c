@@ -35,10 +35,10 @@ const IRCModuleCtx irc_mod_ctx = {
 		[CMD_SCHEDULE] = CMD("schedule"),
 		[CMD_TIME]     = CMD("tm") CMD("time") CMD("when"),
 		[CMD_OWLBOT]   = CMD("owlbot"),
-		[CMD_OWL_Y]    = "!owly !owlyes !owlyea",
-		[CMD_OWL_N]    = "!owln !owlno  !owlnay",
-		[CMD_QA]       = "!qa",
-		[CMD_LATEST]   = "!latest"
+		[CMD_OWL_Y]    = CMD("owly") CMD("owlyes") CMD("owlyea"),
+		[CMD_OWL_N]    = CMD("owln") CMD("owlno")  CMD("owlnay"),
+		[CMD_QA]       = CMD("qa"),
+		[CMD_LATEST]   = CMD("latest")
 	),
 	.cmd_help = DEFINE_CMDS (
 		[CMD_SCHEDULE] = "[TZ] | Shows the Handmade Hero schedule (optionally in the tzdb timezone [TZ], e.g. Europe/London",

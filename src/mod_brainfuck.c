@@ -14,7 +14,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_init  = brainfuck_init,
 	.on_cmd   = &brainfuck_cmd,
 	.commands = DEFINE_CMDS (
-		[BRAINFUCK_EXEC] = "!bf"
+		[BRAINFUCK_EXEC] = CMD("bf")
 	),
 	.cmd_help = DEFINE_CMDS (
 		[BRAINFUCK_EXEC] = "<code> <input> | Execute the given brainfuck program, and display its output."

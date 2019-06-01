@@ -126,7 +126,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 				size_t max_len = arg_len;
 
 				if(str > *cmd){
-					if(strchr(CONTROL_CHAR CONTROL_CHAR_2, str[-1])){
+					if(strchr(CONTROL_CHARS, str[-1])){
 						--str;
 						++max_len;
 					} else if(str[-1] != ' '){

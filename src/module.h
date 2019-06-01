@@ -155,7 +155,14 @@ struct IRCModMsg_ {
 }
 
 #define CMD1(x) CONTROL_CHAR x " "
-#define CMD2(x) CONTROL_CHAR_2 x " "
-#define CMD(x) CMD1(x) CMD2(x)
+
+#ifdef CONTROL_CHAR_2
+	#define CMD2(x) CONTROL_CHAR_2 x " "
+	#define CMD(x) CMD1(x) CMD2(x)
+	#define CONTROL_CHARS CONTROL_CHAR CONTROL_CHAR_2
+#else
+	#define CMD(x) CMD1(x)
+	#define CONTROL_CHARS CONTROL_CHAR
+#endif
 
 #endif

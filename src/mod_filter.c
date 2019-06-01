@@ -101,7 +101,11 @@ static void filter_exec(size_t msg_id, const char* chan, char* msg, size_t len){
 static void filter_msg(const char* chan, const char* nick, const char* msg){
 	caps_convert = false;
 
-	if(*msg == *CONTROL_CHAR || *msg == *CONTROL_CHAR_2){
+	if(*msg == *CONTROL_CHAR
+#ifdef CONTROL_CHAR_2
+		|| *msg == *CONTROL_CHAR_2
+#endif
+		){
 		caps_convert = true;
 
 		for(const char* m = msg+1; *m && *m != ' '; ++m){

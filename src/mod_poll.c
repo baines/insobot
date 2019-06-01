@@ -290,7 +290,7 @@ static void poll_cmd(const char* chan, const char* name, const char* arg, int cm
 
 		case POLL_LIST_CLOSED: {
 			show_closed = true;
-		} // fall-through;
+		} // fallthru
 
 		case POLL_LIST_OPEN: {
 			if(!wlist) break;

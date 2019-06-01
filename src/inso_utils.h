@@ -124,7 +124,7 @@ static inline bool inso_in_chan(const IRCCoreCtx* ctx, const char* chan){
 static inline int inso_match_cmd(const char* msg, const char* cmd, bool skip_control){
 
 	size_t len_adjust = 0;
-	if(skip_control && strchr(CONTROL_CHAR CONTROL_CHAR_2, *msg)){
+	if(skip_control && strchr(CONTROL_CHARS, *msg)){
 		++msg;
 		++len_adjust;
 	}
@@ -133,9 +133,12 @@ static inline int inso_match_cmd(const char* msg, const char* cmd, bool skip_con
 		if(skip_control){
 			if(strncmp(cmd, CONTROL_CHAR, sizeof(CONTROL_CHAR)-1) == 0){
 				cmd += sizeof(CONTROL_CHAR)-1;
-			} else if(strncmp(cmd, CONTROL_CHAR_2, sizeof(CONTROL_CHAR_2)-1) == 0){
+			}
+#ifdef CONTROL_CHAR_2
+			else if(strncmp(cmd, CONTROL_CHAR_2, sizeof(CONTROL_CHAR_2)-1) == 0){
 				cmd += sizeof(CONTROL_CHAR_2)-1;
 			}
+#endif
 		}
 
 		const char* cmd_end = strchrnul(cmd, ' ');

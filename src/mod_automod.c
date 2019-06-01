@@ -30,8 +30,8 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_join    = &automod_join,
 	.on_quit    = &automod_quit,
 	.commands   = DEFINE_CMDS(
-		[AUTOMOD_TIMEOUT] = "!b \\b !to !ko \\ko",
-		[AUTOMOD_UNBAN]   = "!ub \\ub"
+		[AUTOMOD_TIMEOUT] = CMD("b") CMD("ko"),
+		[AUTOMOD_UNBAN]   = CMD("ub")
 	),
 	.cmd_help = DEFINE_CMDS(
 		[AUTOMOD_TIMEOUT] = "<user> [time] | Times out <user> for [time] minutes (default 10)",

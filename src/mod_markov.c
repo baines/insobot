@@ -35,12 +35,12 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_stdin = &markov_stdin,
 	.on_mod_msg = &markov_mod_msg,
 	.commands = DEFINE_CMDS (
-		[MARKOV_SAY]      = CMD1("say"),
-		[MARKOV_ASK]      = CMD1("ask"),
-		[MARKOV_INTERVAL] = CMD1("interval") CMD1("gap"),
-		[MARKOV_LENGTH]   = CMD1("len"),
-		[MARKOV_STATUS]   = CMD1("status"),
-		[MARKOV_SAVE]     = CMD1("msave")
+		[MARKOV_SAY]      = CMD("say"),
+		[MARKOV_ASK]      = CMD("ask"),
+		[MARKOV_INTERVAL] = CMD("interval") CMD("gap"),
+		[MARKOV_LENGTH]   = CMD("len"),
+		[MARKOV_STATUS]   = CMD("status"),
+		[MARKOV_SAVE]     = CMD("msave")
 	),
 	.cmd_help = DEFINE_CMDS (
 		[MARKOV_SAY]      = "| Instruct the bot say something random (5 minute cooldown).",
@@ -267,6 +267,11 @@ static void markov_add(word_idx_t indices[static 3]){
 
 	MarkovLinkKey* key = find_key(indices[0], indices[1]);
 
+	printf("markov_add: %s %s %s\n",
+	       word_mem + indices[0],
+	       word_mem + indices[1],
+	       word_mem + indices[2]);
+
 	if(!key){
 		MarkovLinkVal val = {
 			.word_idx = indices[2],
@@ -354,7 +359,7 @@ static int markov_topic_cmp(const void* _a, const void* _b){
 
 	if(a->count != b->count){
 		if(!a->count) return -1;
-		if(!b->count) return +1;		
+		if(!b->count) return +1;
 		return b->count - a->count;
 	}
 
@@ -622,7 +627,7 @@ static bool markov_save(FILE* file){
 	uint32_t word_size = sbmm_count(word_mem) - 1;
 	uint32_t val_size  = sbmm_count(chain_vals);
 	uint32_t version   = 3;
-	
+
 	while(inso_ht_tick(&chain_keys_ht));
 	while(inso_ht_tick(&word_ht));
 

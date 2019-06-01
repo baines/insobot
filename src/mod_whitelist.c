@@ -24,10 +24,10 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_quit    = &whitelist_quit,
 	.on_modified = &whitelist_modified,
 	.commands   = DEFINE_CMDS (
-		[WL_CHECK_SELF] = CONTROL_CHAR "amiwhitelisted",
-		[WL_CHECK]      = CONTROL_CHAR "wl "    CONTROL_CHAR "iswl " CONTROL_CHAR "wlcheck",
-		[WL_ADD]        = CONTROL_CHAR "wladd " CONTROL_CHAR "wl+",
-		[WL_DEL]        = CONTROL_CHAR "wldel " CONTROL_CHAR "wl-"
+		[WL_CHECK_SELF] = CMD("amiwhitelisted"),
+		[WL_CHECK]      = CMD("wl")    CMD("iswl") CMD("wlcheck"),
+		[WL_ADD]        = CMD("wladd") CMD("wl+"),
+		[WL_DEL]        = CMD("wldel") CMD("wl-")
 	),
 	.cmd_help = DEFINE_CMDS (
 		[WL_CHECK_SELF] = "| Check if you are whitelisted",

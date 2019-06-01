@@ -4,8 +4,8 @@
 // main control char / prefix for commands
 #define CONTROL_CHAR "!"
 
-// alternatate control char for certain commands (can be the same as CONTROL_CHAR)
-#define CONTROL_CHAR_2 "!"
+// alternatate control char for certain commands (can be left undefined)
+//#define CONTROL_CHAR_2 "\\"
 
 // note, this is overritten by the IRC_USER environment variable
 #define DEFAULT_BOT_NAME "fake-insobot"
