@@ -35,3 +35,5 @@ data
 src/config.mk
 utils/schedule_api
 utils/mod_core_upgrade
+utils/ibdox/ibdox
+utils/ibdox/dist/index.html

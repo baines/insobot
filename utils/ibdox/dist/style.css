@@ -1,0 +1,164 @@
+* {
+	padding: 0;
+	margin: 0;
+}
+
+@font-face {
+	font-family: pirata;
+	src: url("PirataOne-Regular.ttf");
+}
+
+@font-face {
+	font-family: maintext;
+	src: url("SourceCodePro-Regular.ttf");
+}
+
+html {
+	background: url("bg.jpg") no-repeat;
+	background-size: cover;
+	background-attachment: fixed;
+	/*font-family: 'Terminus', monospace;*/
+	font-family: maintext;
+	font-size: 12px;
+}
+
+body {
+	max-width: 666px;
+	background: rgba(0, 0, 0, 0.8);
+	color: #fff;
+	border: 2px solid #fff;
+	padding: 4px 4px 0 4px;
+	margin: 40px auto;
+}
+
+header {
+	font-family: pirata;
+	font-size: 30px;
+	letter-spacing: 5px;
+	text-align: center;
+	color: #fff;
+	height: 32px;
+	padding: 4px;
+}
+
+footer {
+	width: 100%;
+	font-family: pirata;
+	letter-spacing: 4px;
+	font-size: 16px;
+	display: flex;
+	justify-content: space-between;
+}
+
+kbd {
+	color: #01da6f;
+	font-weight: bold;
+}
+
+header, #modules li, .mod-heading, thead {
+	font-variant: small-caps;
+}
+
+main {
+	display: flex;
+}
+
+#modules {
+	margin-top: 4px;
+	flex: 0 0 125px;
+	height: 100%;
+	position: sticky;
+	top: 3px;
+}
+
+#modules li {
+	list-item-style: none;
+	display: block;
+	width: calc(100% - 6px);
+	text-align: right;
+	padding: 0 2px;
+	margin-bottom: 4px;
+	height: 20px;
+	font-weight: bold;
+	background: #01da6f;
+}
+
+a, a:link, a:visited, a:hover {
+	color: inherit;
+	text-decoration: none;
+	display: block;
+}
+
+a:hover {
+	color: #01da6f;
+}
+
+#modules li:first-child {
+	text-align: center;
+	font-weight: bold;
+	border-color: #1B1825;
+	color: #000;
+}
+
+#modules li:not(:first-child) {
+	/*background-color: #1b1825;*/
+	background-color: rgba(0,0,0,0.5);
+	border-bottom: 1px solid #fff;
+	cursor: pointer;
+}
+
+#modules li:not(:first-child) a:after {
+	content: " >"
+}
+
+table {
+	margin-bottom: 4px;
+	width: 100%;
+}
+
+table, table td {
+	border: 1px solid #fff;
+	border-collapse: collapse;
+}
+
+table td {
+	padding: 2px 3px;
+}
+
+thead {
+	background: #fff;
+	color: #000;
+}
+
+article {
+	margin: 4px 0 0 2px;
+	flex: 1 1 auto;
+}
+
+.mod-heading {
+	text-align: center;
+	background: #01da6f;
+	background-clip: padding-box;
+	color: #000;
+	font-weight: 20px;
+	font-weight: bold;
+	margin-bottom: 4px;
+	height: 20px;
+	border-top: 3px solid transparent;
+	margin-top: -3px;
+}
+
+.w {
+	background: rgba(255, 255, 255, 0.15);
+}
+
+.exthelp {
+	display: block;
+	font-weight: bold;
+	margin-bottom: 4px;
+	padding: 2px;
+}
+
+.cmds td:nth-child(1) { width: 125px; }
+.cmds td:nth-child(2) { width: 125px; }
+.cmds td:nth-child(4) { width: 12px; cursor: help; }
