@@ -14,9 +14,15 @@ for a place to post forum topics or read project updates.
 Any contributions of new modules, improvements to existing modules, or raising
 issues here on github is welcome.
 
+If you want to write your own modules take a look at `src/module.h` for the API
+and `src/mod_hello_world.c` for an example.
+
 ## Commands
 This table shows common modules & commands. Refer to the top of each module's
 .c file for a complete listing.
+
+**NEW**: visit the (tounge-in-cheek) documentation website at https://insobot.church/
+This site is auto-generated from each module's source code using the `ibdox` program in utils/
 
 NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
 (backslash), the default prefix (set in config.h) is '!' (exclamation mark) however.
