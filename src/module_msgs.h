@@ -8,7 +8,7 @@
 
 // MOD_MSG is a macro defined in module.h for passing messages between modules.
 // It has the following syntax:
-// 
+//
 //   MOD_MSG(IRCCoreCtx ctx, char* msg_id, arg, callback, user_defined);
 //
 // The callback parameter should have the following signature:
@@ -37,7 +37,7 @@
 
 //
 // Message List
-// 
+//
 
 // [L] means the arg is a space-separated List of strings in a single char*
 // [M] means the callback will be called Multiple times with different results
@@ -52,10 +52,12 @@
 // mod_alias     | "alias_exists"          | char*[2]  | bool           | unused          |
 // mod_alias     | "alias_info"            | char*[2]  | AliasInfo*     | unused          |
 // mod_alias     | "alias_exec"            | AliasReq* | unused         | unused          |
+// mod_core      | "check_chan_enabled"    | char*     | bool           | unused          |
 // mod_hmh       | "hmh_is_live"           | unused    | bool           | unused          |
 // mod_karma     | "karma_get"             | char*     | int            | unused          |
 // mod_markov    | "markov_gen"            | unused    | char* [F]      | unused          |
 // mod_notes     | "note_get_stream_start" | char* [L] | time_t         | unused          |
+// mod_notes     | "note_added"            | NoteMsg*  | time_t         | unused          |
 // mod_schedule  | "sched_iter"            | char*     | SchedMsg*      | SchedIterCmd    |
 // mod_schedule  | "sched_add"             | SchedMsg* | bool           | unused          |
 // mod_schedule  | "sched_save"            | unused    | unused         | unused          |
@@ -97,6 +99,10 @@ typedef struct {
 	bool is_action;
 } AliasInfo;
 
+// CORE:
+//  check_chan_enabled:
+//    *result* will be true/false if the calling module is enabled for the channel in *arg*
+
 // HMH:
 //  hmh_is_live:
 //    *result* will be true/false if HMH is scheduled to be airing currently.
@@ -114,6 +120,20 @@ typedef struct {
 //  note_get_stream_start:
 //    *result* will be the time a "NOTE(Annotator): ... start" was last issued for
 //    the channel given in *arg*
+//  note_added:
+//    Unlike most other mod msgs, mod_notes sends this one out when a note is added.
+//    If you're interested you can add a .on_mod_msg handler and listen for it
+//    *result* is a NoteMsg as below.
+
+enum { NOTE_NONE, NOTE_STREAM_START, NOTE_GENERIC };
+
+typedef struct {
+	int    type; // see enum above
+	time_t time;
+	char*  channel;
+	char*  author;
+	char*  content;
+} NoteMsg;
 
 // SCHEDULE:
 //  sched_iter:

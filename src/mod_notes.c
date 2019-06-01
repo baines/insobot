@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "module.h"
 #include "inso_utils.h"
+#include "module_msgs.h"
 
 static void notes_msg     (const char*, const char*, const char*);
 static void notes_msg_out (const char*, const char*);
@@ -22,15 +23,9 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_ipc     = &notes_ipc
 };
 
-enum { NOTE_NONE, NOTE_STREAM_START, NOTE_GENERIC };
+static const IRCCoreCtx* ctx;
 
-typedef struct Note {
-	int    type;
-	time_t time;
-	char*  channel;
-	char*  author;
-	char*  content;
-} Note;
+typedef NoteMsg Note;
 
 static Note notes[256];
 static int note_index;
@@ -47,9 +42,9 @@ static void note_push(Note* new_note){
 	*n = *new_note;
 
 	note_index = (note_index + 1) % ARRAY_SIZE(notes);
-}
 
-static const IRCCoreCtx* ctx;
+	MOD_MSG(ctx, "note_added", n, NULL, NULL);
+}
 
 static bool notes_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;

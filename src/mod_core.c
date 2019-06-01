@@ -106,7 +106,7 @@ static bool reload_file(void){
 
 	return true;
 }
- 
+
 static bool core_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	return reload_file();
@@ -362,10 +362,15 @@ static void core_part(const char* chan, const char* name){
 
 static void core_mod_msg(const char* sender, const IRCModMsg* msg){
 	const char* admin = getenv("IRC_ADMIN");
-	if(!admin) return;
 
-	if((strcmp(msg->cmd, "check_whitelist") == 0 ||
+	if(admin && (strcmp(msg->cmd, "check_whitelist") == 0 ||
 			strcmp(msg->cmd, "check_admin") == 0) && strcmp((char*)msg->arg, admin) == 0){
 		msg->callback(true, msg->cb_arg);
+	}
+
+	else if(strcmp(msg->cmd, "check_chan_enabled") == 0){
+		struct chan* info = core_get_or_add((char*)msg->arg);
+		bool enabled = mod_find(info, sender);
+		msg->callback(enabled, msg->cb_arg);
 	}
 }
