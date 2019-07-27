@@ -861,11 +861,11 @@ static void do_github_info(const char* chan, const char* msg, regmatch_t* matche
 
 static void do_twitch_vid_info(const char* chan, const char* msg, regmatch_t* matches){
 	if(matches[2].rm_so == -1 || matches[2].rm_eo == -1) return;
-	
+
 	char* url;
 	asprintf_check(
 		&url,
-		"https://api.twitch.tv/kraken/videos/%.*s",
+		"https://api.twitch.tv/helix/videos?id=%.*s",
 		matches[2].rm_eo - matches[2].rm_so,
 		msg + matches[2].rm_so
 	);
@@ -885,12 +885,21 @@ static void do_twitch_vid_info(const char* chan, const char* msg, regmatch_t* ma
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
 	if(inso_curl_perform(curl, &data) == 200){
-		yajl_val root  = yajl_tree_parse(data, NULL, 0);
-		yajl_val title = YAJL_GET(root, yajl_t_string, ("title"));
-		yajl_val name  = YAJL_GET(root, yajl_t_string, ("channel", "display_name"));
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+		yajl_val data = YAJL_GET(root, yajl_t_array, ("data"));
 
-		if(title && name){
-			ctx->send_msg(chan, "↑ Twitch VoD: [%s] by %s", title->u.string, name->u.string);
+		if(data && data->u.array.len > 0) {
+			yajl_val obj = data->u.array.values[0];
+
+			if(YAJL_IS_OBJECT(obj)) {
+				yajl_val title    = YAJL_GET(obj, yajl_t_string, ("title"));
+				yajl_val name     = YAJL_GET(obj, yajl_t_string, ("user_name"));
+				yajl_val duration = YAJL_GET(obj, yajl_t_string, ("duration"));
+
+				if(title && name){
+					ctx->send_msg(chan, "↑ Twitch VoD: [%s] [%s] by %s", title->u.string, duration->u.string, name->u.string);
+				}
+			}
 		}
 
 		yajl_tree_free(root);

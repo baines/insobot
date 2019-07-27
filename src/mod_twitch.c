@@ -6,6 +6,7 @@
 #include <yajl/yajl_tree.h>
 #include <ctype.h>
 #include "inso_utils.h"
+#include "inso_json.h"
 #include "inso_tz.h"
 #include "module_msgs.h"
 #include <argz.h>
@@ -52,7 +53,7 @@ static const IRCCoreCtx* ctx;
 
 static const long uptime_check_interval = 120;
 static const long follower_check_interval = 60;
-static const long tracker_update_interval = 60;
+static const long tracker_update_interval = 50;
 
 static time_t last_uptime_check;
 static time_t last_follower_check;
@@ -88,6 +89,8 @@ typedef struct {
 	char* stream_title;
 
 	uint64_t stream_id;
+
+	char* user_id;
 } TwitchInfo;
 
 static char**      twitch_keys;
@@ -214,6 +217,8 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 	curl = curl_easy_init();
 
+	twitch_headers = curl_slist_append(twitch_headers, "Accept: application/vnd.twitchtv.v5+json");
+
 	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
 	if(client_id){
 		char buf[256];
@@ -280,64 +285,127 @@ twitch_curl(char** data, long last_time, const char* fmt, ...){
 	return http_code;
 }
 
+static void twitch_resolve_user_id_bulk(int* indices, size_t count) {
+	size_t total = sb_count(twitch_vals);
+
+	char user_buf[4096];
+
+	char*  user_buf_ptr = user_buf;
+	size_t user_buf_sz = sizeof(user_buf);
+
+	for(size_t i = 0; i < count; ++i) {
+		int index = indices[i];
+
+		if(index < 0 || index >= (int)total)
+			continue;
+
+		char* chan    = twitch_keys[index];
+		TwitchInfo* t = twitch_vals + index;
+
+		if(t->user_id)
+			continue;
+
+		snprintf_chain(&user_buf_ptr, &user_buf_sz, "&login=%s", chan+1);
+	}
+
+	char* data = NULL;
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/helix/users?%s", user_buf) == 200) {
+		yajl_val root = yajl_tree_parse(data, NULL, 0);
+
+		if(root) {
+			yajl_val users = YAJL_GET(root, yajl_t_array, ("data"));
+			if(users) {
+				for(size_t i = 0; i < users->u.array.len; ++i){
+					yajl_val obj = users->u.array.values[i];
+
+					yajl_val name = YAJL_GET(obj, yajl_t_string, ("login"));
+					yajl_val id   = YAJL_GET(obj, yajl_t_string, ("id"));
+
+					if(name && id) {
+						TwitchInfo* t = twitch_get_or_add(name->u.string);
+
+						printf("mod_twitch: resolved user id [%s] = [%s]\n", name->u.string, id->u.string);
+
+						free(t->user_id);
+						t->user_id = strdup(id->u.string);
+					}
+				}
+			}
+		}
+
+		yajl_tree_free(root);
+	}
+
+	sb_free(data);
+}
+
+static bool twitch_resolve_user_id(TwitchInfo* t) {
+	int index = t - twitch_vals;
+	twitch_resolve_user_id_bulk(&index, 1);
+	return t->user_id;
+}
+
+
 static void twitch_check_uptime(size_t count, size_t* indices){
 	if(count == 0) return;
 
-	char chan_buffer[2048] = {};
+	char chan_buffer[4096] = {};
 	for(size_t i = 0; i < count; ++i){
+		inso_strcat(chan_buffer, sizeof(chan_buffer), "&user_login=");
 		inso_strcat(chan_buffer, sizeof(chan_buffer), twitch_keys[indices[i]] + 1);
-		inso_strcat(chan_buffer, sizeof(chan_buffer), ",");
 	}
-
-	//printf("chan buf (%zu): [%s]\n", strlen(chan_buffer), chan_buffer);
 
 	char* data = NULL;
 	yajl_val root = NULL;
 	time_t now = time(0);
 
-	//printf("chan buf: [%s]\n", chan_buffer);
-	//printf("last_time: %zu\n", last_uptime_check);
+	printf("mod_twitch: doing uptime check [%s]\n", chan_buffer);
 
-	long ret = twitch_curl(&data, last_uptime_check, "https://api.twitch.tv/kraken/streams?channel=%s", chan_buffer);
+	// TODO: pagination
+
+	long ret = twitch_curl(&data, last_uptime_check, "https://api.twitch.tv/helix/streams?%s", chan_buffer);
 	last_uptime_check = now;
 
 	if(ret == 304){
 		goto unchanged;
 	}
 
-	if(ret == -1 || !(root = yajl_tree_parse(data, NULL, 0))){
-		fprintf(stderr, "mod_twitch: error getting uptime.\n");
+	if(ret != 200 || !(root = yajl_tree_parse(data, NULL, 0))){
+		fprintf(stderr, "mod_twitch: error getting uptime. (%ld)\n", ret);
 		goto unchanged;
 	}
 
-	const char* streams_path[] = { "streams", NULL };
+	const char* streams_path[] = { "data", NULL };
 	yajl_val streams = yajl_tree_get(root, streams_path, yajl_t_array);
 
 	if(streams){
-		const char* name_path[]    = { "channel", "name", NULL };
-		const char* title_path[]   = { "channel", "status", NULL };
-		const char* created_path[] = { "created_at", NULL };
-		const char* id_path[]      = { "_id", NULL };
-
 		for(size_t i = 0; i < streams->u.array.len; ++i){
 			yajl_val obj = streams->u.array.values[i];
 
-			yajl_val name  = yajl_tree_get(obj, name_path, yajl_t_string);
-			yajl_val start = yajl_tree_get(obj, created_path, yajl_t_string);
-			yajl_val title = yajl_tree_get(obj, title_path, yajl_t_string);
-			yajl_val id    = yajl_tree_get(obj, id_path, yajl_t_number);
+			yajl_val name  = YAJL_GET(obj, yajl_t_string, ("user_name"));
+			yajl_val start = YAJL_GET(obj, yajl_t_string, ("started_at"));
+			yajl_val title = YAJL_GET(obj, yajl_t_string, ("title"));
+			yajl_val id    = YAJL_GET(obj, yajl_t_number, ("id"));
 
 			if(name && start){
+				for(char* c = name->u.string; *c; ++c) {
+					*c = tolower(*c);
+				}
+
 				TwitchInfo* info = twitch_get_or_add(name->u.string);
 
 				struct tm created_tm = {};
 				strptime(start->u.string, "%Y-%m-%dT%TZ", &created_tm);
 
 				time_t new_stream_start = timegm(&created_tm);
-//				info->live_state_changed = new_stream_start != info->stream_start;
+
+				// state_change cleared to 0 if already live, set to 1 (SSC_LIVE_CHANGE) if not.
 				info->live_state_changed = info->stream_start == 0;
+
 				info->stream_start = new_stream_start;
 				info->stream_id = YAJL_IS_INTEGER(id) ? id->u.number.i : 0;
+
+				printf("mod_twitch: stream [%s] state_change = %d, live = %ld\n", name->u.string, info->live_state_changed, info->stream_start);
 
 				if(title){
 					if(info->stream_title){
@@ -354,10 +422,14 @@ static void twitch_check_uptime(size_t count, size_t* indices){
 		}
 	}
 
+	// process all the requested channels that were not present in the twitch api response.
 	for(size_t i = 0; i < count; ++i){
 		TwitchInfo* t = twitch_vals + indices[i];
+
 		if(t->last_uptime_check != now){
+			// state_changed set to SSC_LIVE_CHANGE if was previously live (now offline)
 			t->live_state_changed = t->stream_start != 0;
+
 			t->prev_stream_start = t->stream_start;
 			t->stream_start = 0;
 			t->last_uptime_check = now;
@@ -416,10 +488,13 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 	char* chan    = twitch_keys[index];
 	TwitchInfo* t = twitch_vals + index;
 
-	char* data = NULL;
-	const char url_fmt[] = "https://api.twitch.tv/kraken/channels/%s/videos?broadcasts=true&limit=1";
+	if(!twitch_resolve_user_id(t))
+		return;
 
-	long ret = twitch_curl(&data, t->last_vod_check, url_fmt, chan + 1);
+	char* data = NULL;
+	const char url_fmt[] = "https://api.twitch.tv/helix/videos?user_id=%s&sort=time&type=archive&first=1";
+
+	long ret = twitch_curl(&data, t->last_vod_check, url_fmt, t->user_id);
 	if(ret == 304 || ret == -1){
 		if(t->last_vod_msg){
 			ctx->send_msg(send_chan, "%s: %s", name, t->last_vod_msg);
@@ -433,9 +508,7 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 		goto out;
 	}
 
-	const char* videos_path[]    = { "videos", NULL };
-	const char* vod_url_path[]   = { "url", NULL };
-	const char* vod_title_path[] = { "title", NULL };
+	const char* videos_path[]    = { "data", NULL };
 
 	yajl_val videos = yajl_tree_get(root, videos_path, yajl_t_array);
 	if(!videos || !YAJL_IS_ARRAY(videos)){
@@ -460,8 +533,9 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 
 	yajl_val vods = videos->u.array.values[0];
 
-	yajl_val vod_url   = yajl_tree_get(vods, vod_url_path, yajl_t_string);
-	yajl_val vod_title = yajl_tree_get(vods, vod_title_path, yajl_t_string);
+	yajl_val vod_url   = YAJL_GET(vods, yajl_t_string, ("url"));
+	yajl_val vod_title = YAJL_GET(vods, yajl_t_string, ("title"));
+	yajl_val vod_dur   = YAJL_GET(vods, yajl_t_string, ("duration"));
 
 	if(!vod_url){
 		fprintf(stderr, "twitch_print_vod: url/date null\n");
@@ -473,9 +547,10 @@ static void twitch_print_vod(size_t index, const char* send_chan, const char* na
 	}
 
 	const char* title = vod_title->u.string ?: "untitled";
+	const char* duration = vod_dur ? vod_dur->u.string : "??h??m??s";
 	const char* dispname = twitch_display_name(name);
 
-	asprintf_check(&t->last_vod_msg, "%s's last VoD: %s [%s]", chan + 1, vod_url->u.string, title);
+	asprintf_check(&t->last_vod_msg, "%s's last VoD: %s [%s] [%s]", chan + 1, vod_url->u.string, title, duration);
 	ctx->send_msg(send_chan, "%s: %s", dispname, t->last_vod_msg);
 
 out:
@@ -692,10 +767,11 @@ static void twitch_tracker_update(void){
 	}
 
 	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
-		if(!twitch_vals[i].is_tracked) continue;
-
 		const char* chan = twitch_keys[i];
 		TwitchInfo* t    = twitch_vals + i;
+
+		if(!t->is_tracked)
+			continue;
 
 		enum stream_state_change changed = t->live_state_changed;
 
@@ -895,7 +971,14 @@ static void twitch_get_title(const char* chan, const char* name){
 	char* data = NULL;
 	static const char* status_path[] = { "status", NULL };
 
-	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/channels/%s", chan+1) == 200){
+	TwitchInfo* t = twitch_get_or_add(chan);
+	if(!twitch_resolve_user_id(t)) {
+		ctx->send_msg(chan, "Can't resolve user_id for channel '%s'.", chan+1);
+		return;
+	}
+
+	// XXX: can't find helix version 2019-07-27
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/channels/%s", t->user_id) == 200){
 		yajl_val root   = yajl_tree_parse(data, NULL, 0);
 		yajl_val status = yajl_tree_get(root, status_path, yajl_t_string);
 
@@ -911,10 +994,18 @@ static void twitch_get_title(const char* chan, const char* name){
 
 static void twitch_set_title(const char* chan, const char* name, const char* msg){
 
+	TwitchInfo* t = twitch_get_or_add(chan);
+	if(!twitch_resolve_user_id(t)) {
+		ctx->send_msg(chan, "Can't resolve user_id for channel '%s' :(", chan);
+		return;
+	}
+
 	char* title = curl_easy_escape(curl, msg, 0);
 
 	char *url, *data;
-	asprintf_check(&url , "https://api.twitch.tv/kraken/channels/%s", chan+1);
+
+	// XXX: can't find helix version 2019-07-27
+	asprintf_check(&url , "https://api.twitch.tv/kraken/channels/%s", t->user_id);
 	asprintf_check(&data, "channel[status]=%s", title);
 
 	curl_free(title);
@@ -1051,26 +1142,41 @@ static void twitch_cmd(const char* chan, const char* name, const char* arg, int 
 	}
 }
 
-static const char twitch_api_template[] = "https://api.twitch.tv/kraken/channels/%s/follows?limit=10";
-static const char* follows_path[] = { "follows", NULL };
-static const char* date_path[] = { "created_at", NULL };
-static const char* name_path[] = { "user", "display_name", NULL };
-
 static void twitch_check_followers(void){
 
 	char* data = NULL;
 	yajl_val root = NULL;
 
-	for(size_t i = 0; i < sb_count(twitch_keys); ++i){
+	size_t twitch_key_count = sb_count(twitch_keys);
 
-		char* chan    = twitch_keys[i];
+	int* user_index_list = calloc(twitch_key_count, sizeof(int));
+	int* user_index_ptr = user_index_list;
+
+	for(size_t i = 0; i < twitch_key_count; ++i){
 		TwitchInfo* t = twitch_vals + i;
 
 		if(!t->do_follower_notify || !twitch_check_live(i)){
 			continue;
 		}
 
-		long ret = twitch_curl(&data, last_follower_check, twitch_api_template, chan + 1);
+		*user_index_ptr++ = i;
+	}
+
+	twitch_resolve_user_id_bulk(user_index_list, user_index_ptr - user_index_list);
+
+	for(int* iptr = user_index_list; iptr < user_index_ptr; ++iptr) {
+		int i = *iptr;
+
+		char* chan    = twitch_keys[i];
+		TwitchInfo* t = twitch_vals + i;
+
+		if(!t->user_id) {
+			continue;
+		}
+
+		static const char url[] = "https://api.twitch.tv/helix/users/follows?to_id=%s&first=10";
+		long ret = twitch_curl(&data, last_follower_check, url, t->user_id);
+
 		if(ret == 304){
 			continue;
 		} else if(ret == -1){
@@ -1084,7 +1190,7 @@ static void twitch_check_followers(void){
 			goto out;
 		}
 
-		yajl_val follows = yajl_tree_get(root, follows_path, yajl_t_array);
+		yajl_val follows = YAJL_GET(root, yajl_t_array, ("data"));
 		if(!follows){
 			fprintf(stderr, "mod_twitch: follows not array!\n");
 			goto out;
@@ -1097,13 +1203,13 @@ static void twitch_check_followers(void){
 		for(size_t j = 0; j < follows->u.array.len; ++j){
 			yajl_val user = follows->u.array.values[j];
 
-			yajl_val date = yajl_tree_get(user, date_path, yajl_t_string);
+			yajl_val date = YAJL_GET(user, yajl_t_string, ("followed_at"));
 			if(!date){
 				fprintf(stderr, "mod_twitch date object null!\n");
 				goto out;
 			}
 
-			yajl_val name = yajl_tree_get(user, name_path, yajl_t_string);
+			yajl_val name = YAJL_GET(user, yajl_t_string, ("from_name"));
 			if(!name){
 				fprintf(stderr, "mod_twitch name object null!\n");
 				goto out;
@@ -1145,6 +1251,7 @@ static void twitch_check_followers(void){
 	}
 
 out:
+	free(user_index_list);
 	if(data) sb_free(data);
 	if(root) yajl_tree_free(root);
 }
@@ -1202,6 +1309,7 @@ static void twitch_quit(void){
 		free(twitch_vals[i].last_vod_msg);
 		free(twitch_vals[i].stream_title);
 		free(twitch_vals[i].tracked_name);
+		free(twitch_vals[i].user_id);
 	}
 	sb_free(twitch_keys);
 	sb_free(twitch_vals);
@@ -1234,18 +1342,24 @@ static TwitchUser* twitch_get_user(const char* name){
 	}
 
 	char* data = NULL;
-	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/users/%s", name) != 200) return NULL;
+
+	// XXX: helix api does not have created_at
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/users?login=%s", name) != 200) return NULL;
 
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
 	if(!root) return NULL;
 
-	const char* created_path[] = { "created_at", NULL };
-	yajl_val created = yajl_tree_get(root, created_path, yajl_t_string);
+	yajl_val users = YAJL_GET(root, yajl_t_array, ("users"));
+	if(!users || users->u.array.len < 1) return NULL;
+
+	yajl_val user = users->u.array.values[0];
+
+	yajl_val created = YAJL_GET(user, yajl_t_string, ("created_at"));
 	if(!created) return NULL;
 
 	struct tm user_time = {};
-	char* end = strptime(created->u.string, "%Y-%m-%dT%TZ", &user_time);
-	if(!end || *end) return NULL;
+	char* end = strptime(created->u.string, "%Y-%m-%dT%T", &user_time);
+	if(!end || (*end != '.' && *end)) return NULL;
 
 	TwitchUser u = {
 		.name = strdup(name),
