@@ -83,8 +83,8 @@ static void hmninfo_update_projects(void){
 		goto out;
 	}
 
-	uintptr_t* tokens = calloc(0x2000, sizeof(*tokens));
-	ixt_tokenize(data, tokens, 0x2000, IXTF_SKIP_BLANK | IXTF_TRIM);
+	uintptr_t* tokens = calloc(0x10000, sizeof(*tokens));
+	ixt_tokenize(data, tokens, 0x10000, IXTF_SKIP_BLANK | IXTF_TRIM);
 
 	enum {
 		S_H3_FIND,
