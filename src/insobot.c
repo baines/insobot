@@ -1412,20 +1412,20 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 		id = util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
 	} else {
 		char tmp[512];
-		int max_msg_len = 512 - (sizeof("PRIVMSG :\r\n") + strlen(chan) + bot_host_len);
 
-		if(max_msg_len < 64)
-			max_msg_len = 64;
+		const int max_msg_len = INSO_MAX(64, 512 - (int)(sizeof("PRIVMSG :\r\n") + strlen(chan) + bot_host_len));
+		const char* p = buff;
+		const char* const e = buff + total_len;
 
-		char* p = buff;
-		char* e = buff + total_len;
+		while(e - p){
+			const int n = INSO_MIN(max_msg_len, e - p);
 
-		while(p - e){
-			int n = INSO_MIN(max_msg_len, total_len);
 			memcpy(tmp, p, n);
 			tmp[n] = '\0';
 
-			util_cmd_enqueue(IRC_CMD_MSG, chan, tmp);
+			// XXX: id of 2nd split onwards is lost - will affect on_filter
+			size_t tmpid = util_cmd_enqueue(IRC_CMD_MSG, chan, tmp);
+			if(!id) id = tmpid;
 
 			p += n;
 		}
