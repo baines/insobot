@@ -32,6 +32,7 @@ insobot
 modules
 data
 *.sh
+!/mkmod.sh
 src/config.mk
 utils/schedule_api
 utils/mod_core_upgrade
