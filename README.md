@@ -1,6 +1,15 @@
 # insobot
 Module based IRC bot written in C with markov chains and stuff.
 
+## Documentation
+Refer to https://insobot.com for the most up-to-date list of commands.
+This site is auto-generated from each module's source code using the `ibdox` program in utils/
+
+There's also some older info if you scroll down.
+
+Some of the !things will be "aliases" specific to certain channels not listed above.
+Use !lsa and !lsga to view them.
+
 ## Running it
 To run your own insobot instance, see [this quickstart guide](https://github.com/baines/insobot/wiki/quickstart)
 , other pages in [the wiki](https://github.com/baines/insobot/wiki), and the
@@ -12,20 +21,19 @@ for a place to post forum topics or read project updates.
 
 ## Contributing
 Any contributions of new modules, improvements to existing modules, or raising
-issues here on github is welcome.
+issues / pull requests here on github is welcome.
 
 If you want to write your own modules take a look at `src/module.h` for the API
 and `src/mod_hello_world.c` for an example.
 
-## Commands
+Use `mkmod.sh <mymodname>` to quickly get a template module.
+
+## Command List
 This table shows common modules & commands. Refer to the top of each module's
-.c file for a complete listing.
+.c file for a complete listing, or https://insobot.com which might be more up-to-date.
 
-**NEW**: visit the (tounge-in-cheek) documentation website at https://insobot.church/
-This site is auto-generated from each module's source code using the `ibdox` program in utils/
+Prefix the commands with ! or \\. \\ sometimes doesn't work due to poor escaping (twitch irc).
 
-NOTE: The insobot instance on twitch prefixes most of these commands with '\\'
-(backslash), the default prefix (set in config.h) is '!' (exclamation mark) however.
 
 |      Module      | Description             | Command                     | Purpose                           | Permission |
 |------------------|-------------------------|-----------------------------|-----------------------------------|------------|
