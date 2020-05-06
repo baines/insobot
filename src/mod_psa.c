@@ -38,7 +38,7 @@ const IRCModuleCtx irc_mod_ctx = {
 		[PSA_ADD]  = "<name> [+live] [+trigger '<str>'] <N>m <text> | Adds/updates a PSA named <name> to occur every <N> mins."
 		             "With +live, only show when the channel is live. With +trigger, only show when <str> is said.",
 		[PSA_DEL]  = "<name> | Remove the psa identified by <name>.",
-		[PSA_LIST] = "| Show the PSAs for the current channel."
+		[PSA_LIST] = "[id] | Show info about a PSA or list them all."
 	),
 	.help_url = "https://insobot.handmade.network/forums/t/2393",
 };
@@ -124,7 +124,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 		[-S_NEGATIVE_FREQ] = "The minute frequency must be > 0",
 		[-S_UNKNOWN_TOKEN] = "Could not parse command",
 	};
-	
+
 	static struct {
 		const char* name;
 		int state;
@@ -251,6 +251,36 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 	}
 }
 
+static void psa_info(const char* chan, const char* name, const char* id) {
+	PSAData* psa = NULL;
+
+	sb_each(p, psa_data) {
+		if(strcmp(p->channel, chan) == 0 && strcmp(p->id, id) == 0) {
+			psa = p;
+			break;
+		}
+	}
+
+	if(!psa) {
+		ctx->send_msg(chan, "%s: psa [%s] not found.", name, id);
+		return;
+	}
+
+	char buf[1024] = "";
+	char* p = buf;
+	size_t sz = sizeof(buf);
+
+	if(psa->trigger)
+		snprintf_chain(&p, &sz, " (trigger:%s)", psa->trigger);
+	if(psa->when_live)
+		snprintf_chain(&p, &sz, " (live)");
+	if(*psa->message == '!')
+		snprintf_chain(&p, &sz, " (alias:%.*s)", (int)strcspn(psa->message, " "), psa->message);
+
+	ctx->send_msg(chan, "psa [%s]: %dm%s", psa->id, psa->freq_mins, buf);
+
+}
+
 static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	if(!inso_is_wlist(ctx, name)) return;
 
@@ -278,26 +308,24 @@ static void psa_cmd(const char* chan, const char* name, const char* arg, int cmd
 		} break;
 
 		case PSA_LIST: {
-			char psa_buf[512] = "(none)";
+
+			if(*arg++) {
+				psa_info(chan, name, arg);
+				break;
+			}
+
+			char psa_buf[512] = "";
 			char* psa_ptr = psa_buf;
 			size_t psa_sz = sizeof(psa_buf);
 
 			sb_each(p, psa_data){
-				if(strcmp(p->channel, chan) != 0) continue;
-
-				char optbuf[128] = "";
-				char* o = optbuf;
-				size_t osz = sizeof(optbuf);
-
-				if(p->trigger)
-					snprintf_chain(&o, &osz, " (trigger:%s)", p->trigger);
-				if(p->when_live)
-					snprintf_chain(&o, &osz, " (live)");
-				if(*p->message == '!')
-					snprintf_chain(&o, &osz, " (alias:%.*s)", (int)strcspn(p->message, " "), p->message);
-
-				snprintf_chain(&psa_ptr, &psa_sz, "[%s: %dm%s] ", p->id, p->freq_mins, optbuf);
+				if(strcmp(p->channel, chan) != 0)
+					continue;
+				snprintf_chain(&psa_ptr, &psa_sz, "%s ", p->id);
 			}
+
+			if(!*psa_buf)
+				strcpy(psa_buf, "(none)");
 
 			ctx->send_msg(chan, "Current PSAs: %s", psa_buf);
 
