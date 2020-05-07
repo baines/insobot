@@ -229,7 +229,7 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 	const char* oauth_token = getenv("INSOBOT_TWITCH_TOKEN");
 	if(oauth_token){
 		char buf[256];
-		snprintf(buf, sizeof(buf), "Authorization: OAuth %s", oauth_token);
+		snprintf(buf, sizeof(buf), "Authorization: Bearer %s", oauth_token);
 		twitch_headers = curl_slist_append(twitch_headers, buf);
 	}
 
