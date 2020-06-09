@@ -42,7 +42,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	),
 	.cmd_help = DEFINE_CMDS (
 		[CMD_SCHEDULE] = "[TZ] | Shows the Handmade Hero schedule (optionally in the tzdb timezone [TZ], e.g. Europe/London",
-		[CMD_TIME]     = "| Shows the time to the next Handmade Hero stream, or progress through the current one if it is live.",
+		[CMD_TIME]     = "[TZ] | Shows the time to the next Handmade Hero stream, or progress through the current one if it is live.",
 		[CMD_OWLBOT]   = "| Start a vote to make Owlbot light up, notifying casey of something important.",
 		[CMD_OWL_Y]    = "| Vote yes on an Owlbot vote.",
 		[CMD_OWL_N]    = "| Vote no on an Owlbot vote.",
@@ -77,6 +77,16 @@ static const char* hmh_get_channel(void);
 
 #define CLEAR_SCHEDULE()({ if(schedule){ stb__sbn(schedule) = 0; } })
 
+static time_t get_week_time(const struct tm* tm) {
+	struct tm tmp = *tm;
+
+	tmp.tm_isdst = -1;
+	tmp.tm_mday -= get_dow(&tmp);
+	tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
+
+	return mktime(&tmp);
+}
+
 static bool update_schedule(void){
 
 	time_t now = time(0);
@@ -101,15 +111,9 @@ static bool update_schedule(void){
 
 	// update schedule_week
 	{
-		time_t week_start;
 		struct tm tmp = {};
 		localtime_r(&now, &tmp);
-
-		tmp.tm_isdst = -1;
-		tmp.tm_mday -= get_dow(&tmp);
-		tmp.tm_hour = tmp.tm_min = tmp.tm_sec = 0;
-
-		week_start = mktime(&tmp);
+		time_t week_start = get_week_time(&tmp);
 
 		if(week_start != schedule_week){
 			CLEAR_SCHEDULE();
@@ -164,6 +168,43 @@ static intptr_t check_alias_cb(intptr_t result, intptr_t arg){
 	return 0;
 }
 
+static char* parse_timezone(const char* arg) {
+	char* tz = NULL;
+	char timezone[64];
+	int r;
+
+	if (!strchr(arg, ':') && !strchr(arg, '.') &&
+		(r = snprintf(timezone, sizeof(timezone), ":%s.", arg)) > 0 &&
+		r < isizeof(timezone)){
+
+		// hack for Etc/* zones having reversed symbols...
+		char* p;
+		if((p = strchr(timezone, '+'))){
+			*p = '-';
+		} else if((p = strchr(timezone, '-'))){
+			*p = '+';
+		}
+
+		char* ptr = strcasestr(tz_buf, timezone);
+		if(!ptr){
+			timezone[0] = '/';
+			ptr = strcasestr(tz_buf, timezone);
+		}
+
+		if(ptr){
+			while(*ptr != ':') --ptr;
+			char* end = strchr(ptr, '.');
+			assert(end);
+
+			*end = 0;
+			tz = tz_push(ptr);
+			*end = '.';
+		}
+	}
+
+	return tz;
+}
+
 static void print_schedule(const char* chan, const char* name, const char* arg){
 	time_t now = time(0);
 
@@ -184,44 +225,10 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 	}
 
 	char* tz;
-	if(*arg++ == ' '){
-		bool valid = false;
-		char timezone[64];
-
-		int r;
-		if (!strchr(arg, ':') && !strchr(arg, '.') &&
-			(r = snprintf(timezone, sizeof(timezone), ":%s.", arg)) > 0 &&
-			r < isizeof(timezone)){
-
-			// hack for Etc/* zones having reversed symbols...
-			char* p;
-			if((p = strchr(timezone, '+'))){
-				*p = '-';
-			} else if((p = strchr(timezone, '-'))){
-				*p = '+';
-			}
-
-			char* ptr = strcasestr(tz_buf, timezone);
-			if(!ptr){
-				timezone[0] = '/';
-				ptr = strcasestr(tz_buf, timezone);
-			}
-
-			if(ptr){
-				while(*ptr != ':') --ptr;
-				char* end = strchr(ptr, '.');
-				assert(end);
-
-				*end = 0;
-				tz = tz_push(ptr);
-				*end = '.';
-
-				valid = true;
-			}
-		}
-
-		if(!valid){
-			ctx->send_msg(chan, "%s: Unknown timezone.", name);
+	if(*arg++ == ' ') {
+		tz = parse_timezone(arg);
+		if(!tz){
+			ctx->send_msg(chan, "%s: Unknown timezone [%s].", name, arg);
 			return;
 		}
 	} else {
@@ -238,6 +245,7 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		empty_week = true;
 		localtime_r(schedule + 0, &week_start);
 	} else {
+		localtime_r(&now, &week_start);
 		// group days by equal times.
 
 		struct time_bucket {
@@ -249,9 +257,17 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		struct time_bucket* buckets = calloc(sb_count(schedule), sizeof(*buckets));
 		struct time_bucket* prev_bucket = NULL;
 
+		time_t this_week = get_week_time(&week_start);
+
 		sb_each(s, schedule){
 			struct tm lt = {};
 			localtime_r(s, &lt);
+
+			time_t sched_week = get_week_time(&lt);
+
+			if(sched_week != this_week) {
+				continue;
+			}
 
 			struct time_bucket* bucket = NULL;
 
@@ -300,8 +316,6 @@ static void print_schedule(const char* chan, const char* name, const char* arg){
 		}
 
 		free(buckets);
-
-		localtime_r(&now, &week_start);
 	}
 
 	week_start.tm_mday -= get_dow(&week_start);
@@ -348,7 +362,7 @@ static intptr_t twitch_callback(intptr_t result, intptr_t arg){
 	return 0;
 }
 
-static void print_time(const char* chan, const char* name){
+static void print_time(const char* chan, const char* name, const char* arg){
 	time_t now = time(0);
 
 	// test for empty schedule, and attempt update
@@ -431,7 +445,28 @@ static void print_time(const char* chan, const char* name){
 	}
 
 	if(secs_into_stream < 0){ // upcoming stream
+
 		int until = -secs_into_stream;
+
+		// if they gave an extra timezone argument, assume they want an absolute stream time
+		char* tz;
+		if(*arg++ == ' ') {
+			tz = parse_timezone(arg);
+			if(!tz) {
+				ctx->send_msg(chan, "%s: Unknown timezone [%s].", name, arg);
+				return;
+			}
+
+			char time_buf[256];
+			struct tm* tm = localtime(schedule + index);
+			strftime(time_buf, sizeof(time_buf), "%a %d %b %-I:%M %P %Z", tm);
+
+			ctx->send_msg(chan, "Next stream: %s (%d minutes from now)", time_buf, until / 60);
+
+			tz_pop(tz);
+
+			return;
+		}
 
 		if(until / (60*60*24) == 1){
 			ctx->send_msg(chan, "No stream today, next one tomorrow.");
@@ -582,7 +617,7 @@ static void hmh_cmd(const char* chan, const char* name, const char* arg, int cmd
 
 		case CMD_TIME: {
 			if(!check_for_alias("tm time when next", chan, CONTROL_CHAR)){
-				print_time(chan, name);
+				print_time(chan, name, arg);
 			}
 		} break;
 
