@@ -87,7 +87,7 @@ enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW };
 
 static IRCCmd* cmd_queue;
 static uint32_t prev_cmd_ms;
-static size_t last_cmd_id;
+static size_t next_cmd_id;
 
 static irc_session_t* irc_ctx;
 
@@ -347,11 +347,9 @@ static void util_dispatch_cmds(Module* m, const char* chan, const char* name, co
 	}
 }
 
-static size_t util_cmd_enqueue(int cmd, const char* chan, const char* data){
-	if(sb_count(cmd_queue) > CMD_QUEUE_MAX) return 0;
-
-	size_t id = ++last_cmd_id;
-	if(!id) ++id;
+static void util_cmd_enqueue_id(int cmd, size_t id, const char* chan, const char* data){
+	if(sb_count(cmd_queue) > CMD_QUEUE_MAX)
+		return;
 
 	IRCCmd c = {
 		.id   = id,
@@ -361,19 +359,24 @@ static size_t util_cmd_enqueue(int cmd, const char* chan, const char* data){
 	};
 
 	sb_push(cmd_queue, c);
+}
 
-	return c.id;
+static size_t util_cmd_enqueue(int cmd, const char* chan, const char* data){
+	if(sb_count(cmd_queue) > CMD_QUEUE_MAX)
+		return 0;
+
+	size_t id = next_cmd_id++;
+	util_cmd_enqueue_id(cmd, id, chan, data);
+	return id;
 }
 
 static void util_process_pending_cmds(void){
-	if(!sb_count(cmd_queue)) return;
-
 	struct timespec ts = {};
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	uint32_t cmd_ms = (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
 
-	if((cmd_ms - prev_cmd_ms) > CMD_RATE_LIMIT_MS){
-		prev_cmd_ms = cmd_ms;
+	while(sb_count(cmd_queue) > 0 && (cmd_ms - prev_cmd_ms) > CMD_RATE_LIMIT_MS){
+		bool update_ms = true;
 
 		IRCCmd cmd = cmd_queue[0];
 		switch(cmd.cmd){
@@ -395,6 +398,8 @@ static void util_process_pending_cmds(void){
 					printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
 					irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
 					IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
+				} else {
+					update_ms = false;
 				}
 			} break;
 
@@ -403,8 +408,14 @@ static void util_process_pending_cmds(void){
 				IRC_MOD_CALL_ALL_ABI(on_filter, (cmd.id, NULL, cmd.data, len), ABI_FILTER);
 				if(*cmd.data){
 					irc_send_raw(irc_ctx, "%s", cmd.data);
+				} else {
+					update_ms = false;
 				}
 			} break;
+		}
+
+		if(update_ms) {
+			prev_cmd_ms = cmd_ms;
 		}
 
 		if(cmd.chan) free(cmd.chan);
@@ -678,7 +689,7 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 }
 
 static void util_ipc_init(void){
-	char ipc_dir[128];
+	char ipc_dir[100];
 	struct stat st;
 
 	// get dir to store ipc sockets
@@ -1283,6 +1294,10 @@ static intptr_t core_get_info(int id){
 			return have_tag_hack;
 		} break;
 
+		case IRC_INFO_NEXT_CMD_ID: {
+			return next_cmd_id;
+		} break;
+
 		default: {
 			return 0;
 		} break;
@@ -1396,7 +1411,7 @@ static void core_part(const char* chan){
 static size_t core_send_msg(const char* chan, const char* fmt, ...){
 	if(!chan || !fmt) return 0;
 
-	size_t id = 0;
+	size_t id = next_cmd_id++;
 	char buff[8192];
 	va_list v;
 
@@ -1409,7 +1424,7 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 		total_len = sizeof(buff);
 
 	if(!bot_host_len){
-		id = util_cmd_enqueue(IRC_CMD_MSG, chan, buff);
+		util_cmd_enqueue_id(IRC_CMD_MSG, id, chan, buff);
 	} else {
 		char tmp[512];
 
@@ -1423,9 +1438,7 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 			memcpy(tmp, p, n);
 			tmp[n] = '\0';
 
-			// XXX: id of 2nd split onwards is lost - will affect on_filter
-			size_t tmpid = util_cmd_enqueue(IRC_CMD_MSG, chan, tmp);
-			if(!id) id = tmpid;
+			util_cmd_enqueue_id(IRC_CMD_MSG, id, chan, tmp);
 
 			p += n;
 		}
@@ -1891,7 +1904,7 @@ int main(int argc, char** argv){
 					irc_send_raw(irc_ctx, "PING %s", serv);
 					ping_sent = 1;
 				} else if(ping_sent && timercmp(&idle_tv, &restart_tv, >)){
-					puts("Reached 'no PONG' threshold, disconnecting."); 
+					puts("Reached 'no PONG' threshold, disconnecting.");
 					irc_disconnect(irc_ctx);
 				}
 

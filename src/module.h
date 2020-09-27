@@ -118,6 +118,7 @@ struct IRCCoreCtx_ {
 
 enum {
 	IRC_INFO_CAN_PARSE_TAGS, // bool
+	IRC_INFO_NEXT_CMD_ID,    // size_t
 };
 
 // used for on_meta callback & gen_event.

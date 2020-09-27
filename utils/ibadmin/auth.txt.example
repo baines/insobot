@@ -1,0 +1,7 @@
+#
+# format: username <space> password_hash <space> channel1 [<space> channel2 ...]
+#
+# Use crypt(3) or the included genpass program to generate the password strings as used below
+#
+
+myusername $5$dfFJY0ATeKJCXlGL$8c0QEIMVOkB/iXzdktY/8.gnU/.Cudxo1KwfvWZHBmD #chan1 #chan2

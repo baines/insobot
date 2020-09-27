@@ -1,0 +1,23 @@
+
+server {
+	location /admin/static/ {
+		root /var/www/ibadmin/static/;
+		rewrite ^/admin/static(/.*)$ $1 break;
+		try_files $1 =404;
+	}
+
+	location /admin/ {
+		root /var/www/ibadmin/;
+
+		fastcgi_param SCRIPT_FILENAME /var/www/ibadmin/cgi-bin/ibadmin;
+		fastcgi_param REQUEST_METHOD  $request_method;
+		fastcgi_param CONTENT_TYPE    $content_type;
+		fastcgi_param CONTENT_LENGTH  $content_length;
+		fastcgi_split_path_info       ^(/admin)(.*)$;
+		fastcgi_param PATH_INFO       $fastcgi_path_info;
+
+		fastcgi_param IBADMIN_SECRET ChangeMeToSomethingRandomAndKeepItSecret;
+
+		fastcgi_pass unix:/var/run/fcgiwrap.socket;
+	}
+}

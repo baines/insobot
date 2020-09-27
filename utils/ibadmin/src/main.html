@@ -1,0 +1,132 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" type="text/css" href="static/awsm.css" />
+<title>Insobot Admin</title>
+<style>
+* {
+    font-family: 'DejaVu Sans Mono', 'Consolas', monospace;
+}
+
+.cmd {
+    color: #ccc;
+    font-weight: 400;
+}
+
+.rsp {
+    white-space: pre-wrap;
+}
+
+fieldset {
+    margin-bottom: 1em;
+}
+
+label, form {
+    position: relative;
+}
+
+#main {
+	top: -3em;
+}
+
+#logout {
+	position: relative;
+	text-align: right;
+	z-index: 10;
+	max-width: 40%;
+	margin-right: 0;
+}
+
+@media(min-width: 40rem) {
+	#logout {
+		margin-right: 10%;
+	}
+}
+
+.spinner {
+    display: none;
+    position: absolute;
+    right: 5px;
+    top: 0;
+    bottom: 0;
+    margin: auto;
+	pointer-events: none;
+	width: 1em;
+	height: 1em;
+	border: 0.2em solid transparent;
+	border-color: #eee;
+	border-top-color: #184165;
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+}
+
+input:disabled ~ .spinner {
+    display: block;
+}
+
+@keyframes spin {
+	100% {
+        transform: rotate(360deg)
+	}
+}
+</style>
+</head>
+<body>
+<form id="logout" action="logout" method="post">
+	<button type="submit">Log Out</button>
+</form>
+<form id="main">
+	<select>
+`chans`
+	</select>
+	<fieldset></fieldset>
+	<label>
+		<input type="text" />
+		<div class="spinner"></div>
+	</label>
+</form>
+<script>
+var form = document.forms[1];
+var channel = form[0];
+var buffer = form[1];
+var input = form[2];
+
+function run(chan, cmd, cb) {
+    fetch("run", {
+        method: 'post',
+        headers: {
+            'Content-Type': 'text/plain'
+        },
+        body: chan + '\n' + cmd
+    }).then(rsp => {
+		rsp.text().then(txt => {
+			var result = (txt||"").trim() || "(no response)";
+			cb(result);
+		});
+    });
+}
+
+function puts(str, cls) {
+    var div = document.createElement("div");
+    div.textContent = str;
+    div.classList.add(cls);
+    buffer.appendChild(div);
+}
+
+form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+
+    input.disabled = true;
+    puts("> " + input.value, "cmd");
+
+    run(channel.value, input.value, (result) => {
+        puts(result, "rsp");
+        input.disabled = false;
+        input.focus();
+    });
+
+    input.value = "";
+});
+</script>
+</body>
+</html>
