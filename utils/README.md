@@ -10,6 +10,10 @@ listed by each module
 This is an external CGI website that uses mod_extadmin to pass commands to insobot.
 Useful for adding aliases / PSAs / timers etc without spamming the chat.
 
+## `ibstat`:
+
+Another external CGI website, for viewing the aliases and PSAs in a channel.
+
 ## `schedule_api.c`:
 
 If you want to use the mod_schedule stuff, you can put this simple CGI program

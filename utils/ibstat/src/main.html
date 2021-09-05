@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html {
+	font-family: 'Liberation Sans', Helvetica, Arial, sans;
+	background: #223;
+	color: #ccc;
+}
+kbd {
+	font-size: 100%;
+	font-weight: bold;
+	font-family: 'Input Mono', 'Consolas', monospace;
+}
+h1, h3 {
+	margin-bottom: 5px;
+}
+body {
+	max-width: 1200px;
+	margin: 10px auto;
+	padding: 5px;
+}
+section {
+	border-top: 2px dashed;
+	margin-top: 25px;
+	padding: 25px 25px 5px 25px;
+}
+.info {
+	font-size: 75%;
+	font-style: italic;
+	margin-left: 10px;
+}
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 35px 0;
+}
+tr:not(:last-child) {
+	border-bottom: 1px solid #556;
+}
+td, th {
+	padding: 5px;
+}
+td:not(:last-child), th:not(:last-child) {
+	border-right-width: 2px;
+	border-right-style: solid;
+}
+thead {
+	border-bottom: 2px solid;
+	border-top: 2px solid;
+}
+section, td, th, thead, table {
+	border-color: #89a;
+}
+a:link, a:visited {
+	color: #00ddff;
+}
+details {
+	cursor: pointer;
+}
+summary {
+	font-size: 75%;
+	margin: 5px 5px 5px -3px;
+}
+dl {
+	margin: 10px;
+}
+dt, dd {
+	display: inline;
+	padding: 0 10px;
+}
+</style>
+</head>
+<body>
+	<header>
+		<h1>Insobot data for `chan|h`</h1>
+	</header>
+	<main>
+		<section id="aliases">
+			<h3>!commands</h3>
+			<span class="info">
+				These commands are called 'aliases' internally and are managed by <a href="https://insobot.com/#alias">mod_alias.c</a>.
+			</span>
+			<table>
+				<thead>
+					<tr><th>Command(s)</th><th>Response</th></tr>
+				</thead>
+				<tbody>
+`aliases`
+				</tbody>
+			</table>
+			<details>
+				<summary>Escape code info</summary>
+				<dl>
+					<dt><kbd>%a</kbd>:</dt>
+					<dd>Argument given after the !command when invoking, e.g. in <kbd>!mycmd @someone</kbd>, <kbd>%a</kbd> is </kbd>@someone</kbd></dd>
+					<br/>
+					<dt><kbd>%t</kbd>:</dt>
+					<dd>Username that invoked the !command</dd>
+					<br/>
+					<dt><kbd>%n</kbd>:</dt>
+					<dd>Equivalent to <kbd>%a</kbd> if an argument exists, otherwise <kbd>%t</kbd></dd>
+					<br/>
+					<dt><kbd>%u</kbd>:</dt>
+					<dd>URL-escaped version of <kbd>%a</kbd></dd>
+				</dl>
+			</details>
+		</section>
+		<section id="psas">
+			<h3>Auto-responses</h3>
+			<span class="info">
+				These responses are called 'psas' internally and are managed by <a href="https://insobot.com/#psa">mod_psa.c</a>.
+			</span>
+			<table>
+				<thead>
+					<tr><th>ID</th><th>Trigger</th><th>Cooldown</th><th>Response</th></tr>
+				</thead>
+				<tbody>
+`psas`
+				</tbody>
+			</table>
+		</section>
+	<main>
+</body>
+</html>

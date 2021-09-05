@@ -73,7 +73,7 @@ static void help_cmd(const char* chan, const char* name, const char* arg, int cm
 	}
 
 	if(cmd == CMD_CMDS){
-		ctx->send_msg(name, "You can find a list of commands at https://github.com/baines/insobot, or PM me with \"help\" for more info.");
+		ctx->send_msg(chan, "Commands for %s: https://insobot.com/channel/%s", chan, chan+1);
 		return;
 	}
 

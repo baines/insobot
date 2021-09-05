@@ -474,6 +474,9 @@ static void util_module_save(Module* m){
 		} else if(!saved){
 			unlink(tmp_fname);
 		}
+
+		// allow other users to read the data files (e.g. CGI command list)
+		chmod(save_fname, 0644);
 	}
 
 	sb_pop(mod_call_stack);
