@@ -63,7 +63,7 @@ static bool hmnrss_init(const IRCCoreCtx* _ctx){
 #ifdef DEBUG_MODE
 	last_check = time(0) - 50;
 #else
-	last_check = latest_post = time(0);
+	last_check = latest_post = time(0) - (15*60);
 #endif
 	regcomp(&url_regex, "https://([^\\.]*)\\.?handmade\\.network/.*/[0-9]+", REG_ICASE | REG_EXTENDED);
 
@@ -108,7 +108,8 @@ static bool hmnrss_check_spam(const char* msg, time_t post_time, const char* mem
 	}
 
 	static const char* susp_words[] = {
-		"buy", "drug", "pharmacy", "insurance", "degree transcript", "nike",
+		"buy", "drug", "pharmacy", "insurance", "degree transcript", "nike", "printer", "quickbooks", "webmail",
+		"account", "inhibitor", "cash app", " SEO ", "hotmail", " SAP ", "amazon ",
 	};
 
 	for(size_t i = 0; i < ARRAY_SIZE(susp_words); ++i){
@@ -127,14 +128,14 @@ static bool hmnrss_check_spam(const char* msg, time_t post_time, const char* mem
 	const char* end = msg + strlen(msg);
 
 	while((ret = mbtowc(&wc, p, end - p)) > 0){
-		if(wc > 255){
+		if(wc > 127){
 			++unusual;
 		}
 		++wclen;
 		p += ret;
 	}
 
-	if(ret == -1 || (unusual / (float)wclen) > 0.2){
+	if(ret == -1 || (unusual / (float)wclen) > 0.1){
 		printf("hmnrss: [%s] too many non-ascii chars.\n", member_name);
 		return true;
 	}
@@ -162,7 +163,7 @@ static void hmnrss_tick(time_t now){
 	long ret = inso_curl_perform(curl, &data);
 
 #ifdef DEBUG_MODE
-	printf("hmnrss: doing check...\n");
+	printf("hmnrss: doing check..., %ld, et=%s\n", ret, etag);
 #endif
 
 	if(ret == 200){
@@ -178,9 +179,9 @@ static void hmnrss_tick(time_t now){
 
 			// #1: get message
 			if(ixt_match(t, IXT_TAG_OPEN, "title", IXT_CONTENT, NULL) && (
-					strncmp((char*)t[3], "Blog Post:", 10) == 0 ||
-					strncmp((char*)t[3], "Forum Thread:", 13) == 0)){
-				message = (char*)t[3];
+					strncmp((char*)t[3], "New blog post:", 14) == 0 ||
+					strncmp((char*)t[3], "New forum thread:", 17) == 0)){
+				message = (char*)t[3] + 4;
 			}
 
 			// #2: get url
@@ -194,7 +195,7 @@ static void hmnrss_tick(time_t now){
 				char* c = strptime((char*)t[3], "%Y-%m-%dT%H:%M:%S", &pub_tm);
 				time_t pub = mktime(&pub_tm);
 
-				if(c && *c == '.'){
+				if(c){
 					if(pub <= latest_post){
 						break;
 					} else if(pub > latest_post){
@@ -226,9 +227,12 @@ static void hmnrss_tick(time_t now){
 					const char* chan = inso_in_chan(ctx, url_chan) ? url_chan : "#random";
 					const char* link = url + m[0].rm_so;
 
-					if(message_count++ < 3 && !hmnrss_check_spam(message, published, member_url)){
+					bool is_spam = hmnrss_check_spam(message, published, member_url);
+
+					if(message_count++ < 3 && !is_spam){
 						ctx->send_msg(chan, "New HMN %s | %.*s", message, m[0].rm_eo - m[0].rm_so, link);
 					}
+
 					message = url = member_url = NULL;
 					published = 0;
 				}

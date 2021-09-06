@@ -78,8 +78,11 @@ static struct ep_guide {
 static void hmninfo_update_projects(void){
 	char* data = NULL;
 
-	inso_curl_reset(curl, "https://handmade.network/sitemap", &data);
-	if(inso_curl_perform(curl, &data) != 200){
+	inso_curl_reset(curl, "https://handmade.network/atom/projects?all", &data);
+
+	long status;
+	if((status = inso_curl_perform(curl, &data)) != 200){
+		printf("hmninfo: status %ld\n", status);
 		goto out;
 	}
 
@@ -87,12 +90,11 @@ static void hmninfo_update_projects(void){
 	ixt_tokenize(data, tokens, 0x10000, IXTF_SKIP_BLANK | IXTF_TRIM);
 
 	enum {
-		S_H3_FIND,
-		S_H3_CONTENT,
-		S_LI_FIND,
-		S_LI_HREF,
-		S_LI_CONTENT,
-	} state = S_H3_FIND;
+		S_NEXT_ENTRY,
+		S_TITLE,
+		S_URL,
+		S_SUMMARY,
+	} state = S_NEXT_ENTRY;
 
 	regmatch_t m[2];
 	char* url  = NULL;
@@ -100,49 +102,45 @@ static void hmninfo_update_projects(void){
 
 	for(uintptr_t* t = tokens; *t; ++t){
 		switch(state){
-			case S_H3_FIND: {
-				if(ixt_match(t, IXT_TAG_OPEN, "h3", NULL)){
-					state = S_H3_CONTENT;
+			case S_NEXT_ENTRY: {
+				if(ixt_match(t, IXT_TAG_OPEN, "entry", NULL)){
+					state = S_TITLE;
 				}
 			} break;
 
-			case S_H3_CONTENT: {
-				if(t[0] == IXT_CONTENT){
-					if(strcmp((char*)t[1], "Projects") == 0){
-						state = S_LI_FIND;
-					} else {
-						state = S_H3_FIND;
-					}
+			case S_TITLE: {
+				if(ixt_match(t, IXT_TAG_OPEN, "title", IXT_CONTENT, NULL)){
+					name = (char*)t[3];
+					t += 3;
+					state = S_URL;
 				}
 			} break;
 
-			case S_LI_FIND: {
-				if(ixt_match(t, IXT_TAG_OPEN, "li", NULL)){
-					state = S_LI_HREF;
-				}
-			} break;
-
-			case S_LI_HREF: {
-				if(ixt_match(t, IXT_ATTR_KEY, "href", IXT_ATTR_VAL, NULL) && t[4] == IXT_CONTENT){
+			case S_URL: {
+				if(ixt_match(t, IXT_ATTR_KEY, "href", IXT_ATTR_VAL, NULL)){
 					url  = (char*)t[3];
-					name = (char*)t[5];
-					state = S_LI_CONTENT;
+					t += 3;
+					state = S_SUMMARY;
 				}
 			} break;
 
-			case S_LI_CONTENT: {
-				if(*t == IXT_CONTENT && ixt_match(t+2, IXT_TAG_OPEN, "div", NULL)){
-					char* desc = (char*)t[1];
+			case S_SUMMARY: {
+				// FIXME: we don't care about the type, could skip until we hit IXT_CONTENT instead.
+				if(ixt_match(t, IXT_TAG_OPEN, "summary", IXT_ATTR_KEY, "type", IXT_ATTR_VAL, "html", IXT_CONTENT, NULL)){
+					char* desc = (char*)t[7];
 
 					if(regexec(&hmn_proj_regex, url, 2, m, 0) == 0 && m[1].rm_so != -1){
-						HMNProject proj = { .name = strdup(name) };
+						HMNProject proj = {
+							.name = strdup(name)
+						};
+
 						asprintf_check(&proj.slug, "~%.*s%n", m[1].rm_eo - m[1].rm_so, url + m[1].rm_so, &proj.slug_len);
 						asprintf_check(&proj.info, "%s %s", url, desc);
 						sb_push(projects, proj);
 
 						printf("hmninfo: got project %s = %s\n", proj.name, proj.slug);
 					}
-					state = S_LI_FIND;
+					state = S_NEXT_ENTRY;
 				}
 			} break;
 		}
@@ -348,7 +346,7 @@ static void hmninfo_update(void){
 static bool hmninfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	curl = curl_easy_init();
-	regcomp(&hmn_proj_regex, "https://([^\\.]+)\\.handmade\\.network/", REG_EXTENDED | REG_ICASE);
+	regcomp(&hmn_proj_regex, "https://([^\\.]+)\\.handmade\\.network", REG_EXTENDED | REG_ICASE);
 	hmninfo_update();
 	return true;
 }
