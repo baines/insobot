@@ -1,0 +1,61 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html {
+	background: #223;
+	font-family: 'Liberation Mono', 'Consolas', monospace;
+}
+body {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	height: 80vh;
+	padding: 0;
+	margin: 0;
+}
+main {
+	width: 480px;
+	flex: 0 0 auto;
+	text-align: center;
+}
+main, a, a:link, a:visited {
+	color: #01DA6F;
+}
+a:link {
+	text-decoration: none;
+}
+a:link:hover {
+	text-decoration: underline;
+}
+.avatar {
+	width: 150px;
+	height: 150px;
+	margin: auto;
+	border-radius: 75px;
+	border: 2px solid #01DA6F;
+	overflow: hidden;
+	text-align: center;
+    animation: pulse 2s infinite;
+}
+.avatar img {
+	width: 150px;
+	height: 150px;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0    #01DA6F; }
+  70%  { box-shadow: 0 0 0 20px transparent; }
+  100% { box-shadow: 0 0 0 0    transparent; }
+}
+</style>
+</head>
+<body>
+	<main>
+		<h2>ACCOUNT LINKED</h2>
+		<div class="avatar">
+			<img src="`pic|h`">
+		</div>
+		<h3><a href="https://twitch.tv/`name|h`">`name|h`</a></h3>
+	</main>
+</body>
+</html>
