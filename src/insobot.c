@@ -26,6 +26,7 @@
 #include <sys/inotify.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/file.h>
 
 #include <libircclient.h>
 #include <libirc_rfcnumeric.h>
@@ -128,6 +129,7 @@ static int debug_pipe[2];
 static const char* debug_chan;
 
 static char* insobot_path;
+static const IRCCoreCtx core_ctx;
 
 #define IRC_CALLBACK_BASE(name, event_type) static void irc_##name ( \
 	irc_session_t* session, \
@@ -445,11 +447,10 @@ static void util_module_add(const char* name){
 	}
 }
 
+static bool util_inotify_check(void);
+
 static void util_module_save(Module* m){
 	if(!m->ctx || !m->ctx->on_save) return;
-
-	// change the inotify data watch to something we don't care about to disable it temporarily
-	inotify.data.wd = inotify_add_watch(inotify.fd, inotify.data.path, IN_DELETE_SELF);
 
 	sb_push(mod_call_stack, m);
 
@@ -461,10 +462,25 @@ static void util_module_save(Module* m){
 	memcpy(tmp_fname, save_fname, save_fsz);
 	memcpy(tmp_fname + save_fsz, tmp_end, sizeof(tmp_end));
 
+	// lock the file for writing, then check for modification when we have the lock.
+	int orig_file = open(save_fname, O_RDONLY, 0644);
+	if(orig_file != -1) {
+		flock(orig_file, LOCK_EX);
+
+		// don't check return value for full reload here
+		util_inotify_check();
+
+		close(orig_file);
+	}
+
+	// change the inotify data watch to something we don't care about to disable it temporarily
+	inotify.data.wd = inotify_add_watch(inotify.fd, inotify.data.path, IN_DELETE_SELF);
+
 	int tmp_fd = mkstemp(tmp_fname);
 	if(tmp_fd < 0){
 		fprintf(stderr, "Error saving file for %s: %s\n", m->ctx->name, strerror(errno));
 	} else {
+
 		FILE* tmp_file = fdopen(tmp_fd, "wb");
 		bool saved = m->ctx->on_save(tmp_file);
 		fclose(tmp_file);
@@ -508,7 +524,7 @@ static int util_mod_sort(const void* a, const void* b){
 	return ((Module*)b)->ctx->priority - ((Module*)a)->ctx->priority;
 }
 
-static void util_reload_modules(const IRCCoreCtx* core_ctx){
+static void util_reload_modules(void){
 
 	sb_each(m, irc_modules){
 		if(!m->needs_reload) continue;
@@ -589,7 +605,7 @@ static void util_reload_modules(const IRCCoreCtx* core_ctx){
 		const char* mod_name = basename(m->lib_path);
 		printf("Init %s...\n", mod_name);
 
-		if(!IRC_MOD_CALL(m, on_init, (core_ctx))){
+		if(!IRC_MOD_CALL(m, on_init, (&core_ctx))){
 			printf("** Init failed for %s.\n", mod_name);
 			dlclose(m->lib_handle);
 			m->lib_handle = NULL;
@@ -627,14 +643,14 @@ static void util_inotify_add(INotifyWatch* watch, const char* path, uint32_t fla
 	watch->wd   = inotify_add_watch(inotify.fd, path, flags);
 }
 
-static void util_inotify_check(const IRCCoreCtx* core_ctx){
+static bool util_inotify_check(void){
 	struct inotify_event* ev;
 	char buff[sizeof(*ev) + NAME_MAX + 1];
 	bool reload = false;
 	bool updated_filter = false;
 
 	ssize_t num_read;
-	while((num_read = read(inotify.fd, &buff, sizeof(buff))) > 0){
+	while((num_read = read(inotify.fd, buff, sizeof(buff))) > 0){
 		for(char* p = buff; (p - buff) < num_read; p += (sizeof(*ev) + ev->len)){
 			ev = (struct inotify_event*)p;
 
@@ -682,13 +698,15 @@ static void util_inotify_check(const IRCCoreCtx* core_ctx){
 		if(!m->data_modified) continue;
 		m->data_modified = false;
 
+		if(m->needs_reload) {
+			reload = true;
+		}
+
 		fprintf(stderr, "Calling on_data_modified for %s\n", m->ctx->name);
 		IRC_MOD_CALL(m, on_modified, ());
 	}
 
-	if(reload){
-		util_reload_modules(core_ctx);
-	}
+	return reload;
 }
 
 static void util_ipc_init(void){
@@ -1612,6 +1630,28 @@ static void core_gen_event(int which, ...){
 	va_end(va);
 }
 
+static const IRCCoreCtx core_ctx = {
+	.api_version  = INSO_CORE_API_VERSION,
+	.get_info     = &core_get_info,
+	.get_username = &core_get_username,
+	.get_datafile = &core_get_datafile,
+	.get_modules  = &core_get_modules,
+	.get_channels = &core_get_channels,
+	.get_nicks    = &core_get_nicks,
+	.send_msg     = &core_send_msg,
+	.send_raw     = &core_send_raw,
+	.send_ipc     = &core_send_ipc,
+	.send_mod_msg = &core_send_mod_msg,
+	.join         = &core_join,
+	.part         = &core_part,
+	.save_me      = &core_self_save,
+	.log          = &core_log,
+	.strip_colors = &core_strip_colors,
+	.responded    = &core_responded,
+	.get_tag      = &core_get_tag,
+	.gen_event    = &core_gen_event,
+};
+
 /***************
  * entry point *
  * *************/
@@ -1705,27 +1745,6 @@ int main(int argc, char** argv){
 
 	// modules init
 
-	static const IRCCoreCtx core_ctx = {
-		.api_version  = INSO_CORE_API_VERSION,
-		.get_info     = &core_get_info,
-		.get_username = &core_get_username,
-		.get_datafile = &core_get_datafile,
-		.get_modules  = &core_get_modules,
-		.get_channels = &core_get_channels,
-		.get_nicks    = &core_get_nicks,
-		.send_msg     = &core_send_msg,
-		.send_raw     = &core_send_raw,
-		.send_ipc     = &core_send_ipc,
-		.send_mod_msg = &core_send_mod_msg,
-		.join         = &core_join,
-		.part         = &core_part,
-		.save_me      = &core_self_save,
-		.log          = &core_log,
-		.strip_colors = &core_strip_colors,
-		.responded    = &core_responded,
-		.get_tag      = &core_get_tag,
-		.gen_event    = &core_gen_event,
-	};
 
 	sb_push(channels, 0);
 
@@ -1740,7 +1759,7 @@ int main(int argc, char** argv){
 
 	// initial load of modules
 
-	util_reload_modules(&core_ctx);
+	util_reload_modules();
 
 	if(sb_count(irc_modules) == 0){
 		errx(0, "No modules could be loaded.");
@@ -1867,7 +1886,9 @@ int main(int argc, char** argv){
 
 				if(FD_ISSET(inotify.fd, &in)){
 					FD_CLR(inotify.fd, &in);
-					util_inotify_check(&core_ctx);
+					if(util_inotify_check()) {
+						util_reload_modules();
+					}
 				}
 
 				if(FD_ISSET(debug_pipe[0], &in)){
