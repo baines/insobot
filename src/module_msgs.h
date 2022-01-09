@@ -65,6 +65,7 @@
 // mod_twitch    | "twitch_get_user_date"  | char*     | time_t         | unused          |
 // mod_twitch    | "twitch_get_stream_info"| char*     | TwitchInfoMsg* | unused          |
 // mod_twitch    | "twitch_is_live"        | char* [L] | bool           | unused          |
+// mod_twitch    | "twitch_is_live32"      | char* [L] | uint32_t mask  | unused          |
 // mod_whitelist | "check_admin"           | char*     | bool           | unused          |
 // mod_whitelist | "check_whitelist"       | char*     | bool           | unused          |
 
@@ -171,6 +172,8 @@ typedef struct {
 //    *result* will be the epoch time that the user given in *arg* created their account.
 //  twitch_is_live:
 //    *result* will be true/false if any of the channels given in *arg* are live or not.
+//  twitch_is_live32:
+//    like twitch_is_live but check up to 32 channels at a time, returns a bitmask.
 //  twitch_get_stream_info:
 //    *result* will be a struct with stream info:
 

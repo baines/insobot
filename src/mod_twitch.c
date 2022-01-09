@@ -19,6 +19,7 @@ static void twitch_quit    (void);
 static void twitch_mod_msg (const char* sender, const IRCModMsg* msg);
 static void twitch_unknown (const char*, const char*, const char**, size_t);
 static void twitch_modified(void);
+static void twitch_ipc     (int, const uint8_t*, size_t);
 
 enum { FOLLOW_NOTIFY, UPTIME, TWITCH_VOD, TWITCH_TRACKER, TWITCH_TITLE };
 
@@ -33,6 +34,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_mod_msg = &twitch_mod_msg,
 	.on_unknown = &twitch_unknown,
 	.on_modified = &twitch_modified,
+	.on_ipc   = &twitch_ipc,
 	.commands = DEFINE_CMDS (
 		[FOLLOW_NOTIFY]  = CMD("fnotify"),
 		[UPTIME]         = CMD("uptime" ),
@@ -123,6 +125,14 @@ typedef struct {
 
 static TwitchUser* twitch_users;
 
+typedef struct {
+	char* user_id;
+	char* oauth_token;
+	char* refresh_token;
+} TwitchOAuth;
+
+static sb(TwitchOAuth) twitch_oauth;
+
 static TwitchInfo* twitch_get_or_add(const char* chan){
 
 	if(*chan != '#'){
@@ -152,7 +162,7 @@ static void twitch_load(FILE* f){
 
 	while(fgets(line, sizeof(line), f)){
 		char buffer[256];
-		char* arg = NULL;
+		char *arg0 = NULL, *arg1 = NULL, *arg2 = NULL;
 
 		if(sscanf(line, "NOTIFY %255s", buffer) == 1){
 			TwitchInfo* t = twitch_get_or_add(buffer);
@@ -160,21 +170,30 @@ static void twitch_load(FILE* f){
 			t->do_follower_notify = true;
 			t->last_follower_time = now;
 
-		} else if(sscanf(line, "TRACK %255s %m[^\n]", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TRACK %255s %m[^\n]", buffer, &arg0) >= 1){
 			TwitchInfo* t = twitch_get_or_add(buffer);
 
 			t->is_tracked = true;
-			t->tracked_name = arg;
+			t->tracked_name = arg0;
 
 		} else if(sscanf(line, "OUTPUT %255s", buffer) == 1){
 			sb_push(twitch_tracker_chans, strdup(buffer));
-		} else if(sscanf(line, "TAG %255s :%ms", buffer, &arg) >= 1){
+		} else if(sscanf(line, "TAG %255s :%ms", buffer, &arg0) >= 1){
 			TwitchTag tag = { .name = strdup(buffer) };
-			if(arg){
-				argz_create_sep(arg, ':', &tag.argz, &tag.argz_len);
-				free(arg);
+			if(arg0){
+				argz_create_sep(arg0, ':', &tag.argz, &tag.argz_len);
+				free(arg0);
+				arg0 = NULL;
 			}
 			sb_push(twitch_tracker_tags, tag);
+		} else if(sscanf(line, "OAUTH %ms %ms %ms", &arg0, &arg1, &arg2) == 3) {
+			ctx->send_ipc(0, line, strlen(line));
+			TwitchOAuth oauth = {
+				.user_id = arg0,
+				.oauth_token = arg1,
+				.refresh_token = arg2,
+			};
+			sb_push(twitch_oauth, oauth);
 		}
 	}
 }
@@ -198,9 +217,48 @@ static void twitch_modified(void){
 	}
 	sb_free(twitch_tracker_tags);
 
+	sb_each(o, twitch_oauth) {
+		free(o->user_id);
+		free(o->oauth_token);
+		free(o->refresh_token);
+	}
+	sb_free(twitch_oauth);
+
 	FILE* f = fopen(ctx->get_datafile(), "r");
 	twitch_load(f);
 	fclose(f);
+}
+
+static struct curl_slist* twitch_headers_new(const char* user_id) {
+	struct curl_slist* list = NULL;
+
+	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
+	if(client_id){
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
+		list = curl_slist_append(list, buf);
+	}
+
+	const char* oauth = NULL;
+
+	if(user_id) {
+		sb_each(o, twitch_oauth) {
+			if(strcmp(o->user_id, user_id) == 0) {
+				oauth = o->oauth_token;
+				break;
+			}
+		}
+	} else {
+		oauth = getenv("INSOBOT_TWITCH_TOKEN");
+	}
+
+	if(oauth) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Authorization: Bearer %s", oauth);
+		list = curl_slist_append(list, buf);
+	}
+
+	return list;
 }
 
 static bool twitch_init(const IRCCoreCtx* _ctx){
@@ -217,21 +275,7 @@ static bool twitch_init(const IRCCoreCtx* _ctx){
 
 	curl = curl_easy_init();
 
-	twitch_headers = curl_slist_append(twitch_headers, "Accept: application/vnd.twitchtv.v5+json");
-
-	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
-	if(client_id){
-		char buf[256];
-		snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
-		twitch_headers = curl_slist_append(twitch_headers, buf);
-	}
-
-	const char* oauth_token = getenv("INSOBOT_TWITCH_TOKEN");
-	if(oauth_token){
-		char buf[256];
-		snprintf(buf, sizeof(buf), "Authorization: Bearer %s", oauth_token);
-		twitch_headers = curl_slist_append(twitch_headers, buf);
-	}
+	twitch_headers = twitch_headers_new(NULL);
 
 	return true;
 }
@@ -288,7 +332,7 @@ twitch_curl(char** data, long last_time, const char* fmt, ...){
 static void twitch_resolve_user_id_bulk(int* indices, size_t count) {
 	size_t total = sb_count(twitch_vals);
 
-	char user_buf[4096];
+	char user_buf[4096] = "";
 
 	char*  user_buf_ptr = user_buf;
 	size_t user_buf_sz = sizeof(user_buf);
@@ -306,6 +350,10 @@ static void twitch_resolve_user_id_bulk(int* indices, size_t count) {
 			continue;
 
 		snprintf_chain(&user_buf_ptr, &user_buf_sz, "&login=%s", chan+1);
+	}
+
+	if(!*user_buf) {
+		return;
 	}
 
 	char* data = NULL;
@@ -344,7 +392,6 @@ static bool twitch_resolve_user_id(TwitchInfo* t) {
 	twitch_resolve_user_id_bulk(&index, 1);
 	return t->user_id;
 }
-
 
 static void twitch_check_uptime(size_t count, size_t* indices){
 	if(count == 0) return;
@@ -457,6 +504,41 @@ static bool twitch_check_live(size_t index){
 	}
 
 	return t->stream_start != 0;
+}
+
+static uint32_t twitch_check_live32(size_t* indices, size_t count) {
+	time_t now = time(0);
+
+	size_t real_indices[32];
+	size_t* p = real_indices;
+
+	if(count > 32) {
+		count = 32;
+	}
+
+	for(size_t i = 0; i < count; ++i) {
+		TwitchInfo* t = twitch_vals + indices[i];
+
+		if(now - t->last_uptime_check > uptime_check_interval){
+			*p++ = indices[i];
+		}
+	}
+
+	if(p > real_indices) {
+		twitch_check_uptime(p - real_indices, real_indices);
+	}
+
+	uint32_t mask = 0;
+
+	for(size_t i = 0; i < count; ++i) {
+		TwitchInfo* t = twitch_vals + indices[i];
+
+		if(t->stream_start != 0) {
+			mask |= (1 << i);
+		}
+	}
+
+	return mask;
 }
 
 static const char* twitch_display_name(const char* fallback){
@@ -740,7 +822,7 @@ static void twitch_tracker_schedule_update(TwitchInfo* t){
 }
 
 static void twitch_tracker_update(void){
-	char topic[1024] = "\002\0030,4[LIVE]\017 ";
+	char topic[512] = "\002\0030,4[LIVE]\017 ";
 
 	bool any_changed = false;
 	bool any_live = false;
@@ -969,7 +1051,6 @@ static void twitch_tracker_cmd(const char* chan, const char* name, const char* a
 
 static void twitch_get_title(const char* chan, const char* name){
 	char* data = NULL;
-	static const char* status_path[] = { "status", NULL };
 
 	TwitchInfo* t = twitch_get_or_add(chan);
 	if(!twitch_resolve_user_id(t)) {
@@ -977,10 +1058,14 @@ static void twitch_get_title(const char* chan, const char* name){
 		return;
 	}
 
-	// XXX: can't find helix version 2019-07-27
-	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/channels/%s", t->user_id) == 200){
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/helix/channels?broadcaster_id=%s", t->user_id) == 200){
 		yajl_val root   = yajl_tree_parse(data, NULL, 0);
-		yajl_val status = yajl_tree_get(root, status_path, yajl_t_string);
+		yajl_val array  = YAJL_GET(root, yajl_t_array, ("data"));
+		yajl_val status = NULL;
+
+		if(array->u.array.len > 0) {
+			status = YAJL_GET(array->u.array.values[0], yajl_t_string, ("title"));
+		}
 
 		if(status){
 			ctx->send_msg(chan, "%s: Current title for %s: [%s].", inso_dispname(ctx, name), chan, status->u.string);
@@ -992,7 +1077,7 @@ static void twitch_get_title(const char* chan, const char* name){
 	sb_free(data);
 }
 
-static void twitch_set_title(const char* chan, const char* name, const char* msg){
+static void twitch_set_title(const char* chan, const char* name, const char* title){
 
 	TwitchInfo* t = twitch_get_or_add(chan);
 	if(!twitch_resolve_user_id(t)) {
@@ -1000,38 +1085,47 @@ static void twitch_set_title(const char* chan, const char* name, const char* msg
 		return;
 	}
 
-	char* title = curl_easy_escape(curl, msg, 0);
+	char *url;
+	asprintf_check(&url , "https://api.twitch.tv/helix/channels?broadcaster_id=%s", t->user_id);
 
-	char *url, *data;
+	yajl_gen json = yajl_gen_alloc(NULL);
+	yajl_gen_map_open(json);
+	yajl_gen_string(json, "title", 5);
+	yajl_gen_string(json, title, strlen(title));
+	yajl_gen_map_close(json);
 
-	// XXX: can't find helix version 2019-07-27
-	asprintf_check(&url , "https://api.twitch.tv/kraken/channels/%s", t->user_id);
-	asprintf_check(&data, "channel[status]=%s", title);
-
-	curl_free(title);
+	const uint8_t* data;
+	size_t len;
+	yajl_gen_get_buf(json, &data, &len);
 
 	char* response = NULL;
 	inso_curl_reset(curl, url, &response);
 
+	struct curl_slist* headers = twitch_headers_new(t->user_id);
+	headers = curl_slist_append(headers, "Content-Type: application/json");
+
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, twitch_headers);
-	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, len);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
 
 	CURLcode err = curl_easy_perform(curl);
 
+	curl_slist_free_all(headers);
+
 	free(url);
-	free(data);
+	yajl_gen_free(json);
 
 	long http_code = 0;
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
 	const char* dispname = twitch_display_name(name);
 
-	if(http_code == 200){
+	if(http_code >= 200 && http_code < 300){
 		ctx->send_msg(chan, "%s: Title updated successfully.", dispname);
-	} else if(http_code == 403){
-		ctx->send_msg(chan, "%s: I don't have permission to update the title.", dispname);
+	} else if(http_code >= 400 && http_code < 500){
+		ctx->send_msg(chan, "%s: I don't have permission. You may need to link your Twitch account: https://insobot.com/link/twitch", dispname);
 	} else {
 		ctx->send_msg(chan, "%s: Error updating title for channel (%ld) \"%s\".", dispname, http_code, chan+1);
 		fprintf(stderr, "response: [%s], curl=[%d] [%s]\n", response, err, curl_easy_strerror(err));
@@ -1300,6 +1394,10 @@ static bool twitch_save(FILE* f){
 		fputc('\n', f);
 	}
 
+	sb_each(o, twitch_oauth) {
+		fprintf(f, "OAUTH\t%s %s %s\n", o->user_id, o->oauth_token, o->refresh_token);
+	}
+
 	return true;
 }
 
@@ -1343,13 +1441,12 @@ static TwitchUser* twitch_get_user(const char* name){
 
 	char* data = NULL;
 
-	// XXX: helix api does not have created_at
-	if(twitch_curl(&data, 0, "https://api.twitch.tv/kraken/users?login=%s", name) != 200) return NULL;
+	if(twitch_curl(&data, 0, "https://api.twitch.tv/helix/users?login=%s", name) != 200) return NULL;
 
 	yajl_val root = yajl_tree_parse(data, NULL, 0);
 	if(!root) return NULL;
 
-	yajl_val users = YAJL_GET(root, yajl_t_array, ("users"));
+	yajl_val users = YAJL_GET(root, yajl_t_array, ("data"));
 	if(!users || users->u.array.len < 1) return NULL;
 
 	yajl_val user = users->u.array.values[0];
@@ -1358,8 +1455,8 @@ static TwitchUser* twitch_get_user(const char* name){
 	if(!created) return NULL;
 
 	struct tm user_time = {};
-	char* end = strptime(created->u.string, "%Y-%m-%dT%T", &user_time);
-	if(!end || (*end != '.' && *end)) return NULL;
+	char* end = strptime(created->u.string, "%Y-%m-%dT%TZ", &user_time);
+	if(!end) return NULL;
 
 	TwitchUser u = {
 		.name = strdup(name),
@@ -1371,6 +1468,31 @@ static TwitchUser* twitch_get_user(const char* name){
 	return &sb_last(twitch_users);
 }
 
+static void mod_msg_check_live(const IRCModMsg* msg, bool is32){
+	const char* prev_p = (const char*)msg->arg;
+	const char* p;
+
+	size_t indices[32];
+	size_t* idx_ptr = indices;
+
+	do {
+		p = strchrnul(prev_p, ' ');
+		char* chan = strndupa(prev_p, p - prev_p);
+		prev_p = p+1;
+
+		TwitchInfo* t = twitch_get_or_add(chan);
+		*idx_ptr++ = t - twitch_vals;
+	} while(*p && idx_ptr - indices < 32);
+
+	uint32_t mask = twitch_check_live32(indices, idx_ptr - indices);
+
+	if(is32) {
+		msg->callback(mask, msg->cb_arg);
+	} else {
+		msg->callback(mask != 0, msg->cb_arg);
+	}
+}
+
 static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 	if(strcmp(msg->cmd, "twitch_get_user_date") == 0){
 		TwitchUser* u = twitch_get_user((char*)msg->arg);
@@ -1378,23 +1500,9 @@ static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 			msg->callback(u->created_at, msg->cb_arg);
 		}
 	} else if(strcmp(msg->cmd, "twitch_is_live") == 0){
-		const char* prev_p = (const char*)msg->arg;
-		const char* p;
-		bool live = false;
-
-		do {
-			p = strchrnul(prev_p, ' ');
-			char* chan = strndupa(prev_p, p - prev_p);
-			prev_p = p+1;
-
-			TwitchInfo* t = twitch_get_or_add(chan);
-			if(twitch_check_live(t - twitch_vals)){
-				live = true;
-				break;
-			}
-		} while(*p);
-
-		msg->callback(live, msg->cb_arg);
+		mod_msg_check_live(msg, false);
+	} else if(strcmp(msg->cmd, "twitch_is_live32") == 0){
+		mod_msg_check_live(msg, true);
 	} else if(strcmp(msg->cmd, "display_name") == 0){
 
 		const char* dispname = twitch_display_name((const char*)msg->arg);
@@ -1431,4 +1539,23 @@ static void twitch_unknown(const char* ev, const char* origin, const char** para
 	if(name){
 		ctx->send_msg(chan, "@%s: Welcome! VoHiYo", name);
 	}
+}
+
+static void twitch_ipc(int sender, const uint8_t* data, size_t len) {
+	char* line = strndup(data, len);
+	char *arg0, *arg1, *arg2;
+
+	printf("IPC line: [%s]\n", line);
+
+	if(sscanf(line, "OAUTH %ms %ms %ms", &arg0, &arg1, &arg2) == 3) {
+		TwitchOAuth oauth = {
+			.user_id = arg0,
+			.oauth_token = arg1,
+			.refresh_token = arg2,
+		};
+		sb_push(twitch_oauth, oauth);
+		ctx->save_me();
+	}
+
+	free(line);
 }
