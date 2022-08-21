@@ -54,6 +54,13 @@
 	__ib_cond_res; \
 })
 
+#define _auto_free_  __attribute__((cleanup(af_free)))
+
+static inline void af_free(void* p) {
+	free(*(void**)p);
+	*(void**)p = NULL;
+}
+
 void   inso_curl_reset   (void* curl, const char* url, char** data);
 void*  inso_curl_init    (const char* url, char** data);
 long   inso_curl_perform (void* curl, char** data);

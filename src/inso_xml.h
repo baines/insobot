@@ -257,19 +257,30 @@ checktag:
 
 				if(skip_ws){
 					p = ixt_skip_ws(p);
-					IXT_ASSERT(*p == '=');
+
+					if(*p != '=') {
+						// attribute without value
+						continue;
+					}
+
 					++p;
 				}
 
 				p = ixt_skip_ws(p);
-				IXT_ASSERT(*p == '"' || *p == '\'');
 				char* q = p + 1;
-				while(*q && *q != *p) ++q;
+
+				if(*p == '"' || *p == '\'') {
+					while(*q && *q != *p) ++q;
+					p++;
+				} else {
+					q = ixt_skip_ws(p);
+				}
+
 				*q = 0;
 
 				IXT_EMIT(IXT_ATTR_VAL);
-				IXT_EMIT(p+1);
-				ixt_unescape(p+1, q-(p+1));
+				IXT_EMIT(p);
+				ixt_unescape(p, q-p);
 
 				p = q+1;
 			}
@@ -321,9 +332,14 @@ bool ixt_match(uintptr_t* tokens, ...){
 #endif
 
 #if INSO_TEST
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+
 int main(int argc, char** argv){
 	const char* fname = argc >= 2 ? argv[1] : "feed.xml";
-	
+
 	static const char* tnames[] = {
 		"IXT_EOF",
 		"IXT_TAG_OPEN",
