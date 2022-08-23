@@ -47,7 +47,7 @@ static regex_t vimeo_url_regex;
 static regex_t xkcd_url_regex;
 static regex_t github_url_regex;
 static regex_t twitch_vid_regex;
-static regex_t hms_regex;
+static regex_t cinera_regex;
 
 static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
@@ -146,8 +146,8 @@ static bool linkinfo_init(const IRCCoreCtx* _ctx){
 	) == 0);
 
 	ret = ret & (regcomp(
-		&hms_regex,
-		"https?://guide\\.handmade-seattle\\.com/([^[:space:]]+)",
+		&cinera_regex,
+		"https?://guide\\.(handmade-seattle\\.com|handmadehero\\.org|riscy\\.tv)/([^[:space:]]+)",
 		REG_EXTENDED | REG_ICASE
 	) == 0);
 
@@ -180,7 +180,7 @@ static void linkinfo_quit(void){
 	regfree(&xkcd_url_regex);
 	regfree(&github_url_regex);
 	regfree(&twitch_vid_regex);
-	regfree(&hms_regex);
+	regfree(&cinera_regex);
 }
 
 typedef struct {
@@ -919,10 +919,10 @@ static void do_twitch_vid_info(const char* chan, const char* msg, regmatch_t* ma
 	curl_easy_cleanup(curl);
 }
 
-static void do_hms_info(const char* chan, const char* msg, regmatch_t* matches) {
+static void do_cinera_info(const char* chan, const char* msg, regmatch_t* matches) {
 
 	char* url = strndupa(msg + matches[0].rm_so, matches[0].rm_eo - matches[0].rm_so);
-	char* html = do_download(url);
+	char* _auto_sb_free_ html = do_download(url);
 	if(!html) {
 		return;
 	}
@@ -938,6 +938,7 @@ static void do_hms_info(const char* chan, const char* msg, regmatch_t* matches) 
 	char* _auto_free_ title = NULL;
 	char* _auto_free_ project = NULL;
 	char* _auto_free_ lineage = NULL;
+	char* _auto_free_ type = NULL;
 
 	for(uintptr_t* t = tokens; *t; ++t) {
 		/**/ if(ixt_match(t, IXT_TAG_OPEN, "meta", IXT_ATTR_KEY, "property", IXT_ATTR_VAL, "cinera:title", IXT_ATTR_KEY, "content", IXT_ATTR_VAL, NULL) && t[9]) {
@@ -949,8 +950,11 @@ static void do_hms_info(const char* chan, const char* msg, regmatch_t* matches) 
 		else if(ixt_match(t, IXT_TAG_OPEN, "meta", IXT_ATTR_KEY, "property", IXT_ATTR_VAL, "cinera:project_lineage", IXT_ATTR_KEY, "content", IXT_ATTR_VAL, NULL) && t[9]) {
 			lineage = strdup((char*)t[9]);
 		}
+		else if(ixt_match(t, IXT_TAG_OPEN, "meta", IXT_ATTR_KEY, "property", IXT_ATTR_VAL, "cinera:type", IXT_ATTR_KEY, "content", IXT_ATTR_VAL, NULL) && t[9]) {
+			type = strdup((char*)t[9]);
+		}
 
-		if(title && project && lineage) {
+		if(title && project && lineage && type) {
 			break;
 		}
 	}
@@ -961,12 +965,23 @@ static void do_hms_info(const char* chan, const char* msg, regmatch_t* matches) 
 		return;
 	}
 
-	if(lineage) {
+	bool is_entry = type && strcmp(type, "entry") == 0;
+
+	const char* thing = (type && strcmp(type, "project") == 0)
+		? "Videos"
+		: "Video"
+		;
+
+	printf("type = %s\n", type);
+
+	if(is_entry && lineage) {
 		ctx->send_msg(chan, "↑ Indexed Video: [\0036%s\017 from \00312%s\017]", title, lineage);
-	} else if(project) {
+	} else if(is_entry && project) {
 		ctx->send_msg(chan, "↑ Indexed Video: [\0036%s\017 from \00312%s\017]", title, project);
+	} else if(lineage) {
+		ctx->send_msg(chan, "↑ Indexed %s: [\0036%s\017]", thing, lineage);
 	} else {
-		ctx->send_msg(chan, "↑ Indexed Video: [\0036%s\017]", title);
+		ctx->send_msg(chan, "↑ Indexed %s: [\0036%s\017]", thing, title);
 	}
 }
 
@@ -1023,8 +1038,8 @@ static void linkinfo_msg(const char* chan, const char* name, const char* msg){
 		do_twitch_vid_info(chan, msg, matches);
 	}
 
-	else if(regexec(&hms_regex, msg, 2, matches, 0) == 0) {
-		do_hms_info(chan, msg, matches);
+	else if(regexec(&cinera_regex, msg, 2, matches, 0) == 0) {
+		do_cinera_info(chan, msg, matches);
 	}
 
 }

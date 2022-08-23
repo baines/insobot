@@ -246,14 +246,20 @@ checktag:
 				state = IXTS_DEFAULT;
 				++p;
 			} else { // attr
-				size_t n = strcspn(p, "= \r\n\t");
+				size_t n = strcspn(p, "=> \r\n\t");
 
 				IXT_EMIT(IXT_ATTR_KEY);
 				IXT_EMIT(p);
 
 				int skip_ws = p[n] != '=';
+				int end_of_tag = p[n] == '>';
 				p[n] = 0;
 				p += n + 1;
+
+				if(end_of_tag) {
+					state = IXTS_DEFAULT;
+					continue;
+				}
 
 				if(skip_ws){
 					p = ixt_skip_ws(p);
@@ -273,7 +279,7 @@ checktag:
 					while(*q && *q != *p) ++q;
 					p++;
 				} else {
-					q = ixt_skip_ws(p);
+					q = p + strcspn(p, "> \r\n\t");
 				}
 
 				*q = 0;

@@ -39,6 +39,12 @@
 
 #include <stdlib.h>
 
+#define _auto_sb_free_  __attribute__((cleanup(af_sb_free)))
+
+static inline void af_sb_free(void* p) {
+	sb_free(*(void**)p);
+}
+
 static inline void * stb__sbgrowf(void *arr, int increment, int itemsize)
 {
    size_t inc_cur = arr ? stb__sbm(arr) + (stb__sbm(arr) >> 1) : 0;
