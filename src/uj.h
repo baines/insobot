@@ -53,7 +53,7 @@ enum uj_status uj_lex      (struct uj_lexer*, const char* json, size_t len, uj_l
 
 #ifdef INSO_IMPL
 
-static void uj_lex_init(struct uj_lexer* uj, char* work_mem, size_t work_mem_size){
+void uj_lex_init(struct uj_lexer* uj, char* work_mem, size_t work_mem_size){
 	memset(uj, 0, sizeof(*uj));
 	uj->work_mem = work_mem;
 	uj->work_cur = work_mem;
