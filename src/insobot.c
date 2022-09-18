@@ -1449,7 +1449,7 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 	} else {
 		char tmp[512];
 
-		const int max_msg_len = INSO_MAX(64, 512 - (int)(sizeof("PRIVMSG :\r\n") + strlen(chan) + bot_host_len));
+		const int max_msg_len = INSO_MAX(64, 512 - (int)(sizeof("PRIVMSG :\r\n  ") + strlen(chan) + bot_host_len));
 		const char* p = buff;
 		const char* const e = buff + total_len;
 
