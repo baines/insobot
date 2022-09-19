@@ -32,7 +32,7 @@ const IRCModuleCtx irc_mod_ctx = {
 
 static const IRCCoreCtx* ctx;
 static CURLM* curl_multi;
-static sb(char) msgbuf = NULL;
+static sb(char) msgbuf;
 struct uj_parser uj;
 static char* auth_header;
 
@@ -280,7 +280,7 @@ static void send_msg(const char* fmt, ...) {
 	va_start(va, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, va);
 
-	char* chan;
+	char* chan = NULL;
 	while((chan = argz_next(channels, channels_len, chan))) {
 		ctx->send_msg(chan, "%s", buf);
 	}
