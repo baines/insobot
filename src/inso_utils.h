@@ -105,16 +105,20 @@ static inline bool inso_mkdir_p(const char* path){
 	return true;
 }
 
-static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, ...){
-	va_list v;
-	va_start(v, fmt);
-
+static inline void vsnprintf_chain(char** bufp, size_t* sizep, const char* fmt, va_list v){
 	int printed = vsnprintf(*bufp, *sizep, fmt, v);
 
 	if(printed > 0 && (size_t)printed <= *sizep){
 		*sizep -= printed;
 		*bufp += printed;
 	}
+}
+
+static inline void snprintf_chain(char** bufp, size_t* sizep, const char* fmt, ...){
+	va_list v;
+	va_start(v, fmt);
+
+	vsnprintf_chain(bufp, sizep, fmt, v);
 
 	va_end(v);
 }

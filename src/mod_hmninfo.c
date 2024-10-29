@@ -53,26 +53,37 @@ struct anno_meta {
 	uint16_t time;
 };
 
+enum guide_site {
+	SITE_HMN,
+	SITE_HMS,
+};
+
+/*static const char* index_fmts[] = {
+	[SITE_HMN] = "https://%s.handmade.network/%s.index",
+	[SITE_HMS] = "https://guide.handmade-seattle.com/%s/%s.index"
+};*/
+
 static struct ep_guide {
 	const char*  channels;
 	const char*  project_id;
 	const char*  subproject_id;
 	const char*  ep_prefix;
 	const size_t ep_name_skip;
+	enum guide_site site;
 
 	sb(char)             ep_names;
 	sb(char)             an_text;
 	sb(struct anno_meta) an_meta;
 } ep_guides[] = {
-	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 3 },
-	{ "handmade_hero hero", "hero"   , "misc"      , "episode/misc/"          , 0 },
-	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 3 },
-	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/chat"      , 4 },
-	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/ray"        , 3 },
-	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/riscy"    , 5 },
-	{ "miotatsu"          , "riscy"  , "coad"      , "episode/coad/coad"      , 4 },
-	{ "miotatsu"          , "riscy"  , "reader"    , "episode/reader/reader"  , 6 },
-	{ "pervognsen"        , "bitwise", "bitwise"   , "episode/bitwise/bitwise", 7 },
+	{ "handmade_hero hero", "hero"   , "code"      , "episode/code/day"       , 3, SITE_HMN },
+	{ "handmade_hero hero", "hero"   , "misc"      , "episode/misc/"          , 0, SITE_HMN },
+	{ "handmade_hero hero", "hero"   , "intro-to-c", "episode/intro-to-c/day" , 3, SITE_HMN },
+	{ "handmade_hero hero", "hero"   , "chat"      , "episode/chat/chat"      , 4, SITE_HMN },
+	{ "handmade_hero hero", "hero"   , "ray"       , "episode/ray/ray"        , 3, SITE_HMN },
+	{ "miotatsu"          , "riscy"  , "riscy"     , "episode/riscy/riscy"    , 5, SITE_HMN },
+	{ "miotatsu"          , "riscy"  , "coad"      , "episode/coad/coad"      , 4, SITE_HMN },
+	{ "miotatsu"          , "riscy"  , "reader"    , "episode/reader/reader"  , 6, SITE_HMN },
+	{ "pervognsen"        , "bitwise", "bitwise"   , "episode/bitwise/bitwise", 7, SITE_HMN },
 };
 
 static void hmninfo_update_projects(void){

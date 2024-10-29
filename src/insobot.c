@@ -174,6 +174,16 @@ static const IRCCoreCtx core_ctx;
 		if(ABI_CHECK(m, abi)) IRC_MOD_CALL(m, ptr, args); \
 	}
 
+#define IRC_MOD_CALL_ALL_ABI_CHECK(ptr, args, abi, id)        \
+	sb_each(m, irc_modules){                                  \
+		if(ABI_CHECK(m, abi) && (                             \
+				(m->ctx->flags & IRC_MOD_GLOBAL) ||           \
+				util_check_perms(m->ctx->name, params[0], id) \
+				)){                                            \
+			IRC_MOD_CALL(m, ptr, args);                       \
+		}                                                     \
+	}
+
 #define ABI_FILTER  24
 #define ABI_UNKNOWN 25
 #define ABI_HELP    27
@@ -280,7 +290,7 @@ restart:
 
 		} else if(WIFSIGNALED(status)){
 			int sig = WTERMSIG(status);
-			printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, sys_siglist[sig]);
+			printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, strsignal(sig));
 
 			if(WCOREDUMP(status)){
 				puts("On the bright side, we apparently dumped a core somewhere.");
@@ -1271,7 +1281,7 @@ IRC_STR_CALLBACK(on_unknown) {
 	}
 	puts("");
 
-	IRC_MOD_CALL_ALL_ABI(on_unknown, (event, origin, params, count), ABI_UNKNOWN);
+	IRC_MOD_CALL_ALL_ABI_CHECK(on_unknown, (event, origin, params, count), ABI_UNKNOWN, IRC_CB_UNKNOWN);
 }
 
 IRC_STR_CALLBACK(on_invite) {
@@ -1552,6 +1562,10 @@ static void core_strip_colors(char* msg){
 	free(stripped);
 }
 
+static void core_set_responded(bool v) {
+	send_msg_called = v;
+}
+
 static bool core_responded(void){
 	return send_msg_called;
 }
@@ -1650,6 +1664,7 @@ static const IRCCoreCtx core_ctx = {
 	.responded    = &core_responded,
 	.get_tag      = &core_get_tag,
 	.gen_event    = &core_gen_event,
+	.set_responded= &core_set_responded,
 };
 
 /***************

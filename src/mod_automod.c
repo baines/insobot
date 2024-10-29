@@ -5,8 +5,12 @@
 #include <wchar.h>
 #include <ctype.h>
 #include <time.h>
+#include <argz.h>
 #include "stb_sb.h"
 #include "inso_utils.h"
+
+#include <curl/curl.h>
+#include <iconv.h>
 
 //#define TRIGGER_HAPPY
 
@@ -15,6 +19,7 @@ static void automod_cmd     (const char*, const char*, const char*, int);
 static bool automod_init    (const IRCCoreCtx*);
 static void automod_join    (const char*, const char*);
 static void automod_connect (const char*);
+static void automod_modified(void);
 static void automod_quit    (void);
 
 enum { AUTOMOD_TIMEOUT, AUTOMOD_UNBAN };
@@ -27,6 +32,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_action  = &automod_msg,
 	.on_init    = &automod_init,
 	.on_connect = &automod_connect,
+	.on_modified = &automod_modified,
 	.on_join    = &automod_join,
 	.on_quit    = &automod_quit,
 	.commands   = DEFINE_CMDS(
@@ -56,10 +62,39 @@ static time_t init_time;
 static bool is_twitch;
 static regex_t url_regex;
 
+static char* bad_words_argz;
+static size_t bad_words_len;
+
+static iconv_t ic;
+
+static void load_bad_words(void) {
+	free(bad_words_argz);
+	bad_words_argz = NULL;
+	bad_words_len = 0;
+
+	FILE* f = fopen(ctx->get_datafile(), "rb");
+
+	char line[256] = {};
+	while((fgets(line, 255, f))) {
+		size_t sz = strlen(line);
+		if(line[sz-1] == '\n') {
+			line[sz-1] = '\0';
+		}
+		argz_add(&bad_words_argz, &bad_words_len, line);
+	}
+
+	fclose(f);
+}
+
 static bool automod_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
 	init_time = time(0);
 	is_twitch = true;
+
+	load_bad_words();
+
+	ic = iconv_open("ASCII//TRANSLIT//IGNORE", "UTF-8");
+
 	return regcomp(
 		&url_regex,
         "\\b(https?://[^[:space:]]+|[a-zA-Z0-9][a-zA-Z0-9\\-_]*\\.[A-Za-z]{2,5}(\\.[A-Za-z]{2,5})*([:space:]|$|/|#|:|\\?))",
@@ -86,6 +121,11 @@ static void automod_quit(void){
 
 static void automod_connect(const char* serv){
 	is_twitch = strcasestr(serv, "twitch.tv") || getenv("IRC_IS_TWITCH");
+}
+
+
+static void automod_modified(void) {
+	load_bad_words();
 }
 
 static Suspect* get_suspect(const char* chan, const char* name){
@@ -151,6 +191,7 @@ static int am_score_caps(const Suspect* s, const char* msg, size_t len){
 	#error "Your OS/compiler doesn't store a Unicode / UCS4 codepoint in a wchar_t :("
 #endif
 
+#if 0
 static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 	const char *ptr = msg, *end = msg + len;
 	mbstate_t state = {};
@@ -242,6 +283,7 @@ static int am_score_ascii_art(const Suspect* s, const char* msg, size_t len){
 
 	return bad_char_score;
 }
+#endif
 
 static intptr_t get_karma_cb(intptr_t result, intptr_t arg){
 	if(result) *(int*)arg = result;
@@ -302,7 +344,6 @@ static int am_score_flood(const Suspect* s, const char* msg, size_t len){
 		return 0;
 	}
 }
-#endif
 
 static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 	int emote_count = 0;
@@ -319,6 +360,74 @@ static int am_score_emotes(const Suspect* s, const char* msg, size_t len){
 
 	return emote_count >= 5 ? 100 : emote_count * 10;
 }
+#endif
+
+static int am_score_viewbot(const Suspect* s, const char* msg, size_t len) {
+    static char output[4096];
+    static char output2[4096];
+
+    memset(output, 0, sizeof(output));
+
+    char* in = (char*)msg;
+    char* out = output;
+
+    size_t inlen = strlen(msg);
+    size_t outlen = sizeof(output)-1;
+
+    size_t res;
+    do {
+        res = iconv(ic, &in, &inlen, &out, &outlen);
+        if(res == (size_t)-1) {
+            perror("iconv");
+            break;
+        }
+
+    } while(inlen);
+
+	char* w = output2;
+	char* r = output;
+
+	while(r < out) {
+		char c = *r++;
+		if(c == '?') {
+			continue;
+		}
+		*w++ = c;
+	}
+
+	*w = '\0';
+
+	if(strcasestr(output2, "best viewers") || strcasestr(output2, "cheap viewers")) {
+		return 9000;
+	}
+
+	return 0;
+}
+
+static int am_score_words(const Suspect* s, const char* msg, size_t len) {
+
+	char* entry = NULL;
+	while((entry = argz_next(bad_words_argz, bad_words_len, entry))) {
+		printf("try [%s] [%s]\n", entry, msg);
+
+		const char* p = strcasestr(msg, entry);
+		if(!p) {
+			continue;
+		}
+
+		size_t esize = strlen(entry);
+
+		printf("bad word [%s] = [%c] [%d]\n", entry, p[esize], p == msg);
+
+		if((p == msg || !isalpha(p[-1])) && !isalpha(p[esize])) {
+			return 1000;
+		}
+	}
+
+	return 0;
+}
+
+static void twitch_timeout(const char* chan, const char* who, int duration, const char* reason);
 
 static void automod_discipline(Suspect* s, const char* chan, const char* reason){
 
@@ -334,7 +443,8 @@ static void automod_discipline(Suspect* s, const char* chan, const char* reason)
 			: (s->num_offences - 1) * (s->num_offences - 1) * 60
 			;
 
-		ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
+		twitch_timeout(chan, NULL, timeout, reason);
+		//ctx->send_msg(chan, ".timeout %s %d %s", s->name, timeout, reason);
 		ctx->send_msg(chan, "Timed out %s (%s)", inso_dispname(ctx, s->name), reason);
 	} else {
 		char buf[512];
@@ -365,15 +475,17 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 		am_score_ascii_art,
 		am_score_flood,
 		am_score_emotes,
-		am_score_links
+		am_score_links,
+		am_score_viewbot,
 	};
 #else
-	const char* rules[] = { "symbol spam", "emotes", "spambot?" };
+	const char* rules[] = { "spambot?", "bad word", "spambot" };
 
 	int (*score_fns[])(const Suspect*, const char*, size_t) = {
-		am_score_ascii_art,
-		am_score_emotes,
-		am_score_links
+		//am_score_ascii_art,
+		am_score_links,
+		am_score_words,
+		am_score_viewbot,
 	};
 #endif
 
@@ -408,21 +520,91 @@ static void automod_msg(const char* chan, const char* name, const char* msg){
 	}
 }
 
+static const char* get_tag(const char* key) {
+	size_t i = 0;
+	const char *k, *v;
+	while(ctx->get_tag(i++, &k, &v)) {
+		if(strcmp(k, key) == 0) {
+			return v;
+		}
+	}
+
+	return NULL;
+}
+
+static void twitch_timeout(const char* chan, const char* who, int duration, const char* reason) {
+	struct curl_slist* list = NULL;
+
+	const char* client_id = getenv("INSOBOT_TWITCH_CLIENT_ID");
+	if(client_id){
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Client-ID: %s", client_id);
+		list = curl_slist_append(list, buf);
+	}
+
+	const char* oauth = getenv("INSOBOT_TWITCH_TOKEN");
+	if(oauth) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "Authorization: Bearer %s", oauth);
+		list = curl_slist_append(list, buf);
+	}
+
+	char* chan_id;
+	char* mod_id;
+
+	MOD_MSG(ctx, "twitch_get_user_id", chan+1, &get_user_cb, &chan_id);
+	MOD_MSG(ctx, "twitch_get_user_id", "insobot", &get_user_cb, &mod_id);
+
+	if(!chan_id || !mod_id) {
+		return;
+	}
+
+	char url[512];
+	snprintf(url, sizeof(url), "https://api.twitch.tv/helix/moderation/bans?broadcaster_id=%s&moderator_id=%s", chan_id, mod_id);
+
+	CURL* curl = inso_curl_init(url, NULL);
+
+	const char* user_id = NULL;
+
+	if(who == NULL) {
+		user_id = get_tag("user-id");
+	} else {
+		MOD_MSG(ctx, "twitch_get_user_id", who, &get_user_cb, &user_id);
+	}
+
+	if(!user_id) {
+		return;
+	}
+
+	char json[512];
+	snprintf(json, sizeof(json), "{ \"data\": { \"user_id\": \"%s\", \"duration\": %d } }", user_id, duration);
+
+	list = curl_slist_append(list, "Content-Type: application/json");
+
+	curl_easy_setopt(curl, CURLOPT_POST, 1);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(json));
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+	curl_easy_perform(curl);
+
+	curl_slist_free_all(list);
+	curl_easy_cleanup(curl);
+}
+
 static void automod_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	if(!inso_is_admin(ctx, name)) return;
-
-	//TODO: make commands work with standard IRC kick/ban protocol, not just twitch
 
 	if(cmd == AUTOMOD_TIMEOUT){
 
 		// no manual moderation for this channel
-		if(strcmp(chan, "#handmade_hero") == 0) return;
+		if(strcmp(chan, "#molly_rocket") == 0) return;
 
 		char victim[32] = {};
 		int duration = 10;
 		if(sscanf(arg, "%31s %d", victim, &duration) >= 1){
 			if(is_twitch){
-				ctx->send_msg(chan, ".timeout %s %d", victim, duration);
+				twitch_timeout(chan, victim, duration, "");
+				//ctx->send_msg(chan, ".timeout %s %d", victim, duration);
 			} else {
 				char buf[256];
 				snprintf(buf, sizeof(buf), "KICK %s %s", chan, victim);

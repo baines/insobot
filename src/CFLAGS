@@ -1,6 +1,7 @@
 -g
 -Wall
 -Wextra
+-Wuninitialized
 -std=gnu99
 -D_GNU_SOURCE
 -ffunction-sections

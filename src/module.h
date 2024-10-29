@@ -74,13 +74,14 @@ typedef struct IRCModuleCtx_ {
 } IRCModuleCtx;
 
 // incremented when new functions are added to IRCCoreCtx
-#define INSO_CORE_API_VERSION 3
+#define INSO_CORE_API_VERSION 4
 
 // API version history:
 // 1: Initial version.
 // 2: send_msg and send_raw now return an ID for the message.
 //    This will be passed to the filter function of IRCModuleCtx.
 // 3: Added gen_event function
+// 4: Added set_responded
 
 // passed to modules to provide functions for them to use.
 struct IRCCoreCtx_ {
@@ -114,6 +115,9 @@ struct IRCCoreCtx_ {
 	// The variadic args should be the same as for the corresponding on_ callback in IRCModuleCtx.
 	// Supported callbacks are in the enum below.
 	void           (*gen_event)    (int which, ...);
+
+	// V4
+	void           (*set_responded)(bool);
 };
 
 enum {
@@ -130,6 +134,7 @@ enum  {
 	IRC_CB_ACTION,
 	IRC_CB_NICK,
 	IRC_CB_PM,
+	IRC_CB_UNKNOWN,
 };
 
 // used for the flags field of IRCModuleCtx

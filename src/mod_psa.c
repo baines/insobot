@@ -37,8 +37,8 @@ const IRCModuleCtx irc_mod_ctx = {
 		[PSA_LIST] = CMD("psa")
 	),
 	.cmd_help = DEFINE_CMDS (
-		[PSA_ADD]  = "<name> [+live] [+trigger '<str>'] <N>m <text> | Adds/updates a PSA named <name> to occur every <N> mins."
-		             "With +live, only show when the channel is live. With +trigger, only show when <str> is said.",
+		[PSA_ADD]  = "<name> [+live] [+trigger '<str>'] [+ttl 'Nm'] <N>m <text> | Adds/updates a PSA named <name> to occur every <N> mins."
+		             "With +live, only show when the channel is live. With +trigger, only show when <str> is said. Auto-remove after ttl mins.",
 		[PSA_DEL]  = "<name> | Remove the psa identified by <name>.",
 		[PSA_LIST] = "[id] | Show info about a PSA or list them all."
 	),
@@ -57,6 +57,7 @@ typedef struct {
 	time_t last_posted;
 	int freq_mins;
 	bool when_live;
+	time_t keep_until;
 } PSAData;
 
 static PSAData* psa_data;
@@ -83,19 +84,24 @@ static bool psa_init(const IRCCoreCtx* _ctx){
 	return true;
 }
 
+static void psa_free(PSAData* p) {
+	free(p->channel);
+	free(p->message);
+	free(p->id);
+	free(p->trigger);
+	regfree(&p->trig_rx);
+	free(p->cmdline);
+}
+
 static bool psa_delete(const char* chan, const char* id){
 	sb_each(p, psa_data){
 		if(strcmp(p->channel, chan) != 0 || strcmp(p->id, id) != 0){
 			continue;
 		}
 
-		free(p->channel);
-		free(p->message);
-		free(p->id);
-		free(p->trigger);
-		regfree(&p->trig_rx);
-		free(p->cmdline);
+		psa_free(p);
 		sb_erase(psa_data, p - psa_data);
+		--p;
 
 		return true;
 	}
@@ -116,6 +122,7 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 		S_MAIN,
 		S_OPT_LIVE,
 		S_OPT_TRIGGER,
+		S_OPT_TTL,
 		S_MSG
 	} state = S_ID;
 
@@ -132,7 +139,8 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 		int state;
 	} opts[] = {
 		{ "live"   , S_OPT_LIVE },
-		{ "trigger", S_OPT_TRIGGER }
+		{ "trigger", S_OPT_TRIGGER },
+		{ "ttl"    , S_OPT_TTL },
 	};
 
 	char regerr_buf[256];
@@ -188,6 +196,18 @@ static void psa_add(const char* chan, const char* arg, bool silent){
 			case S_OPT_LIVE: {
 				psa.when_live = true;
 				state = S_MAIN;
+			} break;
+
+			case S_OPT_TTL: {
+				int ttl_mins;
+				len = 0;
+				if(sscanf(p, " %um%n", &ttl_mins, &len) == 1 && len) {
+					p += len;
+					psa.keep_until = time(0) + ttl_mins * 60;
+					state = S_MAIN;
+				} else {
+					state = S_NO_MSG;
+				}
 			} break;
 
 			case S_OPT_TRIGGER: {
@@ -287,11 +307,14 @@ static void psa_info(const char* chan, const char* name, const char* id) {
 	char buf[1024] = "";
 	char* p = buf;
 	size_t sz = sizeof(buf);
+	time_t now = time(0);
 
 	if(psa->trigger)
 		snprintf_chain(&p, &sz, " (trigger:%s)", psa->trigger);
 	if(psa->when_live)
 		snprintf_chain(&p, &sz, " (live)");
+	if(psa->keep_until)
+		snprintf_chain(&p, &sz, " (ttl: %dm%ds)", (psa->keep_until - now) / 60, (psa->keep_until - now) % 60);
 	if(*psa->message == '!')
 		snprintf_chain(&p, &sz, " (alias:%.*s)", (int)strcspn(psa->message, " "), psa->message);
 	else
@@ -399,7 +422,24 @@ static void psa_msg(const char* chan, const char* name, const char* msg){
 }
 
 static void psa_tick(time_t now){
-	if(now - psa_last_update < 60) return;
+	bool changed = false;
+
+	sb_each(p, psa_data){
+		if(p->keep_until && p->keep_until <= now) {
+			psa_free(p);
+			sb_erase(psa_data, p - psa_data);
+			--p;
+			changed = true;
+		}
+	}
+
+	if(changed) {
+		ctx->save_me();
+	}
+
+	if(now - psa_last_update < 60)
+		return;
+
 	psa_last_update = now;
 
 	sb_each(p, psa_data){

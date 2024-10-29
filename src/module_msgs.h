@@ -62,6 +62,7 @@
 // mod_schedule  | "sched_add"             | SchedMsg* | bool           | unused          |
 // mod_schedule  | "sched_save"            | unused    | unused         | unused          |
 // mod_twitch    | "display_name"          | char*     | char*          | unused          |
+// mod_twitch    | "twitch_get_user_id"    | char*     | char*          | unused          |
 // mod_twitch    | "twitch_get_user_date"  | char*     | time_t         | unused          |
 // mod_twitch    | "twitch_get_stream_info"| char*     | TwitchInfoMsg* | unused          |
 // mod_twitch    | "twitch_is_live"        | char* [L] | bool           | unused          |

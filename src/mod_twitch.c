@@ -1518,6 +1518,11 @@ static void twitch_mod_msg(const char* sender, const IRCModMsg* msg){
 		};
 
 		msg->callback((intptr_t)&info, msg->cb_arg);
+	} else if(strcmp(msg->cmd, "twitch_get_user_id") == 0) {
+		TwitchInfo* t = twitch_get_or_add((char*)msg->arg);
+		if(twitch_resolve_user_id(t)) {
+			msg->callback((intptr_t)t->user_id, msg->cb_arg);
+		}
 	}
 }
 
