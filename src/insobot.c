@@ -466,6 +466,9 @@ static void util_process_pending_cmds(void){
 			prev_cmd_ms = cmd_ms;
 		}
 
+		ping_sent = 0;
+		timerclear(&idle_tv);
+
 		if(cmd.chan) free(cmd.chan);
 		if(cmd.data) free(cmd.data);
 		sb_erase(cmd_queue, 0);
@@ -509,7 +512,7 @@ static void util_module_save(Module* m){
 	memcpy(tmp_fname + save_fsz, tmp_end, sizeof(tmp_end));
 
 	// lock the file for writing, then check for modification when we have the lock.
-	int orig_file = open(save_fname, O_RDONLY, 0644);
+	int orig_file = open(save_fname, O_RDONLY, 0666);
 	if(orig_file != -1) {
 		flock(orig_file, LOCK_EX);
 
@@ -1185,7 +1188,7 @@ IRC_STR_CALLBACK(on_join) {
 	char origin[128] = "";
 	irc_target_get_nick(origin_full, origin, sizeof(origin));
 
-	fprintf(stderr, "JOIN: %s %s\n", params[0], origin);
+	//fprintf(stderr, "JOIN: %s %s\n", params[0], origin);
 
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
@@ -1229,7 +1232,7 @@ IRC_STR_CALLBACK(on_part) {
 	int chan_i, nick_i;
 	util_find_chan_nick(params[0], origin, &chan_i, &nick_i);
 
-	printf("PART: %s %s\n", params[0], origin);
+	//printf("PART: %s %s\n", params[0], origin);
 
 	if(chan_i != -1 && strcasecmp(origin, bot_nick) == 0){
 		free(channels[chan_i]);
@@ -1306,7 +1309,9 @@ IRC_STR_CALLBACK(on_unknown) {
 	irc_target_get_nick(origin_full, origin, sizeof(origin));
 
 	if(strcmp(event, "PONG") == 0){
-//		printf(":: PONG");
+		printf(":: PONG\n");
+		ping_sent = 0;
+		timerclear(&idle_tv);
 		return;
 	} else {
 		printf("Unknown event:\n:: %s :: %s", event, origin);
@@ -1579,7 +1584,7 @@ static void core_strip_colors(char* msg){
 	free(stripped);
 }
 
-static void core_set_responded(bool v) {
+static void core_set_responded(bool v){
 	send_msg_called = v;
 }
 
@@ -1937,26 +1942,19 @@ int main(int argc, char** argv){
 					}
 				}
 
-				for(int i = 0; i < max_fd + 1; ++i){
-					if(FD_ISSET(i, &in)){
-						timerclear(&idle_tv);
-						ping_sent = 0;
-						break;
-					}
-				}
-
 				if(irc_process_select_descriptors(irc_ctx, &in, &out) != 0){
 					fprintf(stderr, "Error processing select fds: %s\n", irc_strerror(irc_errno(irc_ctx)));
 				}
 
 			} else if(select_status == 0){
 
-				struct timeval ping_tv    = { .tv_sec = 60 };
-				struct timeval restart_tv = { .tv_sec = 90 };
+				struct timeval ping_tv    = { .tv_sec = 30 };
+				struct timeval restart_tv = { .tv_sec = 45 };
 
 				timeradd(&orig_tv, &idle_tv, &idle_tv);
 
 				if(!ping_sent && timercmp(&idle_tv, &ping_tv, >)){
+					puts("idle for 60s, sending ping...");
 					irc_send_raw(irc_ctx, "PING %s", serv);
 					ping_sent = 1;
 				} else if(ping_sent && timercmp(&idle_tv, &restart_tv, >)){
