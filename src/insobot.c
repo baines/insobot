@@ -280,7 +280,7 @@ restart:
 
 		} else if(WIFSIGNALED(status)){
 			int sig = WTERMSIG(status);
-			printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, sys_siglist[sig]);
+			printf("Somebody set up us the bomb. We get signal: %d (%s).\n", sig, strsignal(sig));
 
 			if(WCOREDUMP(status)){
 				puts("On the bright side, we apparently dumped a core somewhere.");
