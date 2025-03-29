@@ -84,7 +84,7 @@ typedef struct IPCAddress_ {
 
 enum { MOD_GET_SONAME, MOD_GET_CTXNAME };
 
-enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW };
+enum { IRC_CMD_JOIN, IRC_CMD_PART, IRC_CMD_MSG, IRC_CMD_RAW, IRC_CMD_MSG_SPLIT };
 
 static IRCCmd* cmd_queue;
 static uint32_t prev_cmd_ms;
@@ -372,6 +372,27 @@ static size_t util_cmd_enqueue(int cmd, const char* chan, const char* data){
 	return id;
 }
 
+static bool util_split_msg(char* dest, size_t dest_len, const char** src, size_t* src_len){
+
+	if(*src_len < dest_len) {
+		memcpy(dest, *src, *src_len);
+		dest[*src_len] = '\0';
+		return false;
+	}
+
+	const size_t copy_amt = dest_len - 1;
+
+	printf("splitting msg %zu (%zu) [%.5s...]\n", dest_len, *src_len, *src);
+
+	memcpy(dest, *src, copy_amt);
+	dest[copy_amt] = '\0';
+
+	(*src) += copy_amt;
+	(*src_len) -= copy_amt;
+
+	return true;
+}
+
 static void util_process_pending_cmds(void){
 	struct timespec ts = {};
 	clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -396,13 +417,28 @@ static void util_process_pending_cmds(void){
 			case IRC_CMD_MSG: {
 				size_t len = strlen(cmd.data);
 				IRC_MOD_CALL_ALL_ABI(on_filter, (cmd.id, cmd.chan, cmd.data, len), ABI_FILTER);
-				if(*cmd.data){
-					printf("send: [%s] [%s]\n", cmd.chan, cmd.data);
-					irc_cmd_msg(irc_ctx, cmd.chan, cmd.data);
-					IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, cmd.data));
-				} else {
+				if(!*cmd.data){
 					update_ms = false;
+					break;
 				}
+
+			} // fall-thru
+
+			case IRC_CMD_MSG_SPLIT: {
+				char tmp[512];
+
+				const int max_msg_len = INSO_MAX(32, 512 - (int)(sizeof("PRIVMSG :\r\n  ") + strlen(cmd.chan) + bot_host_len));
+				const char* src = cmd.data;
+				size_t src_len = strlen(cmd.data);
+
+				if(util_split_msg(tmp, max_msg_len, &src, &src_len)){
+					util_cmd_enqueue_id(IRC_CMD_MSG_SPLIT, cmd.id, cmd.chan, src);
+				}
+
+				printf("send: [%s] [%s]\n", cmd.chan, tmp);
+				irc_cmd_msg(irc_ctx, cmd.chan, tmp);
+				IRC_MOD_CALL_ALL(on_msg_out, (cmd.chan, tmp));
+
 			} break;
 
 			case IRC_CMD_RAW: {
@@ -1444,26 +1480,7 @@ static size_t core_send_msg(const char* chan, const char* fmt, ...){
 	if(total_len > (int)sizeof(buff))
 		total_len = sizeof(buff);
 
-	if(!bot_host_len){
-		util_cmd_enqueue_id(IRC_CMD_MSG, id, chan, buff);
-	} else {
-		char tmp[512];
-
-		const int max_msg_len = INSO_MAX(64, 512 - (int)(sizeof("PRIVMSG :\r\n  ") + strlen(chan) + bot_host_len));
-		const char* p = buff;
-		const char* const e = buff + total_len;
-
-		while(e - p){
-			const int n = INSO_MIN(max_msg_len, e - p);
-
-			memcpy(tmp, p, n);
-			tmp[n] = '\0';
-
-			util_cmd_enqueue_id(IRC_CMD_MSG, id, chan, tmp);
-
-			p += n;
-		}
-	}
+	util_cmd_enqueue_id(IRC_CMD_MSG, id, chan, buff);
 
 end:
 	va_end(v);
