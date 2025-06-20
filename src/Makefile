@@ -51,10 +51,10 @@ all: ../insobot $(module_o)
 	$(CC) $(CFLAGS) -I/usr/include/libircclient $< -o $@ -lircclient -ldl -lrt -lpthread -lcurl
 
 ../modules ../lib:
-	mkdir $@
+	mkdir -p $@
 
 ../modules/%.so: %.c ../lib/inso_common.a $(headers) | ../modules
-	$(CC) $(CFLAGS) -fPIC $< -shared -o $@ $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -fPIC $< -shared -o $@ -MMD $(LDFLAGS) $(LIBS)
 
 ../lib/inso_%.o: inso_%.h | ../lib
 	$(CC) $(CFLAGS) -x c -fPIC -DINSO_IMPL -c $^ -o $@
@@ -75,5 +75,7 @@ all: ../insobot $(module_o)
 
 clean:
 	$(RM) ../modules/*.so $(common_o) ../lib/inso_common.a ../insobot
+
+-include ../modules/*.d
 
 .PHONY: all clean
