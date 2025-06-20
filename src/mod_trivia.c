@@ -10,6 +10,8 @@
 static bool trivia_init (const IRCCoreCtx*);
 static void trivia_msg  (const char* chan, const char* name, const char* msg);
 static void trivia_cmd  (const char* chan, const char* name, const char* arg, int cmd);
+static void trivia_load (void);
+static bool trivia_save (FILE* f);
 static void trivia_tick (time_t now);
 
 enum { TRIVIA_CMD };
@@ -21,6 +23,7 @@ const IRCModuleCtx irc_mod_ctx = {
 	.on_cmd   = &trivia_cmd,
 	.on_tick  = &trivia_tick,
 	.on_msg   = &trivia_msg,
+	.on_save  = &trivia_save,
 	.commands = DEFINE_CMDS (
 		[TRIVIA_CMD] = "!trivia"
 	),
@@ -43,13 +46,14 @@ struct TriviaScore {
 
 static const IRCCoreCtx* ctx;
 static sb(struct TriviaState) state;
-//static sb(struct TriviaScore) scores;
+static sb(struct TriviaScore) scores;
 
 #include "trivia/anilist.c"
 #include "trivia/levenshtein.c"
 
 static bool trivia_init(const IRCCoreCtx* _ctx){
 	ctx = _ctx;
+	trivia_load();
 	return true;
 }
 
@@ -144,6 +148,21 @@ static float str_similarity(const char* _a, const char* _b) {
 	return (float)(len - n) / (float)len;
 }
 
+static struct TriviaScore* score_get(const char* user) {
+	sb_each(s, scores) {
+		if(strcmp(s->username, user) == 0) {
+			return s;
+		}
+	}
+
+	struct TriviaScore s = {
+		.username = strdup(user)
+	};
+	sb_push(scores, s);
+
+	return &sb_last(scores);
+}
+
 static void trivia_msg(const char* chan, const char* name, const char* msg) {
 	struct TriviaState* ts = trivia_get(chan);
 	if(ts->end == 0) {
@@ -161,7 +180,10 @@ static void trivia_msg(const char* chan, const char* name, const char* msg) {
 			}
 			trivia_free(ts);
 
-			// TODO: score
+			struct TriviaScore* s = score_get(name);
+			s->score++;
+
+			ctx->save_me();
 
 			break;
 		}
@@ -183,14 +205,59 @@ static void trivia_start(const char* chan) {
 	}
 }
 
+static int trivia_score_sort(struct TriviaScore* a, struct TriviaScore* b) {
+	return b->score - a->score;
+}
+
+static void trivia_leaderboard(const char* chan) {
+	qsort(scores, sb_count(scores), sizeof(*scores), (int(*)())&trivia_score_sort);
+	size_t count = INSO_MIN(5U, sb_count(scores));
+
+	char out[1024] = "";
+	char* p = out;
+	size_t sz = sizeof(out);
+
+	for(size_t i = 0; i < count; ++i) {
+		struct TriviaScore* s = scores + i;
+		snprintf_chain(&p, &sz, "[#%d %s: %d] ", i + 1, s->username, s->score);
+	}
+
+	ctx->send_msg(chan, "[Trivia] High Scores: %s", out);
+}
+
 static void trivia_cmd(const char* chan, const char* name, const char* arg, int cmd){
 	switch(cmd){
 		case TRIVIA_CMD: {
 			if(*arg++) {
-				//if(strcmp(arg, "leaderboard")
+				if(strcmp(arg, "leaderboard") == 0 || strcmp(arg, "scores") == 0) {
+					trivia_leaderboard(chan);
+				}
 			} else {
 				trivia_start(chan);
 			}
 		} break;
 	}
+}
+
+static void trivia_load(void) {
+	FILE* f = fopen(ctx->get_datafile(), "r");
+	if(!f) return;
+
+	char* user;
+	int score;
+
+	while(fscanf(f, "%ms %d", &user, &score) == 2){
+		struct TriviaScore s = {
+			.username = user,
+			.score = score
+		};
+		sb_push(scores, s);
+	}
+}
+
+static bool trivia_save(FILE* f) {
+	sb_each(s, scores) {
+		fprintf(f, "%s %d\n", s->username, s->score);
+	}
+	return true;
 }
