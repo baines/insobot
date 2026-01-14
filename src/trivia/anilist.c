@@ -133,15 +133,19 @@ static bool trivia_start_anilist(const char* chan, struct TriviaState* ts) {
 	int qmax = rand() % __builtin_popcount(quiz_mask);
 	int quiz_type;
 
-	for(int i = 0; i < Q_COUNT; ++i) {
-		int type = (1 << i);
-		if((quiz_mask & type) && qmax == 0) {
-			quiz_type = type;
-			break;
-		}
+	if((quiz_mask & Q_YEAR) && rand() % 2 == 0) {
+		quiz_type = Q_YEAR;
+	} else {
+		for(int i = 0; i < Q_COUNT; ++i) {
+			int type = (1 << i);
+			if((quiz_mask & type) && qmax == 0) {
+				quiz_type = type;
+				break;
+			}
 
-		if(qmax > 0) {
-			--qmax;
+			if(qmax > 0) {
+				--qmax;
+			}
 		}
 	}
 
