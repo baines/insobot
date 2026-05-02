@@ -1,34 +1,32 @@
 
 static const char* graphql =
-"query($page: Int) {"
-" Page(perPage: 1, page: $page) {"
-"  media(type: ANIME, popularity_greater: 1000, sort: [ID]) {"
-"   id"
-"   title {"
-"    english,"
-"    romaji"
-"   },"
-"   startDate {"
-"    year"
-"   }"
-"   source,"
-"   studios(isMain: true) {"
-"    nodes {"
-"     name"
+"query($ids: [Int]) {"
+"  Media(type: ANIME, sort: [POPULARITY_DESC], id_in: $ids) {"
+"    id,"
+"    title {"
+"      english,"
+"      romaji"
+"    },"
+"    startDate {"
+"      year"
+"    },"
+"    source,"
+"    studios(isMain: true) {"
+"      nodes {"
+"        name"
+"      }"
+"    },"
+"    characters(role: MAIN) {"
+"      nodes {"
+"        name {"
+"          full"
+"        }"
+"      }"
 "    }"
-"   },"
-"   characters(role: MAIN) {"
-"    nodes {"
-"     name {"
-"      full"
-"     }"
-"    }"
-"   }"
 "  }"
-" }"
 "}";
 
-static int max_page = 10105;
+static int max_anime_id = 10000;
 
 enum quiz_types {
 	Q_YEAR    = (1 << 0),
@@ -38,16 +36,28 @@ enum quiz_types {
 	Q_COUNT   = 3
 };
 
+#define ID_COUNT 10
+
 static bool trivia_start_anilist(const char* chan, struct TriviaState* ts) {
 	bool result = false;
 
 	char* data = NULL;
 	CURL* curl = inso_curl_init("https://graphql.anilist.co", &data);
 
-	int page = rand() % max_page;
+	char id_buffer[512] = "";
+	{
+		char* p = id_buffer;
+		size_t sz = sizeof(id_buffer);
+
+		snprintf_chain(&p, &sz, "%d", rand() % max_anime_id);
+
+		for(int i = 1; i < ID_COUNT; ++i) {
+			snprintf_chain(&p, &sz, ", %d", rand() % max_anime_id);
+		}
+	}
 
 	char* json;
-	asprintf_check(&json, "{ \"query\": \"%s\", \"variables\": { \"page\": %d } }", graphql, page);
+	asprintf_check(&json, "{ \"query\": \"%s\", \"variables\": { \"ids\": [%s] }}", graphql, id_buffer);
 
 	struct curl_slist* headers = curl_slist_append(NULL, "Content-Type: application/json");
 
@@ -66,15 +76,14 @@ static bool trivia_start_anilist(const char* chan, struct TriviaState* ts) {
 	}
 
 	struct uj_node* root = uj_parse(data, strlen(data), NULL);
-	struct uj_node* media_array = UJ_GET(root, ("data", "Page", "media"), UJ_ARR);
+	struct uj_node* media = UJ_GET(root, ("data", "Media"), UJ_OBJ);
 
-	if(!media_array) {
-		printf("no media array\n");
+	if(!media) {
+		printf("no media obj\n");
 		uj_node_free(root, 1);
 		goto end;
 	}
 
-	struct uj_node* media = media_array->arr;
 	struct uj_node* title_en = UJ_GET(media, ("title", "english"), UJ_STR);
 	struct uj_node* title_rj = UJ_GET(media, ("title", "romaji"), UJ_STR);
 
@@ -88,7 +97,7 @@ static bool trivia_start_anilist(const char* chan, struct TriviaState* ts) {
 		goto end;
 	}
 
-	printf("page %d title = [%s]\n", page, title);
+	printf("title = [%s]\n", title);
 
 	int quiz_mask = 0;
 
