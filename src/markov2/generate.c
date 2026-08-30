@@ -138,25 +138,42 @@ static size_t markov_gen(char* buffer, size_t buffer_len){
 	return markov_gen_2(buffer, buffer_len, start_sym_idx);
 }
 
-static const char* markov_get_punct(){
+static intptr_t emote_cb(intptr_t result, intptr_t arg) {
+	*(const char**)arg = (const char*)result;
+	return 0;
+}
+
+static const char* markov_get_punct(const IRCCoreCtx* ctx, const char* chan){
 	size_t val = markov_rand(100);
 
-	if(val < 25) return "";
-	if(val < 35) return "!";
-	if(val < 45) return " ...";
-	if(val < 50) return " TehePelo";
-	if(val < 55) return " PunOko";
-	if(val < 60) return " Kyaruok";
-	if(val < 65) return " SMH";
-	if(val < 70) return " ChenBased";
-	if(val < 75) return " NOTED";
-	if(val < 80) return " KannaSip";
-	if(val < 85) return " SataniaCry";
-	if(val < 90) return " GearScare";
-	if(val < 92) return " MyHonestReaction";
-	if(val < 94) return " JahyTrip";
-	if(val < 96) return " monkaLaugh";
-	if(val < 98) return " comfyWorryClap";
+	if(val < 15) return "";
+	if(val < 18) return "!";
+	if(val < 20) return " ...";
+	if(val < 22) return " TehePelo";
+	if(val < 24) return " PunOko";
+
+	printf("REQUESTING EMOTE\n");
+
+	static char sus_emote_buffer[256];
+
+	const char* emote = NULL;
+	MOD_MSG(ctx, "emote_random", chan, emote_cb, &emote);
+	if(emote) {
+		snprintf(sus_emote_buffer, sizeof(sus_emote_buffer), " %s", emote);
+		return sus_emote_buffer;
+	}
+
+	if(val < 60) return " Kyaruok";    // thumbsup, okay, approve, yes
+	if(val < 65) return " SMH";        // smh, nopers, nono, "no"
+	if(val < 70) return " ChenBased";  // based, true, classic
+	if(val < 75) return " NOTED";      // noted, isee
+	if(val < 80) return " KannaSip";   // sip, drink
+	if(val < 85) return " SataniaCry"; // cry, sad, blubbers
+	if(val < 90) return " GearScare";  // scare, concern, sweat
+	if(val < 92) return " MyHonestReaction"; // uhhuh, blank, stare
+	if(val < 94) return " JahyTrip";   // trip, schizo, voices
+	if(val < 96) return " monkaLaugh"; // lul, laugh, xd
+	if(val < 98) return " comfyWorryClap"; // worry, erm, err, umm
 
 	return " NepGlare";
 }

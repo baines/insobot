@@ -146,7 +146,7 @@ static void markov_send(const char* chan, const char* maybe_arg) {
 		return;
 	}
 
-	ctx->send_msg(chan, "%s%s", best_output, markov_get_punct());
+	ctx->send_msg(chan, "%s%s", best_output, markov_get_punct(ctx, chan));
 }
 
 static void markov_cmd(const char* chan, const char* name, const char* arg, int cmd){

@@ -161,7 +161,7 @@ static inline char uj_lower(char c){
 	return c;
 }
 
-int uj_lex(struct uj_lexer* uj, const char* json, size_t len, uj_lex_callback callback){
+enum uj_status uj_lex(struct uj_lexer* uj, const char* json, size_t len, uj_lex_callback callback){
 	const char* p   = json;
 	const char* end = json + len;
 	const _Bool eof = len == 0;
